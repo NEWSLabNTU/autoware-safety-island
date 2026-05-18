@@ -26,6 +26,16 @@ option(ASI_USE_NANO_ROS "Use the nano-ros nros-cpp shim path instead of raw Cycl
 if(ASI_USE_NANO_ROS)
     target_compile_definitions(app PRIVATE ASI_USE_NANO_ROS=1)
     message(STATUS "ASI build mode: nano-ros shim (ASI_USE_NANO_ROS=ON)")
+    # Cross-package FFI staticlibs (autoware_msgs/<pkg>/nano_ros_cpp_ffi_*)
+    # include!() each other's per-message Rust shims to keep types in
+    # one scope, which means the same `nros_cpp_publish_*` /
+    # `nros_cpp_deserialize_*` symbols end up emitted in every
+    # downstream FFI staticlib that depends on a given package. The
+    # symbol bodies are byte-identical (codegen output), so let the
+    # linker drop the duplicates. nano-ros's `zephyr/CMakeLists.txt`
+    # already does the same trick for native_sim builds (line ~185);
+    # we extend it to the cross-compile path here.
+    zephyr_ld_options(-Wl,--allow-multiple-definition)
 else()
     ### BUILD CYCLONEDDS LIBRARY ###
     message("Building cyclonedds for ${ZEPHYR_TARGET}")
