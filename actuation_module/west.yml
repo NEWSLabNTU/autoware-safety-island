@@ -15,6 +15,8 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: newslab
+      url-base: https://github.com/NEWSLabNTU
 
   #
   # Please add items below based on alphabetical order
@@ -29,6 +31,17 @@ manifest:
       path: actuation_module/zephyr_modules/hal/hal_nxp
       groups:
         - hal
+    # nano-ros: external dep providing the RMW + nros-cpp API + Zephyr module.
+    # import: false is REQUIRED — nano-ros's own west.yml redefines zephyr at
+    # v3.7.0 with a different module allowlist; importing recursively would
+    # clobber the pin below. ASI stays the manifest authority; nano-ros is
+    # consumed only as a leaf project whose zephyr/module.yml is auto-
+    # discovered by the Zephyr module crawler.
+    - name: nano-ros
+      remote: newslab
+      revision: 400ca008159c78b9df9d5f6df09a7a9b1a648ec0
+      path: modules/nros
+      import: false
     - name: zephyr
       revision: 339cd5a45fd2ebba064ef462b71c657336ca0dfe
       west-commands: scripts/west-commands.yml

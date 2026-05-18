@@ -34,6 +34,7 @@ NETWORK_PROFILE="default"
 DDS_NETWORK_INTERFACE=""
 CONTROL_CMD_OUTPUT_MODE=""
 RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2")
+BUILD_NANO_ROS_SMOKE=0
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -58,6 +59,12 @@ function usage() {
   echo -e "${GREEN}    --dds-subscriber   ${NC}Build DDS subscriber test program."
   echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program."
   echo -e "${GREEN}    --dds-loopback-test${NC}Build Zephyr DDS loopback test program."
+  echo ""
+  echo -e "${GREEN}    Phase 1 nano-ros migration:${NC}"
+  echo -e "${GREEN}    --nano-ros-smoke   ${NC}Build the nano-ros smoke Zephyr app"
+  echo -e "${GREEN}                       ${NC}(actuation_module/nano_ros_smoke/)."
+  echo -e "${GREEN}                       ${NC}Skips CycloneDDS host-tool build."
+  echo -e "${GREEN}                       ${NC}Requires \`west update\` to fetch nano-ros."
   echo ""
   echo -e "${GREEN}    Runtime target matrix:${NC}"
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
@@ -135,6 +142,10 @@ function parse_args() {
         ;;
       --can-output-test)
         BUILD_TEST_FLAG=4
+        shift
+        ;;
+      --nano-ros-smoke)
+        BUILD_NANO_ROS_SMOKE=1
         shift
         ;;
       --dds-loopback-test)
@@ -420,6 +431,31 @@ function build_freertos_s32z2() {
   cmake --build "${app_build_dir}" -j"$(nproc)"
 }
 
+function build_nano_ros_smoke() {
+  echo -e "${GREEN}Building nano-ros smoke Zephyr app...${NC}"
+
+  if [ ! -d "${ROOT_DIR}"/modules/nros ]; then
+    echo -e "${RED}nano-ros checkout missing at modules/nros.${NC}" 1>&2
+    echo -e "${YELLOW}Run \`west update\` to fetch nano-ros from the manifest.${NC}" 1>&2
+    exit 1
+  fi
+
+  typeset CMAKE_PREFIX_PATH=""
+  typeset AMENT_PREFIX_PATH=""
+
+  local build_args=(
+    -DEXTRA_CFLAGS="-Wno-error"
+    -DEXTRA_CXXFLAGS="-Wno-error"
+  )
+
+  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
+    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
+  fi
+
+  west build -p auto -d build/nano_ros_smoke -b "${ZEPHYR_TARGET}" \
+    actuation_module/nano_ros_smoke/ -- "${build_args[@]}"
+}
+
 ## MAIN ##
 parse_args "$@"
 normalize_platform
@@ -427,6 +463,12 @@ normalize_platform
 # Create build directory
 cd "${ROOT_DIR}"
 mkdir -p build
+
+if [ "${BUILD_NANO_ROS_SMOKE}" = "1" ]; then
+  # Phase 1 spike — bypass legacy Cyclone host-tool build entirely.
+  build_nano_ros_smoke
+  exit 0
+fi
 
 case "${BUILD_PLATFORM}" in
   zephyr-fvp|zephyr-s32z)
