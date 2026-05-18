@@ -6,6 +6,12 @@ COLOR_GREEN="\e[32m"
 COLOR_YELLOW="\e[33m"
 COLOR_RESET="\e[0m"
 
+# Container is launched with `--user $(id -u):$(id -g)` so the baked
+# `dev` UID/GID can be rewritten by fixuid to match the host user.
+# fixuid runs as the ENTRYPOINT before this script, so by the time we
+# get here $HOME and the bind-mounted /autoware-safety-island tree are
+# already chown'd to the host UID.
+
 # Source ROS and Autoware
 source "/opt/ros/humble/setup.bash"
 source "/opt/autoware/setup.bash"
@@ -44,4 +50,11 @@ fi
 
 # Ready to go!
 echo -e "${COLOR_GREEN}Dev container ready!${COLOR_RESET}"
-exec "/bin/bash"
+
+# Honor `docker run ... <cmd>` so callers can override the interactive
+# shell (CI / one-shot smoke tests).
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+else
+    exec /bin/bash
+fi

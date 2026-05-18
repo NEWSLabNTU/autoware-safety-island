@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      # Image USER is `dev` (fixuid pattern for local dev). GHA needs
+      # root inside the container so cache extraction + apt installs
+      # work and the workspace bind-mount is freely writable.
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
