@@ -125,9 +125,19 @@ function build_actuation_module() {
   typeset CMAKE_PREFIX_PATH=""
   typeset AMENT_PREFIX_PATH=""
 
+  # Pass the resolved host path of nros-codegen to CMake.
+  # `nano_ros_overlay.conf` hard-codes a container-relative
+  # `CONFIG_NROS_CODEGEN_TOOL` for the legacy /autoware-safety-island
+  # bind-mount layout, which fails when build.sh runs directly on the
+  # host (fixuid devcontainer or no container at all). The
+  # `_NANO_ROS_CODEGEN_TOOL` cache var is the documented override
+  # (see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake).
+  local nros_codegen="${ROOT_DIR}/modules/nros/build/install/bin/nros-codegen"
+
   local build_args=(
     -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
     -DEXTRA_CONF_FILE="${ROOT_DIR}"/actuation_module/nano_ros_overlay.conf
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
     -DBUILD_TEST=${BUILD_TEST_FLAG}
