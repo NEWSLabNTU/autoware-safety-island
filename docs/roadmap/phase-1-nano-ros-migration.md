@@ -6,10 +6,16 @@ via `nros-rmw-cyclonedds`). ASI keeps Autoware controller logic
 (MPC / PID / CAN) in C++. If a bug surfaces in nano-ros, patch nano-ros —
 do not work around it in ASI.
 
-**Status.** Draft, not started. **Revised 2026-05-18** after nano-ros build-
-system refactor + completion of nano-ros Phase 117 (Cyclone DDS RMW + ASI
-boards), and after the architecture decision to consume nano-ros as an
-external dep (vs vendoring a frozen subset).
+**Status.** **MVP build chain GREEN as of 2026-05-18.**
+`./build.sh --nano-ros-shim` produces a linked
+`build/actuation_module_nano_ros/zephyr/zephyr.elf` (1.65 MB text,
+1.86 MB BSS) for the FVP target, against upstream nano-ros pinned
+at `bc7fcacc` on `NEWSLabNTU/nano-ros` main. Runtime on FVP/AVH is
+the next gate (no FVP simulator in dev container — handed off to
+the user). Originally drafted after the nano-ros build-system
+refactor + completion of nano-ros Phase 117 (Cyclone DDS RMW + ASI
+boards), and after the architecture decision to consume nano-ros as
+an external dep (vs vendoring a frozen subset).
 
 **Priority.** P0. Branch-level roadmap for `nano-ros` on `newslab/nano-ros`.
 
@@ -93,13 +99,74 @@ nano-ros's `just cyclonedds setup` before building ASI.
 
 A unblocks B–D. E runs continuously.
 
+## Build chain verified
+
+Reaches `Linking CXX executable zephyr/zephyr.elf` through these stages:
+
+1. `west update` fetches nano-ros into `modules/nros/`.
+2. Container installs rustup (cached on host volume).
+3. `nros-codegen` host binary built from
+   `modules/nros/packages/codegen/packages/` (workspace edited to drop
+   `nros-cli-core` / `nros-cli` — they reference an absent `play_launch`
+   sibling tree). Staged at `modules/nros/build/install/{bin,share,lib}/`.
+4. `nros_generate_interfaces()` emits C++ + Rust FFI for the 10 vendored
+   ROS 2 Humble packages.
+5. Per-package Rust FFI staticlibs compile (`cargo build --target
+   aarch64-unknown-none --release`).
+6. `nros-cpp` + `nros-c` Rust libs compile (CC env now points at the
+   Zephyr SDK aarch64 toolchain — `bc7fcacc`).
+7. Zephyr core + drivers + libc + posix subsys link.
+8. User C++ TUs compile (controller_node + MPC + PID + main + net).
+9. Final ELF link with `-Wl,--allow-multiple-definition` (cross-package
+   FFI staticlibs duplicate codegen-emitted symbols; bodies are
+   byte-identical so the linker drops dupes safely — same trick
+   nano-ros uses for native_sim).
+
+ELF metrics (`fvp_baser_aemv8r_smp`): text 1,654,028 / data 9,412 /
+bss 1,859,891 / entry @ 0x22994 / AArch64 EXEC.
+
+### Upstream patches landed during bring-up
+
+**`NEWSLabNTU/nano-ros` main:**
+
+| SHA | Subject |
+|---|---|
+| `59ab7c6a` | `fix(zephyr): propagate ${target}_GENERATED_RS_FILES to caller scope` |
+| `f7b69f5f` | `fix(zephyr): gate cxx-compat include on CONFIG_PICOLIBC` |
+| `defb2260` | `fix(zpico-zephyr): drop .ipv4 sub-struct in net_if_addr access` |
+| `0f7b9a2e` | `fix(zephyr): declare nros_generated.h as nros-cpp byproduct` |
+| `80d32726` | `fix(zephyr): stage proper nros-serdes crate dir for FFI cargo dep` |
+| `29a6de92` | `fix(platform-zephyr): IGMP fallback for Zephyr ≤3.5 multicast` |
+| `bc7fcacc` | `fix(zephyr): set cross-CC env for cc crate in build.rs` |
+
+**`NEWSLabNTU/colcon-nano-ros` main (codegen submodule):**
+
+| SHA | Subject |
+|---|---|
+| `2a88fae` | `fix(rosidl-codegen): emit intra-pkg includes for fully-qualified same-pkg refs` |
+
+### Open items before runtime gate
+
+- `nano_ros_overlay.conf` carries `CONFIG_NROS_CODEGEN_TOOL=<path>`
+  pointing at the host-staged binary. Replace with an ASI-side
+  bootstrap script (or document running `just install-local` from
+  inside `modules/nros/`).
+- `mpc_lateral_controller.cpp::publishPredictedTraj` body is gated
+  behind `#ifndef ASI_USE_NANO_ROS`. Resolves when a TrajectoryMsg
+  std::vector wrapper → nros FixedSequence raw conversion helper
+  lands (the publisher is debug-only and never `create_publisher`'d
+  in current ASI, so this is a follow-up not a blocker).
+- Cyclone-on-Zephyr Kconfig (`CONFIG_NROS_RMW_CYCLONEDDS=y`) still
+  upstream gap. Shim uses dust-dds (`CONFIG_NROS_RMW_DDS=y`) for
+  first bring-up.
+
 ## Work Items
 
-- [ ] **1.1 - Lock branch/workspace contract.**
+- [x] **1.1 - Lock branch/workspace contract.**
   ASI branch `nano-ros` tracks `newslab/nano-ros`. Use
   `~/repos/nano-ros-autoware` for nano-ros patches; treat
   `~/repos/nano-ros` as read-only reference (has unrelated local changes).
-- [ ] **1.2 - Import nano-ros as external dep.**
+- [x] **1.2 - Import nano-ros as external dep.**
   Pick (a) git submodule under ASI, (b) west project in
   `actuation_module/west.yml`, or (c) `ZEPHYR_EXTRA_MODULES` env handoff.
   Prefer (b) or (c) so Zephyr module discovery is automatic. Document the
@@ -112,17 +179,19 @@ A unblocks B–D. E runs continuously.
   Remove `actuation_module/include/common/dds/*` and
   `actuation_module/src/common/dds/*`. The RMW layer lives in
   `nros-rmw-cyclonedds`; ASI talks to it through `nros-cpp`.
-- [ ] **1.5 - Generate required ASI interfaces.**
+- [x] **1.5 - Generate required ASI interfaces.**
   Emit nros-cpp bindings (`nros_generate_interfaces`) + Cyclone descriptors
   (`nros_rmw_cyclonedds_add_idl_library`) for trajectory, odometry,
   steering, acceleration, operation mode, control command, and debug
   timing messages.
-- [ ] **1.6 - Adapter shim or direct port.**
+- [x] **1.6 - Adapter shim or direct port.**
   Either keep `common/node` as a thin shim over `nros::Node` (preserves
   controller call sites) or port `controller_node.cpp` directly to
   `nros::Node`. Adapter is the cheaper migration step; direct port is the
   cleaner end state.
-- [ ] **1.7 - Port controller communication.**
+- [x] **1.7 - Port controller communication.** (Compile-time done;
+  one debug publisher gated behind `#ifndef ASI_USE_NANO_ROS` pending
+  TrajectoryMsg→Raw helper.)
   Move `controller_node.cpp` pub/sub setup onto the adapter (or
   `nros::Node`). Keep MPC / PID / CAN behavior unchanged except for
   message type conversions. Use stock-RMW topic prefixes + IDL type names.
