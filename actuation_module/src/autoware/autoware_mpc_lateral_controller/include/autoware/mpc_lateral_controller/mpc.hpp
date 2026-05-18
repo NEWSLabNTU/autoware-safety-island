@@ -217,8 +217,11 @@ private:
 
   bool m_is_forward_shift = true;  // Flag indicating if the shift is in the forward direction.
 
-  std::shared_ptr<Publisher<TrajectoryMsg>> m_debug_frenet_predicted_trajectory_pub;
-  std::shared_ptr<Publisher<TrajectoryMsg>> m_debug_resampled_reference_trajectory_pub;
+  // Publish over the nros-generated message type, not the local
+  // std::vector-wrapper. Instantiating `Publisher<M>` requires
+  // `M::ffi_publish`, which the wrapper doesn't define.
+  std::shared_ptr<Publisher<TrajectoryMsg_Raw>> m_debug_frenet_predicted_trajectory_pub;
+  std::shared_ptr<Publisher<TrajectoryMsg_Raw>> m_debug_resampled_reference_trajectory_pub;
   /**
    * @brief Get variables for MPC calculation.
    * @param trajectory The reference trajectory.

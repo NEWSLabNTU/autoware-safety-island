@@ -76,7 +76,7 @@ inline bool scale_to_i32(const float value, const double scale, int32_t & output
   return true;
 }
 
-inline uint32_t timestamp_ms_modulo(const builtin_interfaces_msg_Time & stamp)
+inline uint32_t timestamp_ms_modulo(const TimeMsg & stamp)
 {
   const uint64_t sec_ms = static_cast<uint64_t>(stamp.sec) * 1000ULL;
   const uint64_t nsec_ms = static_cast<uint64_t>(stamp.nanosec) / 1000000ULL;

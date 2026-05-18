@@ -48,14 +48,15 @@ using AccelWithCovarianceStampedMsg   = geometry_msgs::msg::AccelWithCovarianceS
 using TrajectoryPointMsg              = autoware_planning_msgs::msg::TrajectoryPoint;
 using PoseStampedMsg                  = geometry_msgs::msg::PoseStamped;
 
-// OperationModeState constants live as inline static members on the
-// generated nros type. Redirect ASI's existing macros to them so
+// nros codegen emits message constants as `<MessageName>_<CONSTANT>`
+// constexpr at namespace scope (per message_cpp.hpp.jinja template),
+// NOT as inline static members. Redirect ASI's existing macros so
 // `mpc_lateral_controller.cpp:236` etc. stay untouched.
-#define OPERATION_MODE_STATE_UNKNOWN      autoware_adapi_v1_msgs::msg::OperationModeState::UNKNOWN
-#define OPERATION_MODE_STATE_STOP         autoware_adapi_v1_msgs::msg::OperationModeState::STOP
-#define OPERATION_MODE_STATE_AUTONOMOUS   autoware_adapi_v1_msgs::msg::OperationModeState::AUTONOMOUS
-#define OPERATION_MODE_STATE_LOCAL        autoware_adapi_v1_msgs::msg::OperationModeState::LOCAL
-#define OPERATION_MODE_STATE_REMOTE       autoware_adapi_v1_msgs::msg::OperationModeState::REMOTE
+#define OPERATION_MODE_STATE_UNKNOWN      autoware_adapi_v1_msgs::msg::OperationModeState_UNKNOWN
+#define OPERATION_MODE_STATE_STOP         autoware_adapi_v1_msgs::msg::OperationModeState_STOP
+#define OPERATION_MODE_STATE_AUTONOMOUS   autoware_adapi_v1_msgs::msg::OperationModeState_AUTONOMOUS
+#define OPERATION_MODE_STATE_LOCAL        autoware_adapi_v1_msgs::msg::OperationModeState_LOCAL
+#define OPERATION_MODE_STATE_REMOTE       autoware_adapi_v1_msgs::msg::OperationModeState_REMOTE
 
 // Sentinel topic-descriptor stubs. The nros-cpp shim's
 // `create_publisher` / `create_subscription` carry an ignored
