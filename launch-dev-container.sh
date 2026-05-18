@@ -23,6 +23,23 @@ HOST_GID=$(id -g)
 
 mkdir -p "${HOME}/.ccache"
 
+# Default to the locally-built fixuid image; the registry tag will
+# inherit the same Dockerfile once the devcontainer publish pipeline
+# reruns. Override with:
+#   ASI_DEVCONTAINER_IMAGE=ghcr.io/.../autoware-safety-island:devcontainer \
+#       ./launch-dev-container.sh
+ASI_DEVCONTAINER_IMAGE="${ASI_DEVCONTAINER_IMAGE:-asi-devcontainer-local:fixuid}"
+
+# If the local image is missing, build it on the fly so first-time
+# contributors don't trip over `Unable to find image`.
+if [ "${ASI_DEVCONTAINER_IMAGE}" = "asi-devcontainer-local:fixuid" ] && \
+   ! docker image inspect "${ASI_DEVCONTAINER_IMAGE}" >/dev/null 2>&1; then
+    echo -e "${COLOR_YELLOW}Local devcontainer image not found — building...${COLOR_RESET}"
+    docker build -t "${ASI_DEVCONTAINER_IMAGE}" \
+        -f "$(dirname "$0")/.devcontainer/Dockerfile" \
+        "$(dirname "$0")/.devcontainer"
+fi
+
 docker run --rm -it --name autoware-safety-island-devcontainer \
     --privileged \
     --network host \
@@ -30,4 +47,4 @@ docker run --rm -it --name autoware-safety-island-devcontainer \
     -v "$HOME/.ccache:/home/dev/.ccache" \
     -v "$(pwd):/autoware-safety-island" \
     -w "/autoware-safety-island" \
-    ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+    "${ASI_DEVCONTAINER_IMAGE}"
