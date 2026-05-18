@@ -1,4 +1,4 @@
-name: Build and Test
+name: Build CI
 
 on:
   pull_request:
@@ -6,36 +6,23 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Daily at 02:00 UTC
   workflow_dispatch:
-    inputs:
-      devcontainer_image:
-        description: 'Container image to use for CI jobs'
-        required: false
-        type: string
-        default: 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer'
 
 jobs:
   build-zephyr:
-    name: Zephyr FVP
+    name: Zephyr Build (FVP)
     runs-on: ubuntu-latest
     container:
-      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
 
       - name: Trust workspace (container runs as root)
         shell: bash
         run: git config --global --add safe.directory '*'
-
-      # Initialise only the public submodules. s32ct_config is a PRIVATE
-      # submodule (NXP Confidential generated configs) that the repo-scoped CI
-      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
-      - name: Initialize build submodules (private s32ct_config excluded)
-        shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
 
       - name: Restore Zephyr workspace cache
         id: zephyr-cache
@@ -44,7 +31,7 @@ jobs:
           path: |
             .west
             zephyr
-            actuation_module/zephyr_modules
+            modules
           key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: zephyr-workspace-
 
@@ -60,50 +47,13 @@ jobs:
           fi
           west zephyr-export
 
-      - name: Run Zephyr FVP validation
+      - name: Install Rust toolchain (nros codegen)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build (FVP target, nano-ros)
         shell: bash
-        run: .github/scripts/run-zephyr-fvp-ci.sh
+        run: ./build.sh -t fvp_baser_aemv8r_smp
 
-      - name: Upload Zephyr FVP logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zephyr-fvp-logs
-          path: build/zephyr-fvp/logs
-          if-no-files-found: ignore
-          retention-days: 7
-
-  build-freertos:
-    name: FreeRTOS POSIX
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Trust workspace (container runs as root)
-        shell: bash
-        run: git config --global --add safe.directory '*'
-
-      # Initialise only the public submodules. s32ct_config is a PRIVATE
-      # submodule (NXP Confidential generated configs) that the repo-scoped CI
-      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
-      - name: Initialize build submodules (private s32ct_config excluded)
-        shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
-
-      - name: Restore CycloneDDS build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            build/cyclonedds_host
-            build/cyclonedds_target_out
-          key: cdds-${{ hashFiles('.gitmodules') }}
-
-      - name: Run FreeRTOS POSIX validation
-        shell: bash
-        run: .github/scripts/run-freertos-posix-ci.sh
+  # FreeRTOS POSIX simulator job retired with the CycloneDDS submodule
+  # in Phase 1.3/1.4. Tree under actuation_module/freertos/ is preserved
+  # for archaeology; re-enable once it is ported to nano-ros.

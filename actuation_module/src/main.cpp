@@ -10,8 +10,12 @@ using namespace common::logger;
 
 #include "autoware/trajectory_follower_node/controller_node.hpp"
 
-#ifdef ASI_USE_NANO_ROS
 #include <nros/nros.hpp>
+
+#ifdef CONFIG_NROS_RMW_CYCLONEDDS
+#  define ASI_DOMAIN_ID CONFIG_NROS_CYCLONE_DOMAIN_ID
+#else
+#  define ASI_DOMAIN_ID CONFIG_NROS_DOMAIN_ID
 #endif
 
 int main(void)
@@ -37,22 +41,19 @@ int main(void)
     }
 #endif
 
-#ifdef ASI_USE_NANO_ROS
     // Phase 1C lifecycle. Must run AFTER configure_network() so the
     // chosen RMW backend has a routable interface to bind to, and
     // BEFORE `new Controller()` because the Node ctor inside calls
     // nros::create_node() which requires the global runtime to be up.
-    log_info("Initializing nano-ros runtime (domain %d)...\n",
-             CONFIG_NROS_DOMAIN_ID);
+    log_info("Initializing nano-ros runtime (domain %d)...\n", ASI_DOMAIN_ID);
     {
-        auto r = nros::init("", CONFIG_NROS_DOMAIN_ID);
+        auto r = nros::init("", ASI_DOMAIN_ID);
         if (!r.ok()) {
             log_error("nros::init failed: %d\n", r.raw());
             std::exit(1);
         }
     }
     std::atexit([](){ nros::shutdown(); });
-#endif
 
     log_info("Starting Controller Node...");
     try

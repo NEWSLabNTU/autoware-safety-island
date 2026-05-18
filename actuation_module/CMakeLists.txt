@@ -15,33 +15,14 @@ include(GNUInstallDirs)
 set(PLATFORM_ZEPHYR ON)
 target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 
-# Phase 1 migration toggle. OFF (default) = legacy raw-Cyclone path:
-# Cyclone host tools + cdds_lib + idlc-generated autoware_msgs +
-# common/dds/* wrapper. ON = nano-ros shim path: nros-cpp library
-# (linked by the nros Zephyr module under CONFIG_NROS=y) +
-# nros_generate_interfaces-generated autoware_msgs + common/node/
-# node_nros.hpp shim + common/net/network_config.cpp.
-option(ASI_USE_NANO_ROS "Use the nano-ros nros-cpp shim path instead of raw Cyclone DDS" OFF)
-
-if(ASI_USE_NANO_ROS)
-    target_compile_definitions(app PRIVATE ASI_USE_NANO_ROS=1)
-    message(STATUS "ASI build mode: nano-ros shim (ASI_USE_NANO_ROS=ON)")
-    # Cross-package FFI staticlibs (autoware_msgs/<pkg>/nano_ros_cpp_ffi_*)
-    # include!() each other's per-message Rust shims to keep types in
-    # one scope, which means the same `nros_cpp_publish_*` /
-    # `nros_cpp_deserialize_*` symbols end up emitted in every
-    # downstream FFI staticlib that depends on a given package. The
-    # symbol bodies are byte-identical (codegen output), so let the
-    # linker drop the duplicates. nano-ros's `zephyr/CMakeLists.txt`
-    # already does the same trick for native_sim builds (line ~185);
-    # we extend it to the cross-compile path here.
-    zephyr_ld_options(-Wl,--allow-multiple-definition)
-else()
-    ### BUILD CYCLONEDDS LIBRARY ###
-    message("Building cyclonedds for ${ZEPHYR_TARGET}")
-    include(cyclonedds_config.cmake)
-    create_cdds_lib(${CMAKE_CURRENT_SOURCE_DIR}/../cyclonedds)
-endif()
+# nano-ros nros-cpp is the sole build path post-Phase 1.3/1.4 cleanup.
+# Cross-package FFI staticlibs (autoware_msgs/<pkg>/nano_ros_cpp_ffi_*)
+# include!() each other's per-message Rust shims to keep types in one
+# scope, which means the same `nros_cpp_publish_*` / `_deserialize_*`
+# symbols end up emitted in every downstream FFI staticlib that depends
+# on a given package. The symbol bodies are byte-identical (codegen
+# output), so let the linker drop the duplicates.
+zephyr_ld_options(-Wl,--allow-multiple-definition)
 
 ### BUILD AUTOWARE MESSAGES ###
 add_subdirectory(src/autoware/autoware_msgs)
@@ -77,11 +58,7 @@ else()
     include(src/autoware/${component}/${component}.cmake)
   endforeach()
 
-  if(ASI_USE_NANO_ROS)
-    target_sources(app PRIVATE src/main.cpp src/common/net/network_config.cpp ${APP_SOURCES})
-  else()
-    target_sources(app PRIVATE src/main.cpp src/common/dds/network_config.cpp ${APP_SOURCES})
-  endif()
+  target_sources(app PRIVATE src/main.cpp src/common/net/network_config.cpp ${APP_SOURCES})
 endif()
 
 message("=== Build Summary ===")
@@ -104,31 +81,17 @@ target_compile_options(app PRIVATE
 )
 endif()
 
-if(ASI_USE_NANO_ROS)
-    # nros-cpp + generated message headers + linkage are wired into `app`
-    # automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
-    # autoware_msgs/CMakeLists.txt invokes nros_generate_interfaces() per
-    # vendored package; generated artefacts attach to `app` directly.
-    target_include_directories(app PRIVATE
-        include
-        ${EIGEN3_INCLUDE_DIR}
-        ${APP_INCLUDE_DIRS}
-    )
-    # autoware_msgs INTERFACE target (no compiled sources) only exposes
-    # ASI's hand-written `<autoware/autoware_msgs/messages.hpp>` umbrella
-    # via INTERFACE_INCLUDE_DIRECTORIES. Link it so app gets that include
-    # path automatically.
-    target_link_libraries(app PRIVATE autoware_msgs)
-else()
-    target_include_directories(app PRIVATE
-        include
-        ${CMAKE_CURRENT_BINARY_DIR}/install/include
-        ${CycloneDDS_INCLUDE_DIR}
-        ${EIGEN3_INCLUDE_DIR}
-        ${APP_INCLUDE_DIRS}
-    )
-
-    # Link actuation messages and CycloneDDS library
-    target_link_directories(app PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/install/lib)
-    target_link_libraries(app PRIVATE cdds_lib autoware_msgs)
-endif()
+# nros-cpp + generated message headers + linkage are wired into `app`
+# automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
+# autoware_msgs/CMakeLists.txt invokes nros_generate_interfaces() per
+# vendored package; generated artefacts attach to `app` directly.
+target_include_directories(app PRIVATE
+    include
+    ${EIGEN3_INCLUDE_DIR}
+    ${APP_INCLUDE_DIRS}
+)
+# autoware_msgs INTERFACE target (no compiled sources) only exposes
+# ASI's hand-written `<autoware/autoware_msgs/messages.hpp>` umbrella
+# via INTERFACE_INCLUDE_DIRECTORIES. Link it so app gets that include
+# path automatically.
+target_link_libraries(app PRIVATE autoware_msgs)

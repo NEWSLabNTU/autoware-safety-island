@@ -1,7 +1,3 @@
-[submodule "cyclonedds"]
-	path = cyclonedds
-	url = https://github.com/autowarefoundation/cyclonedds
-	branch = freertos-s32z2
 [submodule "zephyr"]
 	path = zephyr
 	url = https://github.com/zephyrproject-rtos/zephyr

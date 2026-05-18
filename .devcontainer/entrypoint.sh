@@ -10,10 +10,10 @@ COLOR_RESET="\e[0m"
 source "/opt/ros/humble/setup.bash"
 source "/opt/autoware/setup.bash"
 
-# Check if zephyr and cyclonedds submodules are cloned and not empty
-if [ ! -d "zephyr" ] || [ ! -d "cyclonedds" ] || [ -z "$(ls -A zephyr 2>/dev/null)" ] || [ -z "$(ls -A cyclonedds 2>/dev/null)" ]; then
-    echo -e "${COLOR_YELLOW}Zephyr and/or CycloneDDS submodules are not cloned or are empty.${COLOR_RESET}"
-    echo -e "${COLOR_YELLOW}Please clone the submodules then run the container in order to build the project.${COLOR_RESET}"
+# Check if zephyr submodule is cloned and not empty
+if [ ! -d "zephyr" ] || [ -z "$(ls -A zephyr 2>/dev/null)" ]; then
+    echo -e "${COLOR_YELLOW}Zephyr submodule is not cloned or is empty.${COLOR_RESET}"
+    echo -e "${COLOR_YELLOW}Please clone the submodule then run the container in order to build the project.${COLOR_RESET}"
     echo -e "${COLOR_YELLOW}----------------------------------------------------------${COLOR_RESET}"
 fi
 
