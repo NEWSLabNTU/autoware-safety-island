@@ -181,13 +181,16 @@ public:
         pthread_join(main_thread_, nullptr);
     }
 
-    // No `topic_descriptor` arg — nros routes types via the generated
-    // `nros::Publisher<M>` specialization, not a runtime descriptor.
-    // Controller call sites lose the explicit `&<msg>_desc` arg when
-    // they switch to this shim (Phase 1.7).
+    // nros routes types via the generated `nros::Publisher<M>` /
+    // `nros::Subscription<M>` specialization — no runtime descriptor
+    // needed. The optional / second `const void*` arg exists so legacy
+    // controller call sites that still pass `&<msg>_desc` (sentinel
+    // stubs from autoware_msgs/messages.hpp under ASI_USE_NANO_ROS)
+    // compile unchanged through Phase 1.7. Arg is ignored.
     template <typename M>
     std::shared_ptr<asi::nros_shim::Publisher<M>>
-    create_publisher(const std::string & topic_name)
+    create_publisher(const std::string & topic_name,
+                     const void * /*descriptor*/ = nullptr)
     {
         auto inner = std::make_shared<::nros::Publisher<M>>();
         auto r = node_.create_publisher(*inner, topic_name.c_str());
@@ -202,6 +205,7 @@ public:
 
     template <typename T>
     bool create_subscription(const std::string & topic_name,
+                             const void * /*descriptor*/,
                              callback_subscriber<T> cb, void * arg)
     {
         auto inner = std::make_shared<::nros::Subscription<T>>();
