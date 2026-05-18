@@ -4,12 +4,12 @@ on:
   push:
     branches: [ "main", "master" ]
     paths:
-      - 'documentation/**'
+      - 'docs/**'
       - '.github/workflows/docs.yml'
   pull_request:
     branches: [ "main", "master" ]
     paths:
-      - 'documentation/**'
+      - 'docs/**'
   # Allow manual triggering
   workflow_dispatch:
 
@@ -42,11 +42,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r documentation/requirements.txt
+          pip install -r docs/requirements.txt
 
       - name: Build documentation
         run: |
-          cd documentation
+          cd docs
           sphinx-build -b html . _build/html
         env:
           # Treat warnings as errors for clean builds
@@ -60,7 +60,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
         with:
-          path: './documentation/_build/html'
+          path: './docs/_build/html'
 
   # Deployment job (only runs on push to main/master, not on PRs)
   deploy:

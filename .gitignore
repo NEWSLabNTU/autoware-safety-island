@@ -30,5 +30,5 @@ avh.ovpn
 log/
 *.log
 
-documentation/_build/
+docs/_build/
 arm-kit-instructions.md
