@@ -26,25 +26,43 @@ project(autoware_msgs LANGUAGES C CXX)
 if(ASI_USE_NANO_ROS)
     set(_msg_ros_root ${CMAKE_CURRENT_SOURCE_DIR}/msg_ros)
 
-    # Topological order: each package can only DEPENDENCIES-reference a
-    # package that came before it. nros_generate_interfaces is provided
-    # by the nros Zephyr module under CONFIG_NROS=y (no find_package
-    # needed — the helper is included from
-    # `${ZEPHYR_NROS_MODULE_DIR}/cmake/nros_generate_interfaces.cmake`
-    # which the module's CMakeLists.txt already pulls in for the
-    # NROS_CPP_API path). Each call attaches generated artefacts (header
-    # dir + Rust FFI staticlib + link to `app`) directly; there is no
-    # per-package CMake target to link against on Zephyr.
-    add_subdirectory(${_msg_ros_root}/builtin_interfaces        builtin_interfaces)
-    add_subdirectory(${_msg_ros_root}/std_msgs                  std_msgs)
-    add_subdirectory(${_msg_ros_root}/geometry_msgs             geometry_msgs)
-    add_subdirectory(${_msg_ros_root}/nav_msgs                  nav_msgs)
-    add_subdirectory(${_msg_ros_root}/autoware_perception_msgs  autoware_perception_msgs)
-    add_subdirectory(${_msg_ros_root}/autoware_vehicle_msgs     autoware_vehicle_msgs)
-    add_subdirectory(${_msg_ros_root}/autoware_planning_msgs    autoware_planning_msgs)
-    add_subdirectory(${_msg_ros_root}/autoware_control_msgs     autoware_control_msgs)
-    add_subdirectory(${_msg_ros_root}/autoware_adapi_v1_msgs    autoware_adapi_v1_msgs)
-    add_subdirectory(${_msg_ros_root}/tier4_debug_msgs          tier4_debug_msgs)
+    # All nros_generate_interfaces() calls live in THIS scope (not via
+    # add_subdirectory) so the PARENT_SCOPE propagation of
+    # `${target}_GENERATED_RS_FILES` inside the function lands in our
+    # scope, where subsequent dep-walking calls can see it. With
+    # add_subdirectory each call's PARENT_SCOPE would only reach the
+    # per-pkg subdir scope, breaking the cross-package FFI include
+    # chain. (Per-pkg msg_ros/<pkg>/CMakeLists.txt stubs are kept on
+    # disk for documentation of dependency intent; they are no longer
+    # add_subdirectory'd.)
+    function(_asi_gen pkg)
+        cmake_parse_arguments(_a "" "" "DEPENDENCIES" ${ARGN})
+        # nros_generate_interfaces resolves file paths relative to
+        # CMAKE_CURRENT_SOURCE_DIR — pass relative paths so the
+        # concatenation produces the right absolute path.
+        file(GLOB _msgs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+            "${_msg_ros_root}/${pkg}/msg/*.msg")
+        nros_generate_interfaces(${pkg} ${_msgs} LANGUAGE CPP
+            DEPENDENCIES ${_a_DEPENDENCIES})
+        # Re-export ${pkg}_GENERATED_RS_FILES set by the function so
+        # subsequent calls see the deps' generated-file list.
+        set(${pkg}_GENERATED_RS_FILES "${${pkg}_GENERATED_RS_FILES}" PARENT_SCOPE)
+    endfunction()
+
+    # NOTE: nros_generate_interfaces() does NOT walk DEPENDENCIES
+    # transitively when building the FFI lib.rs include!() set. Every
+    # ROS-package whose types appear in the generated code — even via
+    # nested fields like Header -> Time — must be listed explicitly.
+    _asi_gen(builtin_interfaces)
+    _asi_gen(std_msgs                 DEPENDENCIES builtin_interfaces)
+    _asi_gen(geometry_msgs            DEPENDENCIES std_msgs builtin_interfaces)
+    _asi_gen(nav_msgs                 DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
+    _asi_gen(autoware_perception_msgs DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
+    _asi_gen(autoware_vehicle_msgs    DEPENDENCIES std_msgs builtin_interfaces geometry_msgs)
+    _asi_gen(autoware_planning_msgs   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
+    _asi_gen(autoware_control_msgs    DEPENDENCIES std_msgs builtin_interfaces)
+    _asi_gen(autoware_adapi_v1_msgs   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs)
+    _asi_gen(tier4_debug_msgs         DEPENDENCIES builtin_interfaces std_msgs)
 
     # Public include dir for ASI's hand-written
     # `<autoware/autoware_msgs/messages.hpp>` umbrella (Trajectory wrapper +

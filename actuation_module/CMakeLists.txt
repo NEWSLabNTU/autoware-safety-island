@@ -104,6 +104,11 @@ if(ASI_USE_NANO_ROS)
         ${EIGEN3_INCLUDE_DIR}
         ${APP_INCLUDE_DIRS}
     )
+    # autoware_msgs INTERFACE target (no compiled sources) only exposes
+    # ASI's hand-written `<autoware/autoware_msgs/messages.hpp>` umbrella
+    # via INTERFACE_INCLUDE_DIRECTORIES. Link it so app gets that include
+    # path automatically.
+    target_link_libraries(app PRIVATE autoware_msgs)
 else()
     target_include_directories(app PRIVATE
         include
