@@ -16,7 +16,51 @@
 
 cmake_minimum_required(VERSION 3.12)
 
-project(autoware_msgs)
+project(autoware_msgs LANGUAGES C CXX)
+
+# Phase 1B / 1C migration toggle. ON = generate via nros codegen from
+# the vendored upstream .msg tree under msg_ros/. OFF (default) = the
+# legacy CycloneDDS idlc path below. Switch is propagated from the
+# top-level CMakeLists via -DASI_USE_NANO_ROS=ON (build.sh
+# --nano-ros-shim).
+if(ASI_USE_NANO_ROS)
+    set(_msg_ros_root ${CMAKE_CURRENT_SOURCE_DIR}/msg_ros)
+
+    # Topological order: each package can only DEPENDENCIES-reference a
+    # package that came before it. nros_generate_interfaces is provided
+    # by the nros Zephyr module under CONFIG_NROS=y (no find_package
+    # needed — the helper is included from
+    # `${ZEPHYR_NROS_MODULE_DIR}/cmake/nros_generate_interfaces.cmake`
+    # which the module's CMakeLists.txt already pulls in for the
+    # NROS_CPP_API path). Each call attaches generated artefacts (header
+    # dir + Rust FFI staticlib + link to `app`) directly; there is no
+    # per-package CMake target to link against on Zephyr.
+    add_subdirectory(${_msg_ros_root}/builtin_interfaces        builtin_interfaces)
+    add_subdirectory(${_msg_ros_root}/std_msgs                  std_msgs)
+    add_subdirectory(${_msg_ros_root}/geometry_msgs             geometry_msgs)
+    add_subdirectory(${_msg_ros_root}/nav_msgs                  nav_msgs)
+    add_subdirectory(${_msg_ros_root}/autoware_perception_msgs  autoware_perception_msgs)
+    add_subdirectory(${_msg_ros_root}/autoware_vehicle_msgs     autoware_vehicle_msgs)
+    add_subdirectory(${_msg_ros_root}/autoware_planning_msgs    autoware_planning_msgs)
+    add_subdirectory(${_msg_ros_root}/autoware_control_msgs     autoware_control_msgs)
+    add_subdirectory(${_msg_ros_root}/autoware_adapi_v1_msgs    autoware_adapi_v1_msgs)
+    add_subdirectory(${_msg_ros_root}/tier4_debug_msgs          tier4_debug_msgs)
+
+    # Public include dir for ASI's hand-written
+    # `<autoware/autoware_msgs/messages.hpp>` umbrella (Trajectory wrapper +
+    # cap). Expose only via an INTERFACE target so legacy linker entries
+    # like `target_link_libraries(app PRIVATE autoware_msgs)` continue to
+    # compile cleanly when ASI_USE_NANO_ROS=ON.
+    add_library(${PROJECT_NAME} INTERFACE)
+    target_include_directories(${PROJECT_NAME} INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+
+    return()  # skip the legacy idlc block below
+endif()
+
+# ============================================================================
+# Legacy raw-Cyclone path (default, until ASI_USE_NANO_ROS becomes default).
+# ============================================================================
 
 # idlc is a host tool, and doesn't care about the architecture of the target platform.
 # Prevent cmake from checking the architecture by temporarily unsetting CMAKE_SIZEOF_VOID_P.

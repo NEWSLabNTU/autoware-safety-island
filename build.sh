@@ -35,6 +35,7 @@ DDS_NETWORK_INTERFACE=""
 CONTROL_CMD_OUTPUT_MODE=""
 RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2")
 BUILD_NANO_ROS_SMOKE=0
+BUILD_NANO_ROS_SHIM=0
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -63,6 +64,11 @@ function usage() {
   echo -e "${GREEN}    Phase 1 nano-ros migration:${NC}"
   echo -e "${GREEN}    --nano-ros-smoke   ${NC}Build the nano-ros smoke Zephyr app"
   echo -e "${GREEN}                       ${NC}(actuation_module/nano_ros_smoke/)."
+  echo -e "${GREEN}                       ${NC}Skips CycloneDDS host-tool build."
+  echo -e "${GREEN}                       ${NC}Requires \`west update\` to fetch nano-ros."
+  echo -e "${GREEN}    --nano-ros-shim    ${NC}Build the full actuation module with the"
+  echo -e "${GREEN}                       ${NC}nano-ros nros-cpp shim path (ASI_USE_NANO_ROS=ON)"
+  echo -e "${GREEN}                       ${NC}instead of the legacy raw-Cyclone wrapper."
   echo -e "${GREEN}                       ${NC}Skips CycloneDDS host-tool build."
   echo -e "${GREEN}                       ${NC}Requires \`west update\` to fetch nano-ros."
   echo ""
@@ -150,6 +156,10 @@ function parse_args() {
         ;;
       --dds-loopback-test)
         BUILD_TEST_FLAG=5
+        shift
+        ;;
+      --nano-ros-shim)
+        BUILD_NANO_ROS_SHIM=1
         shift
         ;;
       -t)
@@ -431,6 +441,35 @@ function build_freertos_s32z2() {
   cmake --build "${app_build_dir}" -j"$(nproc)"
 }
 
+function build_actuation_module_nano_ros_shim() {
+  echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros shim path)...${NC}"
+
+  if [ ! -d "${ROOT_DIR}"/modules/nros ]; then
+    echo -e "${RED}nano-ros checkout missing at modules/nros.${NC}" 1>&2
+    echo -e "${YELLOW}Run \`west update\` to fetch nano-ros from the manifest.${NC}" 1>&2
+    exit 1
+  fi
+
+  typeset CMAKE_PREFIX_PATH=""
+  typeset AMENT_PREFIX_PATH=""
+
+  local build_args=(
+    -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
+    -DASI_USE_NANO_ROS=ON
+    -DEXTRA_CONF_FILE="${ROOT_DIR}"/actuation_module/nano_ros_overlay.conf
+    -DEXTRA_CFLAGS="-Wno-error"
+    -DEXTRA_CXXFLAGS="-Wno-error"
+    -DBUILD_TEST=${BUILD_TEST_FLAG}
+  )
+
+  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
+    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
+  fi
+
+  west build -p auto -d build/actuation_module_nano_ros -b "${ZEPHYR_TARGET}" \
+    actuation_module/ -- "${build_args[@]}"
+}
+
 function build_nano_ros_smoke() {
   echo -e "${GREEN}Building nano-ros smoke Zephyr app...${NC}"
 
@@ -467,6 +506,13 @@ mkdir -p build
 if [ "${BUILD_NANO_ROS_SMOKE}" = "1" ]; then
   # Phase 1 spike — bypass legacy Cyclone host-tool build entirely.
   build_nano_ros_smoke
+  exit 0
+fi
+
+if [ "${BUILD_NANO_ROS_SHIM}" = "1" ]; then
+  # Phase 1 shim path — full actuation module against nros-cpp.
+  # No host CycloneDDS build needed; nano-ros bundles its own Cyclone.
+  build_actuation_module_nano_ros_shim
   exit 0
 fi
 

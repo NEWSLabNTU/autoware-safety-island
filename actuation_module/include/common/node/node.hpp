@@ -1,6 +1,16 @@
 #ifndef COMMON__NODE_HPP_
 #define COMMON__NODE_HPP_
 
+// Phase 1C router: when the nano-ros shim path is active, this header
+// re-exports the nros-cpp-backed Node + Publisher from node_nros.hpp.
+// Otherwise the legacy raw-Cyclone implementation below is selected.
+// The two are mutually exclusive (`ASI_USE_NANO_ROS` is the only
+// switch); a single per-build define controls both autoware_msgs
+// codegen and the common/node implementation.
+#ifdef ASI_USE_NANO_ROS
+#include "common/node/node_nros.hpp"
+#else
+
 // C++ Standard Library
 #include <cstddef>
 #include <string>
@@ -278,9 +288,10 @@ private:
         if (it != parameters_map_.end()) {
             result = it->second;
         }
-        
+
         return result;
     }
 };
 
+#endif  // ASI_USE_NANO_ROS
 #endif  // COMMON__NODE_HPP_

@@ -10,6 +10,10 @@ using namespace common::logger;
 
 #include "autoware/trajectory_follower_node/controller_node.hpp"
 
+#ifdef ASI_USE_NANO_ROS
+#include <nros/nros.hpp>
+#endif
+
 int main(void)
 {
     autoware::motion::control::trajectory_follower_node::Controller* controller;
@@ -31,6 +35,23 @@ int main(void)
         log_error("Failed to set time using SNTP\n");
         std::exit(1);
     }
+#endif
+
+#ifdef ASI_USE_NANO_ROS
+    // Phase 1C lifecycle. Must run AFTER configure_network() so the
+    // chosen RMW backend has a routable interface to bind to, and
+    // BEFORE `new Controller()` because the Node ctor inside calls
+    // nros::create_node() which requires the global runtime to be up.
+    log_info("Initializing nano-ros runtime (domain %d)...\n",
+             CONFIG_NROS_DOMAIN_ID);
+    {
+        auto r = nros::init("", CONFIG_NROS_DOMAIN_ID);
+        if (!r.ok()) {
+            log_error("nros::init failed: %d\n", r.raw());
+            std::exit(1);
+        }
+    }
+    std::atexit([](){ nros::shutdown(); });
 #endif
 
     log_info("Starting Controller Node...");

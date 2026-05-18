@@ -15,10 +15,23 @@ include(GNUInstallDirs)
 set(PLATFORM_ZEPHYR ON)
 target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 
-### BUILD CYCLONEDDS LIBRARY ###
-message("Building cyclonedds for ${ZEPHYR_TARGET}")
-include(cyclonedds_config.cmake)
-create_cdds_lib(${CMAKE_CURRENT_SOURCE_DIR}/../cyclonedds)
+# Phase 1 migration toggle. OFF (default) = legacy raw-Cyclone path:
+# Cyclone host tools + cdds_lib + idlc-generated autoware_msgs +
+# common/dds/* wrapper. ON = nano-ros shim path: nros-cpp library
+# (linked by the nros Zephyr module under CONFIG_NROS=y) +
+# nros_generate_interfaces-generated autoware_msgs + common/node/
+# node_nros.hpp shim + common/net/network_config.cpp.
+option(ASI_USE_NANO_ROS "Use the nano-ros nros-cpp shim path instead of raw Cyclone DDS" OFF)
+
+if(ASI_USE_NANO_ROS)
+    target_compile_definitions(app PRIVATE ASI_USE_NANO_ROS=1)
+    message(STATUS "ASI build mode: nano-ros shim (ASI_USE_NANO_ROS=ON)")
+else()
+    ### BUILD CYCLONEDDS LIBRARY ###
+    message("Building cyclonedds for ${ZEPHYR_TARGET}")
+    include(cyclonedds_config.cmake)
+    create_cdds_lib(${CMAKE_CURRENT_SOURCE_DIR}/../cyclonedds)
+endif()
 
 ### BUILD AUTOWARE MESSAGES ###
 add_subdirectory(src/autoware/autoware_msgs)
@@ -54,7 +67,11 @@ else()
     include(src/autoware/${component}/${component}.cmake)
   endforeach()
 
-  target_sources(app PRIVATE src/main.cpp src/common/dds/network_config.cpp ${APP_SOURCES})
+  if(ASI_USE_NANO_ROS)
+    target_sources(app PRIVATE src/main.cpp src/common/net/network_config.cpp ${APP_SOURCES})
+  else()
+    target_sources(app PRIVATE src/main.cpp src/common/dds/network_config.cpp ${APP_SOURCES})
+  endif()
 endif()
 
 message("=== Build Summary ===")
@@ -77,16 +94,26 @@ target_compile_options(app PRIVATE
 )
 endif()
 
+if(ASI_USE_NANO_ROS)
+    # nros-cpp + generated message headers + linkage are wired into `app`
+    # automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
+    # autoware_msgs/CMakeLists.txt invokes nros_generate_interfaces() per
+    # vendored package; generated artefacts attach to `app` directly.
+    target_include_directories(app PRIVATE
+        include
+        ${EIGEN3_INCLUDE_DIR}
+        ${APP_INCLUDE_DIRS}
+    )
+else()
+    target_include_directories(app PRIVATE
+        include
+        ${CMAKE_CURRENT_BINARY_DIR}/install/include
+        ${CycloneDDS_INCLUDE_DIR}
+        ${EIGEN3_INCLUDE_DIR}
+        ${APP_INCLUDE_DIRS}
+    )
 
-
-target_include_directories(app PRIVATE
-  include
-  ${CMAKE_CURRENT_BINARY_DIR}/install/include
-  ${CycloneDDS_INCLUDE_DIR}
-  ${EIGEN3_INCLUDE_DIR}
-  ${APP_INCLUDE_DIRS}
-)
-
-# Link actuation messages and CycloneDDS library
-target_link_directories(app PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/install/lib)
-target_link_libraries(app PRIVATE cdds_lib autoware_msgs)
+    # Link actuation messages and CycloneDDS library
+    target_link_directories(app PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/install/lib)
+    target_link_libraries(app PRIVATE cdds_lib autoware_msgs)
+endif()
