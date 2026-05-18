@@ -450,6 +450,11 @@ function build_actuation_module_nano_ros_shim() {
     exit 1
   fi
 
+  # Idempotent bootstrap: builds nros-codegen + stages serdes +
+  # templates + regen's nros-c cbindgen header. Skips work that's
+  # already done.
+  bash "${ROOT_DIR}"/scripts/bootstrap-nano-ros-shim.sh
+
   typeset CMAKE_PREFIX_PATH=""
   typeset AMENT_PREFIX_PATH=""
 

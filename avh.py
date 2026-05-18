@@ -21,7 +21,13 @@ from avh_api_async.exceptions import ApiException as AvhAPIException
 from datetime import datetime
 
 # Configuration
-FIRMWARE_PATH = 'build/actuation_module/zephyr/zephyr.elf'
+# Two build modes write to different dirs. Pick whichever exists; prefer the
+# nano-ros shim path when both are present. Override with AVH_FIRMWARE_PATH
+# or pass --firmware on the command line.
+DEFAULT_FIRMWARE_CANDIDATES = (
+    'build/actuation_module_nano_ros/zephyr/zephyr.elf',  # ./build.sh --nano-ros-shim
+    'build/actuation_module/zephyr/zephyr.elf',           # ./build.sh (legacy)
+)
 BOOT_TIMEOUT_SECONDS = 7200  # 2 hours
 STATE_CHECK_INTERVAL = 2  # seconds
 
@@ -147,12 +153,27 @@ async def find_instance(api_instance, instance_name, instance_flavor):
         sys.exit(1)
 
 
-async def upload_firmware(api_instance, instance_id):
+def resolve_firmware_path(cli_override=None):
+    """Pick the ELF to upload, preferring CLI/env override then auto-detection."""
+    if cli_override:
+        return Path(cli_override)
+    env_override = os.getenv('AVH_FIRMWARE_PATH')
+    if env_override:
+        return Path(env_override)
+    for candidate in DEFAULT_FIRMWARE_CANDIDATES:
+        if Path(candidate).exists():
+            return Path(candidate)
+    return Path(DEFAULT_FIRMWARE_CANDIDATES[0])  # let caller report missing
+
+
+async def upload_firmware(api_instance, instance_id, firmware_override=None):
     """Upload firmware to the instance"""
-    firmware_path = Path(FIRMWARE_PATH)
-    
+    firmware_path = resolve_firmware_path(firmware_override)
+
     if not firmware_path.exists():
         print(f"❌ Firmware file not found: {firmware_path}")
+        print(f"   Searched: {', '.join(DEFAULT_FIRMWARE_CANDIDATES)}")
+        print("   Override with AVH_FIRMWARE_PATH or `--firmware <path>`.")
         sys.exit(1)
         
     print(f"📤 Uploading firmware: {firmware_path}")
@@ -286,6 +307,9 @@ def parse_arguments():
     parser.add_argument('--deploy', action='store_true', help='Deploy firmware to instance')
     parser.add_argument('--reboot', action='store_true', help='Reboot instance')
     parser.add_argument('--ssh', action='store_true', help='Connect to instance console')
+    parser.add_argument('--firmware', default=None,
+                        help='Path to zephyr.elf (default: auto-detect '
+                             'shim-then-legacy, override via AVH_FIRMWARE_PATH)')
     
     args = parser.parse_args()
     
@@ -341,7 +365,7 @@ async def main(args):
         
         # Deploy new firmware
         if args.deploy:
-            await upload_firmware(api_instance, instance_id)
+            await upload_firmware(api_instance, instance_id, args.firmware)
         
         # Reboot instance
         if args.reboot:

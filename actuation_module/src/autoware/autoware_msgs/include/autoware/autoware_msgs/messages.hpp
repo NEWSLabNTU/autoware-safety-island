@@ -90,6 +90,19 @@ typedef struct TrajectoryMsg
         points.reserve(250);
         points.assign(msg->points.begin(), msg->points.end());
     }
+
+    // Convert back to the nros-generated wire type for publish().
+    // Truncates if the local vector exceeds the 250-point bound.
+    TrajectoryMsg_Raw to_raw() const
+    {
+        TrajectoryMsg_Raw raw;
+        raw.header = header;
+        const std::size_t n = points.size() > 250 ? 250 : points.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            (void)raw.points.push_back(points[i]);
+        }
+        return raw;
+    }
 } TrajectoryMsg;
 
 #else  // ASI_USE_NANO_ROS

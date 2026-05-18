@@ -481,12 +481,12 @@ void MpcLateralController::publishPredictedTraj(TrajectoryMsg & predicted_traj) 
 {
   predicted_traj.header.stamp = Clock::toRosTime(Clock::now());
   predicted_traj.header.frame_id = m_current_trajectory.header.frame_id;
-#ifndef ASI_USE_NANO_ROS
-  // Under the nano-ros shim path the publisher is typed against the
-  // nros-generated Trajectory (FixedSequence-backed), not the local
-  // std::vector wrapper. The publisher member is currently never
-  // create_publisher()'d in ASI (debug-only), so skip the dispatch
-  // until a TrajectoryMsg → TrajectoryMsg_Raw conversion helper lands.
+#ifdef ASI_USE_NANO_ROS
+  // nano-ros publisher is typed against the FixedSequence-backed
+  // wire type; convert the local std::vector wrapper before publish.
+  auto raw = predicted_traj.to_raw();
+  m_pub_predicted_traj->publish(raw);
+#else
   m_pub_predicted_traj->publish(predicted_traj);
 #endif
 }
