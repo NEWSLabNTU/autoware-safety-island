@@ -160,6 +160,10 @@ jobs:
             -DCDDS_TARGET_PREFIX="${GITHUB_WORKSPACE}/build-freertos/cdds_target_out"
           cmake --build build-freertos/app -j"$(nproc)"
 
+      - name: Phase 4 — FreeRTOS runtime smoke
+        shell: bash
+        run: ci/freertos_smoke.sh
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

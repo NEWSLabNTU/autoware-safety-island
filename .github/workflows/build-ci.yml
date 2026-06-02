@@ -113,7 +113,11 @@ jobs:
             -DCDDS_TARGET_PREFIX="${GITHUB_WORKSPACE}/build-freertos/cdds_target_out"
           cmake --build build-freertos/app -j"$(nproc)"
 
-      - name: Phase 4 — FreeRTOS CAN output tests
+      - name: Phase 4 — FreeRTOS runtime smoke
+        shell: bash
+        run: ci/freertos_smoke.sh
+
+      - name: Phase 5 — FreeRTOS CAN output tests
         shell: bash
         run: |
           set -euo pipefail
