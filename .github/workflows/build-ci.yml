@@ -1,4 +1,4 @@
-name: Build CI
+name: Build and Test
 
 on:
   pull_request:
@@ -6,13 +6,19 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Daily at 02:00 UTC
   workflow_dispatch:
+    inputs:
+      devcontainer_image:
+        description: 'Container image to use for CI jobs'
+        required: false
+        type: string
+        default: 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer'
 
 jobs:
   build-zephyr:
-    name: Zephyr Build (FVP)
+    name: Zephyr FVP
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
 
     steps:
       - name: Checkout repository
@@ -54,15 +60,24 @@ jobs:
           fi
           west zephyr-export
 
-      - name: Build (FVP target)
+      - name: Run Zephyr FVP validation
         shell: bash
-        run: ./build.sh -t fvp_baser_aemv8r_smp
+        run: .github/scripts/run-zephyr-fvp-ci.sh
+
+      - name: Upload Zephyr FVP logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-fvp-logs
+          path: build/zephyr-fvp/logs
+          if-no-files-found: ignore
+          retention-days: 7
 
   build-freertos:
-    name: FreeRTOS POSIX Simulator Build
+    name: FreeRTOS POSIX
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
 
     steps:
       - name: Checkout repository
