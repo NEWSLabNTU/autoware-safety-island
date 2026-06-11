@@ -16,9 +16,9 @@ and the imperative `main.cpp` boot disappears.
 - **nano-ros Phase 215** — board-crate import (`board.cmake` +
   `nano_ros_use_board()`; `01ef6bd1a`/`2b9a909c9` landed, remainder
   215.C–G/I open).
-- **nano-ros Phase 235** — C++ Entry-pkg embedded board adapter +
+- **nano-ros Phase 236** — C++ Entry-pkg embedded board adapter +
   real NodeContext runtime (G1+G2). ASI is the reference consumer;
-  Phase 235 lifts ASI's working `common/node` shim under the
+  Phase 236 lifts ASI's working `common/node` shim under the
   declarative seam. **This is the hard dependency** — until 235 lands,
   the C++ Entry path has no live embedded runtime.
 - Design of record: nano-ros RFC-0032 §8a, RFC-0024 (workspace layout).
@@ -44,7 +44,7 @@ and the 8 autoware components are *libraries*, not nodes:
 | topics hardcoded in `create_publisher/subscription` | `launch.xml` `<node>` + `<remap>` |
 | `main.cpp`: network → `nros::init` → `new Controller()` → spin | **C++ Entry pkg** `NROS_MAIN(<Board>, "controller_bringup:system.launch.xml")` |
 | hand-glued `EXTRA_CONF_FILE`/`DTC_OVERLAY`/`BOARD` | `nano_ros_use_board(fvp-aemv8r-smp)` (Phase 215) |
-| `common/node` shim over `nros::Node` | becomes the nano-ros NodeContext runtime (Phase 235.A/B) — upstreamed |
+| `common/node` shim over `nros::Node` | becomes the nano-ros NodeContext runtime (Phase 236.A/B) — upstreamed |
 
 ## Identity gaps (must close)
 
@@ -122,7 +122,7 @@ and the 8 autoware components are *libraries*, not nodes:
       + `nano_ros_use_board(fvp-aemv8r-smp)`; `src/main.cpp` carries
       `NROS_MAIN(<EmbeddedBoard>, "controller_bringup:system.launch.xml")`.
 - [ ] **2.C.2** Delete the imperative `actuation_module/src/main.cpp`
-      boot (network-wait moves into the Phase 235.B board adapter).
+      boot (network-wait moves into the Phase 236.B board adapter).
 - [ ] **2.C.3** `build.sh` drives the Entry pkg build; the
       `--nano-ros-shim` flag retires once the Entry path is the only
       build.
@@ -148,8 +148,8 @@ and the 8 autoware components are *libraries*, not nodes:
 ## Notes / cross-refs
 
 - Design + identity-gap analysis: `docs/design/workspace_mode.rst`.
-- nano-ros dependencies: Phase 215 (board import), Phase 235 (C++
+- nano-ros dependencies: Phase 215 (board import), Phase 236 (C++
   embedded Entry runtime) — ASI is the driving consumer of both.
 - The `common/node` shim is **not** deleted here; it is *upstreamed* —
-  it becomes the nano-ros NodeContext runtime (Phase 235.A/B). ASI
+  it becomes the nano-ros NodeContext runtime (Phase 236.A/B). ASI
   consumes the upstreamed version.

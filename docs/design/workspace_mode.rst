@@ -11,7 +11,7 @@ Design of record for moving ``actuation_module`` from the Phase 1
 single-fused-app shape onto nano-ros **workspace mode**. Tracked by
 ``docs/roadmap/phase-2-workspace-mode-migration.md``. Cross-refs
 nano-ros RFC-0024 (workspace layout), RFC-0032 §8a (C++ Entry runtime),
-and nano-ros Phases 215 + 235.
+and nano-ros Phases 215 + 236.
 
 Context
 =======
@@ -38,13 +38,13 @@ into Node pkg + Bringup pkg + C++ Entry pkg. Rationale: declarative
 topology, ``nros check`` identity validation, and a clean path to adding
 perception/planning nodes later without imperative ``main.cpp`` surgery.
 
-**D2 — ASI drives nano-ros Phase 215 + Phase 235 to completion.** The C++
+**D2 — ASI drives nano-ros Phase 215 + Phase 236 to completion.** The C++
 Entry path exists (nano-ros Phase 219) but is native-only and
 record-only — no live embedded runtime. Rather than build an ASI-local
 workaround, ASI is the **reference consumer** that forces:
 
 - Phase 215 — board-crate import (``nano_ros_use_board(fvp-aemv8r-smp)``),
-- Phase 235 — embedded (Zephyr) Board adapter + real ``NodeContext``
+- Phase 236 — embedded (Zephyr) Board adapter + real ``NodeContext``
   runtime,
 
 to land in nano-ros. ASI's working ``common/node`` shim and ``main.cpp``
@@ -52,8 +52,8 @@ boot are the **blueprint** for the upstreamed runtime (RFC-0032 §8a), so
 this is a lift-and-upstream, not greenfield.
 
 **D3 — the ``common/node`` shim is upstreamed, not deleted.** It becomes
-the nano-ros ``NodeContextOps`` runtime (Phase 235.A) + embedded
-``Board::run()`` (Phase 235.B). ASI then consumes the upstreamed version
+the nano-ros ``NodeContextOps`` runtime (Phase 236.A) + embedded
+``Board::run()`` (Phase 236.B). ASI then consumes the upstreamed version
 and drops its local copy.
 
 **D4 — single fused binary is retained.** Workspace mode does not imply
@@ -95,5 +95,5 @@ Open questions
 - **Parameter arrays** — the MPC ``std::vector<double>`` weights remain
   in a local map until ``nros::ParameterServer`` grows sequences
   (nano-ros gap, separate phase); workspace mode does not change this.
-- **Board granularity / entity storage** — owned by nano-ros Phase 235
+- **Board granularity / entity storage** — owned by nano-ros Phase 236
   (RFC-0032 §8a open items); ASI inherits whatever lands.
