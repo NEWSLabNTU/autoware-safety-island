@@ -117,15 +117,116 @@ and the 8 autoware components are *libraries*, not nodes:
 
 ### 2.C — C++ Entry pkg + board import
 
+**Precondition done (2026-06-11).** `actuation_module/west.yml` nano-ros
+pin bumped `70ab6227d` → **`19b67bed8`** (current NEWSLabNTU/nano-ros
+`main`). That HEAD carries the 2.C dependencies: Phase 236.B
+(`nros::board::ZephyrBoard` + the shared `detail::EntryNodeRuntime`),
+Phase 215 board import (`nano_ros_use_board` + `board.cmake` for
+`fvp-aemv8r-smp`), and the `nano_ros_entry` cmake + `nros codegen entry
+--lang cpp` board-key mapping (`zephyr`/`fvp-aemv8r-smp`/`armfvp` →
+`ZephyrBoard`). Verified: `<nros/main.hpp>` defines `class ZephyrBoard`,
+`cmake/NanoRosEntry.cmake` defines `nano_ros_entry(...)`, west.yml is
+valid YAML, `nros check --workspace`/`--bringup` still pass on the ASI
+workspace under the new CLI (0.5.0).
+
+**2.C.1/.2/.3 BLOCKED — stopped per the phase's "report ambiguity, don't
+guess" guard (2026-06-11).** The pin bump is the safe, correct, verified
+deliverable; the Entry-pkg authoring + `main.cpp` deletion are NOT done
+because the `nano_ros_entry` composition with ASI's build is genuinely
+ambiguous AND a nano-ros runtime capability is missing. Two distinct
+blockers, both rooted in ASI being a **monolithic Zephyr
+`project(actuation_module)` build that links 8 autoware component libs
+into the Zephyr `app` target** — unlike the simple single-Node native
+talker Entry pkgs that `nano_ros_entry` was exercised against:
+
+1. **CMake composition mismatch (resolvable, but unverified + ambiguous).**
+   - `nano_ros_entry(...)` calls `add_executable(<NAME>)`. ASI has no
+     `add_executable` — `find_package(Zephyr)` owns the bootable `app`
+     target and every source is `target_sources(app PRIVATE …)`. The only
+     viable Zephyr seam is `nano_ros_entry(NAME app … )` called AFTER
+     `find_package(Zephyr)`, relying on the fn's `if(TARGET <NAME>)`
+     branch to *append* the generated TU to `app` instead of creating a
+     second exe. No in-tree nano-ros example combines
+     `nano_ros_use_board` + `nano_ros_entry`; Phase 236.B was verified
+     only by `g++ -fsyntax-only` + codegen unit tests, NOT in a real
+     Zephyr `app` build (236.C is the open ASI-validation item). So this
+     path is plausible but unproven.
+   - The codegen emits a link-libs sidecar that does
+     `target_link_libraries(<NAME> PRIVATE controller_pkg_controller_component)`
+     — a static-lib target that exists ONLY if `controller_pkg` was built
+     via `nano_ros_node_register` as its own `project(controller_pkg)`.
+     ASI's monolithic build compiles `controller_pkg` as `APP_SOURCES`
+     into `app`; there is no `controller_pkg_controller_component` target,
+     so `include(<sidecar>)` would fail configure. The
+     `controller_pkg.cmake` comment already flags this ("cannot run inside
+     the monolithic `project(actuation_module)` build because PROJECT_NAME
+     would be `actuation_module`"). Needs a deliberate decision (see
+     options).
+
+2. **Runtime capability gap (the hard blocker — needs nano-ros work).**
+   The declarative register API on the pinned HEAD
+   (`NodeContext::{create_node, create_entity, record_callback_effect}`)
+   carries **no executable callback bodies**. `detail::EntryNodeRuntime`
+   constructs type-erased pub/sub from descriptor strings and, for a
+   timer-`Publishes` binding, *synthesizes a monotonic `std_msgs/Int32`
+   counter* — RFC-0032 §8a lists "callback bodies" as an OPEN item and the
+   Phase 236 status records "non-Int32 publishers are created live but not
+   auto-driven until the callback-body binding lands." ASI's controller is
+   the vendored `autoware::…::Controller` (MPC/PID control loop publishing
+   `AckermannControlCommand`), whose behaviour lives in C++ subscription /
+   timer callbacks wired through the legacy `common/node` shim. The
+   generated register sequence calls `__nros_component_controller_pkg_register`,
+   whose 2.A body only `create_node`s — it does NOT instantiate the
+   vendored `Controller` nor run its control loop, and `EntryNodeRuntime`
+   has no way to drive a real C++ callback. **So deleting `main.cpp` +
+   `new Controller()` today would boot a controller node that creates
+   entities but runs no control logic and publishes nothing meaningful
+   (the synthesized Int32 path doesn't even match ASI's message types).**
+   This is a nano-ros gap ASI must drive to closure (Phase 236 follow-up:
+   callback-body binding for embedded C++ Entry pkgs), exactly the
+   reference-consumer role D2 anticipates.
+
+   Because of blocker 2, `main.cpp` was **NOT deleted** — removing the
+   working imperative boot before the declarative path can run the
+   controller would break ASI's live build with no equivalent. The
+   `NROS_WORKSPACE_MODE`-gated `controller_register.cpp` stays gated OFF.
+
+**Options (decide before resuming 2.C):**
+- **(A) Wait on nano-ros callback-body binding**, then revisit the CMake
+  composition. Cleanest; keeps ASI on the working imperative boot until
+  the declarative runtime can actually run the controller. Recommended.
+- **(B) Hybrid lift now:** lift `controller_pkg` into its own
+  `project(controller_pkg)` + `nano_ros_node_register` static lib so the
+  sidecar resolves, have its `register_node` `new` the vendored Controller
+  and store it so the existing `common/node`-shim subscriptions/timer run,
+  and call `nano_ros_entry(NAME app …)` after `find_package(Zephyr)`. This
+  mixes two runtime models (NodeContext arena + legacy shim node) and
+  contradicts "controller instantiated by the generated register sequence,
+  not `new Controller()`" — a hack, not the declarative target shape.
+- **(C) Extend `EntryNodeRuntime`/`NodeContext` upstream** to bind a
+  user-supplied C++ callback/instance per node (the real 236-follow-up),
+  then ASI authors the Entry pkg cleanly. Largest nano-ros scope; the
+  correct long-term design.
+
 - [ ] **2.C.1** Author the Entry pkg: `CMakeLists.txt` with
       `nano_ros_entry(LAUNCH "controller_bringup:system.launch.xml")`
       + `nano_ros_use_board(fvp-aemv8r-smp)`; `src/main.cpp` carries
       `NROS_MAIN(<EmbeddedBoard>, "controller_bringup:system.launch.xml")`.
+      **BLOCKED** — see blockers 1 + 2 above. Entry CMake/main.cpp NOT
+      authored (would encode an unproven Zephyr-`app` composition and a
+      runtime that can't run ASI's controller).
 - [ ] **2.C.2** Delete the imperative `actuation_module/src/main.cpp`
       boot (network-wait moves into the Phase 236.B board adapter).
+      **NOT DONE** — `main.cpp` retained; deleting it before the
+      declarative path can run the control loop (blocker 2) would break
+      the live build. Note: `nros_board_network_wait()` IS available as a
+      weak hook on the new pin (ASI's `configure_network()` would strong-
+      override it) — that part of the design is ready; the boot deletion
+      is gated on blocker 2.
 - [ ] **2.C.3** `build.sh` drives the Entry pkg build; the
       `--nano-ros-shim` flag retires once the Entry path is the only
-      build.
+      build. **NOT DONE** — deferred with 2.C.1; `build.sh` left untouched
+      so the working imperative build keeps running.
 
 ### 2.D — Validation
 
