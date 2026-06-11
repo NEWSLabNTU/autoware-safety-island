@@ -8,7 +8,7 @@ using namespace common::logger;
 #include "platform/platform_config.h"
 #include "platform/platform_network.h"
 
-#include "autoware/trajectory_follower_node/controller_node.hpp"
+#include "controller_pkg/controller.hpp"
 
 #include <nros/nros.hpp>
 
@@ -20,7 +20,10 @@ using namespace common::logger;
 
 int main(void)
 {
-    autoware::motion::control::trajectory_follower_node::Controller* controller;
+    // Phase 2.A (I1) — the node is the controller_pkg Node pkg class, whose
+    // name matches its pkg dir (controller_pkg::Controller). It derives from
+    // the vendored autoware controller, so behaviour is unchanged.
+    controller_pkg::Controller* controller;
 
     log_success("-----------------------------------------");
     log_success("ARM - Autoware: Actuation Safety Island");
@@ -58,7 +61,7 @@ int main(void)
     log_info("Starting Controller Node...");
     try
     {
-        controller = new autoware::motion::control::trajectory_follower_node::Controller();
+        controller = new controller_pkg::Controller();
         int ret = controller->spin();
         if (ret != 0) {
             log_error("Failed to start Controller Node");

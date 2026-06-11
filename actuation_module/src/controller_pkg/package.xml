@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<package format="3">
+  <!--
+    Phase 2.A — nano-ros Node pkg for ASI's trajectory-follower control
+    node. The pkg directory name (`controller_pkg`) IS the pkg name and
+    matches the registered class `controller_pkg::Controller`, satisfying
+    nano-ros's `<pkg-dir>::<UserClass>` identity rule (gap I1).
+
+    Node identity (name + topics) is declared in
+    include/controller_pkg/node_identity.hpp (gaps I2/I3); the nano-ros
+    component decl is in src/controller_register.cpp (activated in
+    Phase 2.C with nano-ros Phase 235).
+  -->
+  <name>controller_pkg</name>
+  <version>0.1.0</version>
+  <description>
+    ASI trajectory-follower control node (controller_pkg::Controller),
+    carried as a nano-ros Node pkg. Wraps the vendored autoware
+    trajectory_follower_node controller; runs MPC lateral + PID
+    longitudinal control and publishes /control/trajectory_follower/control_cmd.
+  </description>
+  <maintainer email="d10922013@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- nano-ros runtime + the autoware message umbrella the node uses. -->
+  <depend>nano_ros</depend>
+  <depend>autoware_msgs</depend>
+
+  <!--
+    The 8 autoware component libraries the node links are vendored under
+    src/autoware/ as plain CMake libraries (roadmap gap I4: deps, not
+    nodes). They are not standalone ament packages, so they are linked via
+    CMake (the AUTOWARE_COMPONENTS foreach + controller_pkg.cmake) rather
+    than declared as <depend> rows here.
+  -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

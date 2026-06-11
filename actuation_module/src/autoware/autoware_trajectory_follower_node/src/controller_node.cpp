@@ -22,6 +22,12 @@
 #include "common/clock/clock.hpp"
 using namespace common::logger;
 
+// Phase 2.A — the node name (I2) and topic strings (I3) are no longer
+// inline literals here; they are sourced from the controller_pkg Node
+// pkg's single declared-defaults header. A Phase 2.B launch.xml remaps
+// them; these constants are the unchanged-behaviour `from=` defaults.
+#include "controller_pkg/node_identity.hpp"
+
 #include "platform/platform_threading.h"
 
 #include <algorithm>
@@ -37,7 +43,8 @@ static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE);
 
 namespace autoware::motion::control::trajectory_follower_node
 {
-Controller::Controller() : Node("controller", node_stack, STACK_SIZE)
+Controller::Controller()
+  : Node(controller_pkg::node_identity::DEFAULT_NODE_NAME, node_stack, STACK_SIZE)
 {
   using std::placeholders::_1;
 
@@ -79,19 +86,21 @@ Controller::Controller() : Node("controller", node_stack, STACK_SIZE)
   }
 
   // Subscribers
-  auto subscriber_steering_status = create_subscription<SteeringReportMsg>("/vehicle/status/steering_status",
+  namespace topics = controller_pkg::node_identity::topics;
+
+  auto subscriber_steering_status = create_subscription<SteeringReportMsg>(topics::SUB_STEERING_STATUS,
                                                               &autoware_vehicle_msgs_msg_SteeringReport_desc,
                                                               callbackSteeringStatus, this);
-  auto subscriber_trajectory = create_subscription<TrajectoryMsg_Raw>("/planning/scenario_planning/trajectory",
+  auto subscriber_trajectory = create_subscription<TrajectoryMsg_Raw>(topics::SUB_TRAJECTORY,
                                                               &autoware_planning_msgs_msg_Trajectory_desc,
                                                               callbackTrajectory, this);
-  auto subscriber_odometry = create_subscription<OdometryMsg>("/localization/kinematic_state",
+  auto subscriber_odometry = create_subscription<OdometryMsg>(topics::SUB_ODOMETRY,
                                                               &nav_msgs_msg_Odometry_desc,
                                                               callbackOdometry, this);
-  auto subscriber_acceleration = create_subscription<AccelWithCovarianceStampedMsg>("/localization/acceleration",
+  auto subscriber_acceleration = create_subscription<AccelWithCovarianceStampedMsg>(topics::SUB_ACCELERATION,
                                                               &geometry_msgs_msg_AccelWithCovarianceStamped_desc,
                                                               callbackAcceleration, this);
-  auto subscriber_operation_mode_state = create_subscription<OperationModeStateMsg>("/system/operation_mode/state",
+  auto subscriber_operation_mode_state = create_subscription<OperationModeStateMsg>(topics::SUB_OPERATION_MODE_STATE,
                                                               &autoware_adapi_v1_msgs_msg_OperationModeState_desc,
                                                               callbackOperationModeState, this);
     
@@ -101,7 +110,7 @@ Controller::Controller() : Node("controller", node_stack, STACK_SIZE)
   // Publishers
   if (common::can::output_mode_uses_dds(output_mode_)) {
     control_cmd_pub_ = create_publisher<ControlMsg>(
-      "/control/trajectory_follower/control_cmd", &autoware_control_msgs_msg_Control_desc);
+      topics::PUB_CONTROL_CMD, &autoware_control_msgs_msg_Control_desc);
   }
 
   if (common::can::output_mode_uses_can(output_mode_)) {
@@ -117,9 +126,9 @@ Controller::Controller() : Node("controller", node_stack, STACK_SIZE)
   }
 
   pub_processing_time_lat_ms_ =
-    create_publisher<Float64StampedMsg>("/control/trajectory_follower/lateral/debug/processing_time_ms", &tier4_debug_msgs_msg_Float64Stamped_desc);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS, &tier4_debug_msgs_msg_Float64Stamped_desc);
   pub_processing_time_lon_ms_ =
-    create_publisher<Float64StampedMsg>("/control/trajectory_follower/longitudinal/debug/processing_time_ms", &tier4_debug_msgs_msg_Float64Stamped_desc);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS, &tier4_debug_msgs_msg_Float64Stamped_desc);
 }
 
 // SUBSCRIBER CALLBACKS

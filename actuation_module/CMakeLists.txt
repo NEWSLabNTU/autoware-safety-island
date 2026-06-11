@@ -58,6 +58,11 @@ else()
     include(src/autoware/${component}/${component}.cmake)
   endforeach()
 
+  # Phase 2.A — nano-ros Node pkg carrying ASI's controller node identity
+  # (controller_pkg::Controller). Adds the controller_pkg include dir and,
+  # under NROS_WORKSPACE_MODE (Phase 2.C), the component node decl.
+  include(src/controller_pkg/controller_pkg.cmake)
+
   target_sources(app PRIVATE src/main.cpp src/common/net/network_config.cpp ${APP_SOURCES})
 endif()
 
