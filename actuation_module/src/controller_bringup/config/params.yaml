@@ -1,0 +1,20 @@
+# Phase 2.B — controller params placeholder (ROS 2 params YAML).
+#
+# Standard ROS 2 parameter-file shape: top key = node name (matches the
+# launch <node name="controller"> / system.toml [[component]].name), then
+# `ros__parameters:`. `nros plan`/codegen layers these under the resolved
+# node; per-param launch <param> overrides win.
+#
+# This is a PLACEHOLDER. The controller's substantive tuning (MPC lateral
+# weights, PID longitudinal gains) is the autoware trajectory_follower
+# parameter set. Those are NOT yet migrated here: the MPC weights are
+# std::vector<double> arrays and nano-ros's ParameterServer does not yet
+# carry sequences (workspace_mode.rst open question "Parameter arrays" —
+# tracked as a separate nano-ros gap). Until then they stay in the node's
+# local default map; only the scalar output-mode knob is surfaced here.
+controller:
+  ros__parameters:
+    # 2.B.2 — output mode. Mirror of the launch `control_output` arg so a
+    # params-file deploy can set it without editing launch.
+    # DDS_ONLY | CAN_ONLY | DDS_AND_CAN  (default DDS_ONLY).
+    control_output: "DDS_ONLY"

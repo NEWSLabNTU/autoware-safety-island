@@ -72,14 +72,48 @@ and the 8 autoware components are *libraries*, not nodes:
 
 ### 2.B — Bringup pkg (declarative topology)
 
-- [ ] **2.B.1** Author `controller_bringup/` — `package.xml` +
+- [x] **2.B.1** Author `controller_bringup/` — `package.xml` +
       `system.toml` (`[system]` rmw=cyclonedds, domain_id=0;
       `[[component]]` pkg=controller_pkg, name=controller) +
       `launch/system.launch.xml` (the `<node>` + `<remap>` set) +
       `config/` for params.
-- [ ] **2.B.2** Map ASI's DDS-only / CAN-only / DDS+CAN output modes
+      **Done 2026-06-11.** Pkg at `actuation_module/src/controller_bringup/`
+      (sibling of `controller_pkg`, RFC-0024 §11.2 `src/<pkg>` layout):
+      `package.xml` (format 3, pure-declarative — no buildtool_depend per
+      Phase 212.J.5; `exec_depend` on controller_pkg), `system.toml`
+      (`[system]` name=controller_bringup rmw=cyclonedds domain_id=0
+      default_launch=system.launch.xml; `[[component]]`
+      class=controller_pkg::Controller name=controller; `[deploy.fvp]`
+      kind=zephyr target=fvp_baser_aemv8r_smp board=fvp-aemv8r-smp),
+      `launch/system.launch.xml` (the `<node>` + 8 `<remap from=default
+      to=default>`), `config/params.yaml`. **Verified:** all files
+      well-formed (XML/TOML/YAML parse); the 8 `from=` topics diff-match
+      `node_identity.hpp` exactly (8/8). `nros check --bringup` PASSES
+      ("pure declarative"). `nros plan` parses the launch through the real
+      `play_launch_parser` and resolves the full topology (node=controller,
+      pkg=controller_pkg, exec=controller, all 8 remaps, control_output
+      param) — only remaining error is `missing-source-metadata` for the
+      not-yet-built controller_pkg component (a 2.C/devcontainer build
+      artifact, expected).
+- [x] **2.B.2** Map ASI's DDS-only / CAN-only / DDS+CAN output modes
       onto launch args (`$(var control_output)`), replacing the
       Kconfig `choice CONTROL_CMD_OUTPUT_MODE`.
+      **Done 2026-06-11 (launch-arg surface established; Kconfig deletion
+      deferred to 2.C).** `launch/system.launch.xml` declares
+      `<arg name="control_output" default="DDS_ONLY"/>` and passes it to
+      the node as `<param name="control_output" value="$(var control_output)"/>`.
+      Mapping from the retiring `choice CONTROL_CMD_OUTPUT_MODE`:
+      `DDS_ONLY` ⇒ `CONTROL_CMD_OUTPUT_DDS_ONLY` (default),
+      `CAN_ONLY` ⇒ `CONTROL_CMD_OUTPUT_CAN_ONLY`,
+      `DDS_AND_CAN` ⇒ `CONTROL_CMD_OUTPUT_DDS_AND_CAN`. Per the
+      `workspace_mode.rst` open question, CAN is a hardware sink (not a ROS
+      topic), so the mode is a node **param**, not a `<remap>` — it stays
+      outside ROS-node identity. The derived Kconfig booleans
+      (`CONTROL_CMD_DDS_OUTPUT`, `CONTROL_CMD_CAN_OUTPUT`) become the
+      node's interpretation of the param value. `config/params.yaml`
+      mirrors the knob for a params-file deploy. The Kconfig `choice`
+      itself is NOT yet deleted (2.C scope); only the launch-arg surface
+      is established here.
 
 ### 2.C — C++ Entry pkg + board import
 

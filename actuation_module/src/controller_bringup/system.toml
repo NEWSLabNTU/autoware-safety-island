@@ -1,0 +1,45 @@
+# Phase 2.B — ASI controller system descriptor (nano-ros Bringup pkg).
+#
+# Schema: nano-ros `system.toml` v0.1 (FROZEN) —
+# packages/cli/docs/system-toml-schema-v0.1.md / RFC-0004 §4.
+# Pure-declarative: no Cargo.toml / CMakeLists.txt / src/ in this pkg.
+#
+# This file is the SSoT for the system's identity (name), RMW backend,
+# ROS domain, default launch file, the composed node set, and the FVP
+# deploy target. It replaces the imperative knobs that used to live in
+# main.cpp + Kconfig.
+
+[system]
+# MUST equal package.xml <name> (nros check cross-validates).
+name           = "controller_bringup"
+# ASI runs Cyclone DDS on Zephyr (Phase 1 runtime). A [deploy.<t>] block
+# may override per target; this is the system default.
+rmw            = "cyclonedds"
+# Default ROS_DOMAIN_ID. Embedded targets (FVP/Zephyr) BAKE this at build
+# time (compile-time domain — see nano-ros CLAUDE.md "Domain ID").
+domain_id      = 0
+# Picked when the caller does not pass --launch / a `:<file>` suffix.
+default_launch = "system.launch.xml"
+
+# The single ROS node ASI runs today. The 8 autoware component libraries
+# are deps the Node pkg links, NOT nodes (roadmap gap I4), so they do not
+# appear here.
+#
+#   pkg   — the Node pkg's package.xml <name> (must be an <exec_depend>).
+#   class — fully-qualified component class; satisfies the I1 identity
+#           rule `<pkg-dir>::<UserClass>` == controller_pkg::Controller.
+#   name  — instance / node name (I2). The launch <node name=> mirrors it;
+#           it overrides node_identity.hpp's DEFAULT_NODE_NAME = "controller".
+[[component]]
+pkg   = "controller_pkg"
+class = "controller_pkg::Controller"
+name  = "controller"
+
+# FVP deploy target — ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr.
+# board cross-refs the `nros-board-fvp-aemv8r-smp` crate (Phase 215
+# nano_ros_use_board(fvp-aemv8r-smp), wired by the Phase 2.C Entry pkg).
+[deploy.fvp]
+kind   = "zephyr"
+target = "fvp_baser_aemv8r_smp"
+board  = "fvp-aemv8r-smp"
+launch = "system.launch.xml"

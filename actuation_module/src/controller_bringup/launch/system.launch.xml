@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  Phase 2.B — ASI controller launch topology.
+
+  ROS 2 launch XML schema, VERBATIM (nano-ros RFC-0024 §11.5). Stock
+  nav2 / Autoware launch.xml pastes in and Just Works modulo unsupported
+  tags. Supported here: <arg>, <node>, <param>, <remap>, $(var ...).
+
+  This file is the declarative replacement for the imperative wiring that
+  used to live in main.cpp:
+    * <node name="controller">   — I2: the node name (was the
+      `Node("controller", …)` ctor literal, now node_identity.hpp's
+      DEFAULT_NODE_NAME, overridden here).
+    * <remap from=… to=…>        — I3: the 5 subscription + 3 publisher
+      topics. Every `from=` is the node's declared default (the exact
+      string in controller_pkg/include/controller_pkg/node_identity.hpp);
+      `to=` defaults to the same string so behaviour is UNCHANGED. The
+      remap rows are the override points — edit `to=` to retopic without
+      touching C++.
+
+  2.B.2 — output-mode launch-arg surface. ASI's DDS-only / CAN-only /
+  DDS+CAN selection used to be the Kconfig `choice CONTROL_CMD_OUTPUT_MODE`.
+  It is lifted to the `control_output` launch arg below and passed to the
+  node as a param. The CAN path is a hardware sink, NOT a ROS topic, so it
+  is expressed as a node param rather than a <remap> (RFC workspace_mode
+  open question — "the CAN path stays outside the ROS-node identity").
+-->
+<launch>
+  <!-- 2.B.2 — output mode. Values: DDS_ONLY | CAN_ONLY | DDS_AND_CAN.
+       Maps the retiring Kconfig choice CONTROL_CMD_OUTPUT_MODE:
+         DDS_ONLY    ⇒ CONTROL_CMD_OUTPUT_DDS_ONLY    (default)
+         CAN_ONLY    ⇒ CONTROL_CMD_OUTPUT_CAN_ONLY
+         DDS_AND_CAN ⇒ CONTROL_CMD_OUTPUT_DDS_AND_CAN -->
+  <arg name="control_output" default="DDS_ONLY"/>
+
+  <node pkg="controller_pkg" exec="controller" name="controller">
+    <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
+    <param name="control_output" value="$(var control_output)"/>
+
+    <!-- I3 subscriptions (5) — from= MUST match node_identity.hpp exactly. -->
+    <remap from="/vehicle/status/steering_status" to="/vehicle/status/steering_status"/>
+    <remap from="/planning/scenario_planning/trajectory" to="/planning/scenario_planning/trajectory"/>
+    <remap from="/localization/kinematic_state" to="/localization/kinematic_state"/>
+    <remap from="/localization/acceleration" to="/localization/acceleration"/>
+    <remap from="/system/operation_mode/state" to="/system/operation_mode/state"/>
+
+    <!-- I3 publishers (3) — from= MUST match node_identity.hpp exactly. -->
+    <remap from="/control/trajectory_follower/control_cmd" to="/control/trajectory_follower/control_cmd"/>
+    <remap from="/control/trajectory_follower/lateral/debug/processing_time_ms" to="/control/trajectory_follower/lateral/debug/processing_time_ms"/>
+    <remap from="/control/trajectory_follower/longitudinal/debug/processing_time_ms" to="/control/trajectory_follower/longitudinal/debug/processing_time_ms"/>
+  </node>
+</launch>
