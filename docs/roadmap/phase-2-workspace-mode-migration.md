@@ -228,6 +228,25 @@ talker Entry pkgs that `nano_ros_entry` was exercised against:
       build. **NOT DONE** — deferred with 2.C.1; `build.sh` left untouched
       so the working imperative build keeps running.
 
+**Blocker resolution (2026-06-13) — nano-ros Phase 242 / RFC-0044.** The
+2.C rework stopped at a structural entanglement: the vendored Autoware
+`Controller` is a **real `rclcpp`-shaped node** (IS-A node; its ctor creates
+5 subs / 3 pubs + declares `std::vector<double>` MPC weights; compute is
+private), which **RFC-0043's default-construct + `configure(Node&)` component
+shape cannot host** (it would default-construct the node + spawn a second
+runtime at static-init; the MPC/PID also need a `Node&` + vector params that
+`nros::ParameterServer` (scalar-only) can't supply). Decision (2026-06-13):
+**make nano-ros rclcpp-faithful** rather than refactor the vendored control
+math — nano-ros **RFC-0044** (`nros::ComponentNode`: IS-A node, ctor receives
+the executor node handle + wires entities/params, typed member callbacks,
+abort-on-fatal) + parameter sequences, tracked by **nano-ros phase-242**. ASI
+2.C resumes as **phase-242.5** once that lands: `controller_pkg::Controller`
+derives `nros::ComponentNode`, drops the legacy `common/node` shim base, and
+its ctor works ~unchanged (no control-math rewrite). The nano-ros-side Zephyr
+typed carrier (phase-240.8) already landed; phase-242 is the remaining
+dependency. **The pin bump to a 240.8-carrying nano-ros stays; the controller
+rework + `main.cpp` deletion wait on phase-242.**
+
 ### 2.D — Validation
 
 - [ ] **2.D.1** `nros check` passes on the workspace (identity rule,
