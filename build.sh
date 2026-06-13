@@ -127,23 +127,26 @@ function build_actuation_module() {
   # alias). There is no `--nano-ros-shim` build mode any more — this is the only
   # actuation build path.
   #
-  # The bootstrap below is still required: it builds the host `nros-codegen`
-  # + stages serdes/templates so `nros_generate_interfaces()` can emit the
-  # autoware message bindings (renamed legacy script; it no longer wires any
-  # runtime shim). Skips work already done.
+  # The bootstrap below builds the host `nros` CLI (POST-218 codegen +
+  # orchestration tool, from modules/nros/packages/cli/) so
+  # `nros_generate_interfaces()` can emit the autoware message bindings and
+  # `nano_ros_node_register()` can run the Entry codegen. Skips work already
+  # done. (Full host provisioning — Zephyr SDK, west update — is
+  # scripts/bootstrap-asi.sh; this just ensures the CLI binary.)
   bash "${ROOT_DIR}"/scripts/bootstrap-nano-ros-shim.sh
 
   typeset CMAKE_PREFIX_PATH=""
   typeset AMENT_PREFIX_PATH=""
 
-  # Pass the resolved host path of nros-codegen to CMake.
+  # Pass the resolved host path of the `nros` CLI to CMake.
   # `nano_ros_overlay.conf` hard-codes a container-relative
   # `CONFIG_NROS_CODEGEN_TOOL` for the legacy /autoware-safety-island
   # bind-mount layout, which fails when build.sh runs directly on the
   # host (fixuid devcontainer or no container at all). The
-  # `_NANO_ROS_CODEGEN_TOOL` cache var is the documented override
-  # (see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake).
-  local nros_codegen="${ROOT_DIR}/modules/nros/build/install/bin/nros-codegen"
+  # `_NANO_ROS_CODEGEN_TOOL` cache var is the documented override — the
+  # Zephyr module resolves the `nros` CLI from it (then $NROS_CLI, then PATH);
+  # see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.
+  local nros_codegen="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
 
   local build_args=(
     -DZEPHYR_TARGET="${ZEPHYR_TARGET}"

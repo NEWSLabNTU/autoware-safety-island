@@ -2,124 +2,74 @@
 # Copyright (c) 2026, NEWSLab NTU.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Bootstrap the nano-ros shim build chain inside the dev container.
-# Idempotent — run as often as you like.
+# Build the in-tree nano-ros `nros` CLI — the codegen + orchestration tool
+# `nros_generate_interfaces()` / `nano_ros_node_register()` shell out to.
 #
-# Steps:
-#   1. Verify nano-ros checkout (west-fetched at modules/nros/).
-#   2. Ensure rustup + cargo on PATH (install if missing).
-#   3. Init nano-ros codegen submodule (packages/codegen → colcon-nano-ros).
-#   4. Drop nros-cli{,-core} from the codegen Cargo workspace (they
-#      reference a sibling `play_launch` tree not in our pin).
-#   5. cargo build --release -p nros-codegen-c → modules/nros/build/install/bin/nros-codegen.
-#   6. Stage nros-serdes crate + cmake templates under the install prefix.
+# POST-218: the codegen tool is the `nros` CLI shipped from the in-tree
+# sub-workspace at `modules/nros/packages/cli/` (Phase 218 monorepo merge).
+# This REPLACES the pre-218 path that built a separate `nros-codegen` binary
+# from the now-retired `packages/codegen` submodule (Phase 195.D / 218) and
+# staged serdes/templates — the `nros` CLI bundles the base interfaces +
+# templates itself.
 #
-# After this script runs, `./build.sh --nano-ros-shim` finds everything
-# nros_generate_interfaces() needs without manual intervention.
+# Output: `modules/nros/packages/cli/target/release/nros`.
+# build.sh passes it to CMake as `-D_NANO_ROS_CODEGEN_TOOL=<path>` (the
+# documented override; the Zephyr module's nros_generate_interfaces.cmake +
+# NanoRosEntry.cmake resolve `nros` from that var, then $NROS_CLI, then PATH).
+#
+# Idempotent — re-run freely. Invoked by scripts/bootstrap-asi.sh and build.sh.
 
 set -euo pipefail
 
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 SRC="${ROOT}/modules/nros"
-PREFIX="${SRC}/build/install"
+CLI_MANIFEST="${SRC}/packages/cli/Cargo.toml"
+CLI_BIN="${SRC}/packages/cli/target/release/nros"
 
 if [[ ! -d "${SRC}" ]]; then
-    echo "[bootstrap] modules/nros/ missing — run \`west update\` first." >&2
+    echo "[bootstrap-nros] modules/nros/ missing — run \`west update\` first." >&2
+    exit 1
+fi
+if [[ ! -f "${CLI_MANIFEST}" ]]; then
+    echo "[bootstrap-nros] ${CLI_MANIFEST} missing — the nano-ros pin predates the" >&2
+    echo "                 Phase 218 in-tree CLI (packages/cli/). Bump the west.yml" >&2
+    echo "                 nano-ros revision to a post-218 commit." >&2
     exit 1
 fi
 
-# ---- safe.directory for all the west-managed checkouts ----
+# safe.directory for the west-managed checkouts (host or container).
 git config --global --add safe.directory '*' || true
 
-# ---- rustup ----
+# ---- rustup / cargo ----
 if ! command -v cargo >/dev/null; then
-    echo "[bootstrap] Installing rustup (stable toolchain, minimal profile)..."
+    echo "[bootstrap-nros] Installing rustup (stable toolchain, minimal profile)..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal >/dev/null
 fi
 export PATH="${HOME}/.cargo/bin:${PATH}"
 command -v cargo >/dev/null || {
-    echo "[bootstrap] cargo not on PATH after rustup install" >&2; exit 1; }
+    echo "[bootstrap-nros] cargo not on PATH after rustup install" >&2; exit 1; }
 
-# ---- codegen submodule ----
-if [[ ! -f "${SRC}/packages/codegen/packages/Cargo.toml" ]]; then
-    echo "[bootstrap] Initialising packages/codegen submodule..."
-    git -C "${SRC}" submodule update --init packages/codegen
+# ---- build the nros CLI (equivalent to `just setup-cli`) ----
+# The CLI sub-workspace has its own Cargo.toml/Cargo.lock (host-only deps kept
+# outside the runtime no_std view — Phase 214.F.3); build it standalone.
+echo "[bootstrap-nros] Building the nros CLI (release)..."
+cargo build --release --manifest-path "${CLI_MANIFEST}" --bin nros
+
+if [[ ! -x "${CLI_BIN}" ]]; then
+    echo "[bootstrap-nros] expected ${CLI_BIN} after build — not found." >&2
+    exit 1
 fi
 
-# ---- workspace cleanup ----
-# nros-cli + nros-cli-core reference a `play_launch` sibling tree that
-# isn't part of our checkout. Drop them from the codegen workspace so
-# `cargo build -p nros-codegen-c` resolves cleanly. Idempotent.
-WORKSPACE_TOML="${SRC}/packages/codegen/packages/Cargo.toml"
-if grep -q '"nros-cli-core"' "${WORKSPACE_TOML}" 2>/dev/null; then
-    sed -i '/"nros-cli-core",/d; /"nros-cli",/d' "${WORKSPACE_TOML}"
-    echo "[bootstrap] Dropped nros-cli{,-core} from codegen workspace members."
-fi
-
-# ---- nros-codegen build ----
-mkdir -p "${PREFIX}/bin"
-if [[ ! -x "${PREFIX}/bin/nros-codegen" ]] \
-   || [[ "${SRC}/packages/codegen/packages/nros-codegen-c/src/main.rs" \
-         -nt "${PREFIX}/bin/nros-codegen" ]]; then
-    echo "[bootstrap] Building nros-codegen-c..."
-    (
-        cd "${SRC}/packages/codegen/packages"
-        cargo build --release -p nros-codegen-c
-        cp target/release/nros-codegen "${PREFIX}/bin/"
-    )
-fi
-
-# ---- nros-serdes standalone staging ----
-SERDES_DIR="${PREFIX}/share/nano-ros/rust/nros-serdes"
-mkdir -p "${SERDES_DIR%/*}"
-if [[ ! -d "${SERDES_DIR}" ]] \
-   || [[ "${SRC}/packages/core/nros-serdes/src/lib.rs" \
-         -nt "${SERDES_DIR}/Cargo.toml" ]]; then
-    echo "[bootstrap] Staging nros-serdes crate..."
-    rm -rf "${SERDES_DIR}"
-    cp -r "${SRC}/packages/core/nros-serdes" "${SERDES_DIR}"
-    # Standalone Cargo.toml (no workspace inheritance — Cargo.workspace
-    # dependencies don't resolve outside the parent workspace).
-    cat > "${SERDES_DIR}/Cargo.toml" <<'EOF'
-[package]
-name = "nros-serdes"
-version = "0.1.0"
-edition = "2024"
-license = "MIT OR Apache-2.0"
-[features]
-default = ["std"]
-std = []
-alloc = []
-[dependencies]
-heapless = "0.8"
-[lib]
-path = "src/lib.rs"
-EOF
-fi
-
-# ---- cmake templates ----
-TEMPLATE_DIR="${PREFIX}/lib/cmake/NanoRos"
-mkdir -p "${TEMPLATE_DIR}"
-cp "${SRC}/packages/codegen/packages/nros-codegen-c/cmake/cpp_ffi_Cargo.toml.in" \
-   "${TEMPLATE_DIR}/"
-cp "${SRC}/packages/codegen/packages/nros-codegen-c/cmake/ffi_lib_rs.in" \
-   "${TEMPLATE_DIR}/"
-
-# ---- nros-c source-tree header regen ----
-# nros-c's build.rs writes `packages/core/nros-c/include/nros/nros_generated.h`
-# (cbindgen output). Trigger once so the file exists for the Zephyr build's
-# include path. `cargo check` is enough — no need to compile full target.
+# ---- nros-c cbindgen header (source-tree include the Zephyr build needs) ----
+# nros-c's build.rs emits include/nros/nros_generated.h (cbindgen). Trigger
+# once so the Zephyr include path has it. `cargo check` suffices.
 if [[ ! -f "${SRC}/packages/core/nros-c/include/nros/nros_generated.h" ]]; then
-    echo "[bootstrap] Generating nros-c cbindgen header..."
-    (
-        cd "${SRC}"
-        cargo check --release -p nros-c --no-default-features \
-            --features 'rmw-cffi,platform-zephyr,ros-humble,std' >/dev/null
-    )
+    echo "[bootstrap-nros] Generating nros-c cbindgen header..."
+    ( cd "${SRC}" && cargo check --release -p nros-c --no-default-features \
+        --features 'rmw-cffi,platform-zephyr,ros-humble,std' >/dev/null )
 fi
 
-echo "[bootstrap] Ready:"
-echo "  nros-codegen: ${PREFIX}/bin/nros-codegen"
-echo "  serdes:       ${SERDES_DIR}"
-echo "  templates:    ${TEMPLATE_DIR}"
+echo "[bootstrap-nros] Ready:"
+echo "  nros CLI: ${CLI_BIN}"
+echo "  (pass via -D_NANO_ROS_CODEGEN_TOOL=${CLI_BIN}, or put on PATH / \$NROS_CLI)"
