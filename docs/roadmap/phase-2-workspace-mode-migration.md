@@ -247,6 +247,52 @@ typed carrier (phase-240.8) already landed; phase-242 is the remaining
 dependency. **The pin bump to a 240.8-carrying nano-ros stays; the controller
 rework + `main.cpp` deletion wait on phase-242.**
 
+**Phase 242.5 attempt (2026-06-13) — NEW WALL: `ComponentNode` ships no
+rclcpp value-returning parameter surface.** Pin is now at nano-ros
+`398395653` (phase-242 / RFC-0044 landed). `nros::ComponentNode`
+(`packages/core/nros-cpp/include/nros/component_node.hpp`) is present and the
+IS-A-node + typed-member-callback shape fits ASI's controller ctor cleanly
+(5 subs / 3 pubs / 1 timer migrate 1:1). **But the migration is blocked at the
+MPC/PID construction step.** The vendored `MpcLateralController(Node& node)` /
+`PidLongitudinalController(Node& node)` ctors — plus
+`autoware::vehicle_info_utils::VehicleInfoUtils(Node&)` — call
+`node.declare_parameter<T>(name, default) -> T`, `node.get_parameter<T>(name)
+-> T`, and `node.has_parameter(name)` across **151 call sites** in the control
+math (4 of them `declare_parameter<std::vector<double>>(name, {…})` with no
+compile-time capacity). ASI's `common/node` shim supplies exactly this
+rclcpp-shaped, value-returning surface via a node-local
+`std::unordered_map<std::string, variant>`.
+
+The landed nano-ros provides **no** value-returning parameter API on any node
+type: `nros::ComponentNode` and `nros::Node` expose zero parameter methods;
+`rclcpp_compat.hpp`'s `rclcpp::Node` has none either. The only parameter store
+is the **separate** `nros::ParameterServer<Cap>` object whose API is
+*Result-returning* (`Result declare_parameter(name, T)` /
+`Result get_parameter(name, T& out)`), with sequences gated on a compile-time
+`Seq<T, N>` capacity (`declare_parameter<double, N>`). Passing the
+`ComponentNode` (or its `node()`) to the MPC/PID — as 242.5 intended — does
+not compile: neither type has `declare_parameter`/`get_parameter`/
+`has_parameter`, the return shape is wrong (value vs `Result`), and the bare
+`std::vector<double>` declares have no `N`. Adapting the 151 call sites would
+be a control-math rewrite, which 242.5 forbids.
+
+**Missing nano-ros API (the precise gap to close before 242.5 can resume):**
+an rclcpp-faithful, value-returning parameter surface **on `ComponentNode`**
+(or `Node`), backed internally by `ParameterServer`:
+`template<typename T> T declare_parameter(const std::string& name, const T&
+default_value = T{});`, `template<typename T> T get_parameter(const
+std::string& name) const;`, `bool has_parameter(const std::string&) const;` —
+with `T` covering `std::vector<double>` (and the other vector types) under
+`NROS_CPP_STD` **without** a caller-supplied compile-time capacity, so the
+vendored `declare_parameter<std::vector<double>>(name, {…})` call shape
+compiles unchanged. RFC-0044's blocker-resolution promise ("ctor works
+~unchanged, no control-math rewrite") requires this facade; phase-242 landed
+the entity/callback half (`ComponentNode`) and the storage half
+(`ParameterServer` + `Seq`) but **not** the value-returning rclcpp parameter
+bridge that joins them. **Reported as nano-ros feedback (D2); 242.5 stays
+blocked, `main.cpp` + `controller_register.cpp` retained, control math
+untouched.**
+
 ### 2.D — Validation
 
 - [ ] **2.D.1** `nros check` passes on the workspace (identity rule,
