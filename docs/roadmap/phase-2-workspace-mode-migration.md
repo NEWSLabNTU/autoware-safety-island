@@ -293,6 +293,73 @@ bridge that joins them. **Reported as nano-ros feedback (D2); 242.5 stays
 blocked, `main.cpp` + `controller_register.cpp` retained, control math
 untouched.**
 
+**Phase 242.5 attempt (2026-06-13) — FOURTH WALL: the value-returning param
+facade is `const char*`-only; the vendored control math passes `std::string`
+names.** Pin is now at nano-ros `843cbddef` (the 242.7 value-returning
+`ComponentNode` parameter facade landed). The facade
+(`packages/core/nros-cpp/include/nros/component_node.hpp`) closes the THIRD
+wall for the literal-keyed call sites — `T declare_parameter<T>(const char*
+name, T default)`, `T get_parameter<T>(const char*) const`, `bool
+has_parameter(const char*) const`, scalar + `std::vector<T>` under
+`NROS_CPP_STD` with no caller-supplied `N`. The structural migration otherwise
+maps cleanly (verified by inspection against the real header):
+- base-swap the vendored `autoware::…::trajectory_follower_node::Controller`
+  from the shim `Node` to `nros::ComponentNode` (ctor `Controller(nros::NodeHandle)
+  : ComponentNode(h, DEFAULT_NODE_NAME)`); `controller_pkg::Controller` derives
+  it + `NROS_COMPONENT(Controller)`;
+- the 5 static `callbackX(const Msg*, void*)` → typed member callbacks `void
+  on_X(const Msg&)` via `create_subscription<Msg, Controller, &Controller::on_X>`;
+- the `create_timer(period_ms, lambda)` → `create_timer<Controller,
+  &Controller::callbackTimerControl>(period_ms)`;
+- the 3 shim-wrapper `std::shared_ptr<Publisher<M>>` members → `nros::Publisher<M>`
+  by value (the `->publish()`-returns-bool sites become `Result`-checked);
+- MPC/PID/`VehicleInfoUtils` ctor param `Node&` → `nros::ComponentNode&` (a type
+  swap — `*this` IS-A `ComponentNode` after the base-swap).
+
+**But the migration does not compile, blocked at the MPC parameter call sites
+that key parameters by `std::string`, not a string literal.** The 242.7 facade
+takes `const char* name`; `std::string` does **not** implicitly convert to
+`const char*`. The vendored MPC control math (preserved verbatim, must NOT be
+rewritten) passes `std::string` names at live sites:
+- `autoware_mpc_lateral_controller/src/mpc_lateral_controller.cpp:208-211` —
+  `node.declare_parameter<double>(ns + "update_vel_threshold", 5.56)` (and 3
+  siblings), where `const std::string ns = "steering_offset."` so `ns + "…"` is
+  a `std::string` rvalue;
+- same file `:41-43` — the `dp_int`/`dp_bool`/`dp_double` lambdas take
+  `const std::string & s` and call `node.declare_parameter<int>(s)` (a
+  `std::string`); a non-generic lambda's body is type-checked at definition, so
+  these break even where the lambda is unused.
+
+The shim `Node` (`actuation_module/include/common/node/node_nros.hpp`) declares
+`declare_parameter`/`get_parameter`/`set_parameter`/`has_parameter` with
+`const std::string & name` — which is exactly why the vendored MPC compiles
+today. The 242.7 facade dropped the `std::string` surface, so the promise that
+"the vendored `declare_parameter<T>(…)` call sites compile unchanged against a
+`ComponentNode&`" does **not** hold for the `std::string`-keyed sites.
+
+A secondary (same-root) coupling: MPC's debug-publisher members
+(`mpc_lateral_controller.hpp:48-50`, `mpc.hpp:223-224`) are typed
+`std::shared_ptr<Publisher<M>>`, referencing the shim's global `Publisher<M>`
+alias; dropping the shim base also removes that alias. (The assignments are
+commented out, but the member declarations still need the type.) This is the
+same shim-surface coupling the facade did not cover.
+
+**Missing nano-ros API (the precise gap to close before 242.5 can resume):**
+`std::string`-accepting overloads of the value-returning parameter facade **on
+`ComponentNode`** (and ideally `Node`), under `NROS_CPP_STD`, mirroring the
+shim `Node`'s `const std::string &` surface and forwarding to the existing
+`const char*` overloads via `.c_str()`:
+`template<typename T> T declare_parameter(const std::string& name, const T&
+default_value = T{});`, `template<typename T> T get_parameter(const
+std::string& name) const;`, `bool has_parameter(const std::string&) const;` —
+covering scalar `T` and `std::vector<T>`. With those, the vendored
+`node.declare_parameter<int>(s)` / `node.declare_parameter<double>(ns + "…")`
+sites compile unchanged (no control-math edit). **Reported as nano-ros feedback
+(D2); 242.5 stays blocked, `main.cpp` + `controller_register.cpp` retained,
+control math untouched. No vendored, cmake, build.sh, or `main.cpp` edits were
+made on this attempt — the base-swap would not compile until the facade grows
+the `std::string` surface.**
+
 ### 2.D — Validation
 
 - [ ] **2.D.1** `nros check` passes on the workspace (identity rule,
