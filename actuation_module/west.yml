@@ -45,6 +45,15 @@ manifest:
     - name: zephyr
       revision: 339cd5a45fd2ebba064ef462b71c657336ca0dfe
       west-commands: scripts/west-commands.yml
+    # Zephyr Rust language support — REQUIRED: nano-ros's runtime is a Rust
+    # staticlib linked into the Zephyr app via this module; without it
+    # CONFIG_RUST is undefined and the nano-ros board conf's CONFIG_RUST(_ALLOC)
+    # abort kconfig. Pin matches nano-ros's own west.yml (the supported
+    # zephyr 3.7 x zephyr-lang-rust pair); bump in lockstep with the zephyr rev.
+    - name: zephyr-lang-rust
+      remote: upstream
+      revision: 404fcefdbab0f2711cd342a1fab9d2eda52a1ba9
+      path: modules/lang/rust
 
   group-filter:
     - -ci

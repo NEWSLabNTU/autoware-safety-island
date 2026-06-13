@@ -34,7 +34,7 @@ die()  { echo -e "\033[0;31m[asi-bootstrap]\033[0m $*" >&2; exit 1; }
 # The build needs these on PATH; only an OS package manager (root) provides them.
 declare -A PKG=(
   [cmake]=cmake [ninja]=ninja-build [dtc]=device-tree-compiler
-  [wget]=wget [xz]=xz-utils [python3]=python3 [pip3]=python3-pip [pixz]=pixz
+  [wget]=wget [xz]=xz-utils [python3]=python3 [pip3]=python3-pip
 )
 missing_apt=()
 for cmd in "${!PKG[@]}"; do

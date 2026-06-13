@@ -50,6 +50,17 @@ export PATH="${HOME}/.cargo/bin:${PATH}"
 command -v cargo >/dev/null || {
     echo "[bootstrap-nros] cargo not on PATH after rustup install" >&2; exit 1; }
 
+# ---- init the CLI's nested git submodules ----
+# The CLI sub-workspace path-depends on two nano-ros submodules
+# (packages/cli/third-party/{ros-launch-manifest,play_launch_parser}). west
+# fetches the nano-ros repo but NOT its nested submodules, so cargo fails with
+# "failed to read .../third-party/ros-launch-manifest/types/Cargo.toml" unless
+# they are initialised here.
+echo "[bootstrap-nros] Initialising the CLI's third-party submodules..."
+git -C "${SRC}" submodule update --init --recursive \
+    packages/cli/third-party/ros-launch-manifest \
+    packages/cli/third-party/play_launch_parser
+
 # ---- build the nros CLI (equivalent to `just setup-cli`) ----
 # The CLI sub-workspace has its own Cargo.toml/Cargo.lock (host-only deps kept
 # outside the runtime no_std view — Phase 214.F.3); build it standalone.
