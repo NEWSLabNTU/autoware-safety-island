@@ -474,6 +474,26 @@ include scope are exactly what the devcontainer build exercises.
       Entry path, observed by stock `ros2 topic echo` (Phase-1 gate 1.9
       parity, now through workspace mode).
 
+> **Real-run checkpoint (2026-06-13).** A full bare-host run
+> (`scripts/bootstrap-asi.sh` → `nros setup board` → `./build.sh`)
+> **validated the whole chain**: host provision → `west update` → Zephyr SDK
+> 0.16.3 → `nros` CLI → `nano_ros_use_board` import → `find_package(Zephyr)` →
+> conf merge → **`nros setup board` provisioning** (zephyr patches +
+> `rustup target add aarch64-unknown-none` + RUST_SUPPORTED overlay +
+> cyclonedds fetch) → Kconfig configures clean → **`nros-c` Rust runtime
+> cross-compiles for `aarch64-unknown-none`** → into the autoware C++ compile.
+> Nine consumer-surfaced nano-ros gaps were found + fixed along the way
+> (Zephyr typed carrier, rclcpp-faithful component model, the param facade
+> family, the local-build provisioning chain, 215.J downstream provisioning,
+> the board-conf `MAX_PTHREAD_COUNT` symbol). **Current wall:**
+> `nano_ros_node_register`'s component lib is a plain `add_library(STATIC)` —
+> on Zephyr it does NOT inherit the Zephyr compile context
+> (`CONFIG_STD_CPP17`, zephyr include paths/defines), so the vendored autoware
+> C++ (which compiled in Phase-1's monolithic `app`) fails (`alt_geometry.hpp`
+> iterator-traits). Fix in nano-ros: the Zephyr component lib must be a
+> `zephyr_library` / inherit `zephyr_interface` + the C++ standard. Then 2.D.2
+> (FVP boot) is the remaining gate (+ any vendored-autoware-on-embedded nits).
+
 ## Acceptance
 
 - [x] `actuation_module` is a nano-ros workspace: Node pkg
