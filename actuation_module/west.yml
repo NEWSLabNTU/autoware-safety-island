@@ -42,8 +42,13 @@ manifest:
       revision: 17c74a2a1
       path: modules/nros
       import: false
+    # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
+    # (NROS_BOARD_ZEPHYR_LINE = 3.7) and its own west.yml zephyr pin. The
+    # nano-ros platform-zephyr net code targets the 3.7+ net API
+    # (net_if_addr.ipv4 wrapper, ip_mreq); an older line (3.5.x) drifts at
+    # compile. Bump in lockstep with the zephyr-lang-rust rev below.
     - name: zephyr
-      revision: 339cd5a45fd2ebba064ef462b71c657336ca0dfe
+      revision: v3.7.0
       west-commands: scripts/west-commands.yml
     # Zephyr Rust language support — REQUIRED: nano-ros's runtime is a Rust
     # staticlib linked into the Zephyr app via this module; without it

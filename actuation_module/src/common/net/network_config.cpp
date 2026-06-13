@@ -86,19 +86,23 @@ static void handler(
   for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
     char buf[NET_IPV4_ADDR_LEN];
 
-    if (iface->config.ip.ipv4->unicast[i].addr_type != NET_ADDR_DHCP) {
+    // Zephyr 3.7 (HWMv2) wraps each IPv4 unicast entry in
+    // `struct net_if_addr_ipv4` — the `net_if_addr` moved under `.ipv4`, and
+    // the netmask is now per-address (`.netmask`), not a single
+    // `net_if_ipv4.netmask`.
+    if (iface->config.ip.ipv4->unicast[i].ipv4.addr_type != NET_ADDR_DHCP) {
       continue;
     }
 
     log_info("  IP address: %s\n",
       net_addr_ntop(AF_INET,
-          &iface->config.ip.ipv4->unicast[i].address.in_addr,
+          &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
               buf, sizeof(buf)));
     log_info("  Lease time: %u seconds\n",
        iface->config.dhcpv4.lease_time);
     log_info("  Netmask:    %s\n",
       net_addr_ntop(AF_INET,
-               &iface->config.ip.ipv4->netmask,
+               &iface->config.ip.ipv4->unicast[i].netmask,
                buf, sizeof(buf)));
     log_info("  Gateway:    %s\n",
       net_addr_ntop(AF_INET,

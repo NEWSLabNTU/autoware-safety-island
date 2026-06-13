@@ -130,3 +130,28 @@ if(TARGET ${_component})
       "-Dfabsl(x)=((long double)fabs((double)(x)))")
   endif()
 endif()
+
+# --- Give the generated entry (compiled into `app`) the same include context --
+# nano_ros_node_register (SHAPE rclcpp + TYPED) appends a generated
+# `zephyr_entry_main.cpp` to `app` that `#include`s the component HEADER
+# (controller_pkg/controller.hpp) and placement-news the Controller — so it
+# pulls the full Autoware include chain (controller_node.hpp → … → Eigen) and
+# the generated message headers, exactly like the component lib above. `app`
+# only carries the nano-ros module + ASI common/ dirs, so add the rest here.
+if(TARGET app)
+  target_include_directories(app PRIVATE
+    "${_ACT_ROOT}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    ${_controller_includes}
+    "${EIGEN3_INCLUDE_DIR}")
+  if(EXISTS "${_gen_base}")
+    target_include_directories(app PRIVATE "${_gen_base}" ${_gen_pkg_dirs})
+  endif()
+  if(TARGET autoware_msgs)
+    target_link_libraries(app PRIVATE autoware_msgs)
+  endif()
+  if(ZEPHYR_TARGET STREQUAL "fvp_baser_aemv8r_smp")
+    target_compile_options(app PRIVATE
+      "-Dfabsl(x)=((long double)fabs((double)(x)))")
+  endif()
+endif()

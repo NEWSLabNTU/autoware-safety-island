@@ -161,7 +161,7 @@ function build_actuation_module() {
     build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
   fi
 
-  west build -p auto -d build/actuation_module -b "${ZEPHYR_TARGET}" \
+  west build -p auto -d build/actuation_module -b "${BOARD_ID}" \
     actuation_module/ -- "${build_args[@]}"
 }
 
@@ -181,12 +181,24 @@ function build_nano_ros_smoke() {
     build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
   fi
 
-  west build -p auto -d build/nano_ros_smoke -b "${ZEPHYR_TARGET}" \
+  west build -p auto -d build/nano_ros_smoke -b "${BOARD_ID}" \
     actuation_module/nano_ros_smoke/ -- "${build_args[@]}"
 }
 
 ## MAIN ##
 parse_args "$@"
+
+# Zephyr 3.7 uses hardware-model-v2 board identifiers. The FVP board
+# `fvp_baser_aemv8r` defines multiple SoCs (aarch32/aarch64), so the legacy
+# HWMv1 short name `fvp_baser_aemv8r_smp` is ambiguous — `west build -b` needs
+# the fully-qualified `<board>/<soc>/<variant>` form. This MUST match the
+# nano-ros board crate's NROS_BOARD_ZEPHYR_ID
+# (packages/boards/nros-board-fvp-aemv8r-smp/board.cmake). ZEPHYR_TARGET stays
+# the logical key used for CMakeLists.txt comparisons / conf selection.
+BOARD_ID="${ZEPHYR_TARGET}"
+if [ "${ZEPHYR_TARGET}" = "fvp_baser_aemv8r_smp" ]; then
+  BOARD_ID="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
+fi
 
 cd "${ROOT_DIR}"
 mkdir -p build
