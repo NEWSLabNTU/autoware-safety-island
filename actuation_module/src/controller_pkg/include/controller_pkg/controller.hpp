@@ -46,20 +46,17 @@ namespace controller_pkg {
 /// behaviour — the 5 subscriptions, 3 publishers, timer, MPC + PID
 /// controllers — comes from the base class; the node name and topic
 /// strings are sourced from `controller_pkg/node_identity.hpp`.
+/// Phase 242.5 (RFC-0044). The vendored base is now `nros::ComponentNode` (an
+/// IS-A-node, construct-with-handle component). `controller_pkg::Controller`
+/// inherits the base's `explicit Controller(nros::NodeHandle)` ctor so the
+/// generated Zephyr Entry carrier can placement-new it with the executor handle.
+/// The pkg dir (`controller_pkg`) and registered class (`controller_pkg::Controller`)
+/// satisfy nano-ros's `<pkg-dir>::<UserClass>` identity rule. `NROS_COMPONENT`
+/// registration + the rclcpp shape marker live in `src/controller.cpp`.
 class Controller final
     : public ::autoware::motion::control::trajectory_follower_node::Controller {
   public:
     using ::autoware::motion::control::trajectory_follower_node::Controller::Controller;
-
-#ifdef NROS_WORKSPACE_MODE
-    // Phase 2.C — nano-ros component-mode entry. Activated once nano-ros
-    // Phase 235 (the C++ embedded NodeContext runtime) lands and the
-    // Entry pkg boots the node declaratively instead of via the legacy
-    // `common/node` shim. Declared here (guarded) so the
-    // `NROS_NODE(Controller)` marker in `controller_register.cpp` can
-    // bind to it. Definition lives in `controller_register.cpp`.
-    static ::nros::Result register_node(::nros::NodeContext& context);
-#endif  // NROS_WORKSPACE_MODE
 };
 
 }  // namespace controller_pkg

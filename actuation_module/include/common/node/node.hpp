@@ -7,4 +7,12 @@
 // `node_nros.hpp` (the active implementation).
 #include "common/node/node_nros.hpp"
 
+// Phase 242.5 (RFC-0044) — the controller now derives `nros::ComponentNode`
+// (base-swapped off the shim `Node`), and the vendored MPC / PID / VehicleInfoUtils
+// take `nros::ComponentNode&` instead of the shim `Node&`. Make the rclcpp-faithful
+// node base visible everywhere the shim header is pulled in. The shim `Node` +
+// the global `Publisher<M>` alias above stay for the MPC/PID debug-publisher member
+// declarations that still reference them (the assignments are disabled).
+#include <nros/component_node.hpp>
+
 #endif  // COMMON__NODE_HPP_

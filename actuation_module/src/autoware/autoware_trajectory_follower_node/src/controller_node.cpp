@@ -28,8 +28,6 @@ using namespace common::logger;
 // them; these constants are the unchanged-behaviour `from=` defaults.
 #include "controller_pkg/node_identity.hpp"
 
-#include "platform/platform_threading.h"
-
 #include <algorithm>
 #include <limits>
 #include <memory>
@@ -37,17 +35,15 @@ using namespace common::logger;
 #include <utility>
 #include <vector>
 
-// static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE)  __aligned(4);  // TODO: may be needed for possible eigen memory issues
-static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE);
-#define STACK_SIZE (K_THREAD_STACK_SIZEOF(node_stack))
-
 namespace autoware::motion::control::trajectory_follower_node
 {
-Controller::Controller()
-  : Node(controller_pkg::node_identity::DEFAULT_NODE_NAME, node_stack, STACK_SIZE)
+// Phase 242.5 (RFC-0044) — construct-with-handle ctor. The entry hands the
+// executor-bound handle post-`nros::init`; `ComponentNode(handle, name)` creates
+// the owned node, then the body wires the 5 subs / 3 pubs / 1 timer + MPC/PID.
+// The per-node pthread spin of the legacy shim is gone — the executor drives us.
+Controller::Controller(nros::NodeHandle handle)
+  : nros::ComponentNode(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME)
 {
-  using std::placeholders::_1;
-
   const double ctrl_period = declare_parameter<double>("ctrl_period", 0.15);  // TODO: Orignal autoware period is 0.03 30ms
   timeout_thr_sec_ = declare_parameter<double>("timeout_thr_sec", 0.5);
 
@@ -79,38 +75,34 @@ Controller::Controller()
       std::exit(1);
   }
 
-  // Timer
+  // Timer — RFC-0044 typed member timer (`void Controller::callbackTimerControl()`).
   {
-    const auto period_ms = ctrl_period*1000;
-    create_timer(period_ms, [this]() { callbackTimerControl(); });
+    const auto period_ms = static_cast<uint64_t>(ctrl_period * 1000);
+    create_timer<Controller, &Controller::callbackTimerControl>(period_ms);
   }
 
-  // Subscribers
+  // Subscribers — RFC-0044 typed member-callback subscriptions. The wire type +
+  // member callback are the only spellings; the executor arena owns the
+  // subscriber (no descriptor sentinel, no `void*` ctx).
   namespace topics = controller_pkg::node_identity::topics;
 
-  auto subscriber_steering_status = create_subscription<SteeringReportMsg>(topics::SUB_STEERING_STATUS,
-                                                              &autoware_vehicle_msgs_msg_SteeringReport_desc,
-                                                              callbackSteeringStatus, this);
-  auto subscriber_trajectory = create_subscription<TrajectoryMsg_Raw>(topics::SUB_TRAJECTORY,
-                                                              &autoware_planning_msgs_msg_Trajectory_desc,
-                                                              callbackTrajectory, this);
-  auto subscriber_odometry = create_subscription<OdometryMsg>(topics::SUB_ODOMETRY,
-                                                              &nav_msgs_msg_Odometry_desc,
-                                                              callbackOdometry, this);
-  auto subscriber_acceleration = create_subscription<AccelWithCovarianceStampedMsg>(topics::SUB_ACCELERATION,
-                                                              &geometry_msgs_msg_AccelWithCovarianceStamped_desc,
-                                                              callbackAcceleration, this);
-  auto subscriber_operation_mode_state = create_subscription<OperationModeStateMsg>(topics::SUB_OPERATION_MODE_STATE,
-                                                              &autoware_adapi_v1_msgs_msg_OperationModeState_desc,
-                                                              callbackOperationModeState, this);
-    
+  create_subscription<SteeringReportMsg, Controller, &Controller::on_steering_status>(
+    topics::SUB_STEERING_STATUS);
+  create_subscription<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
+    topics::SUB_TRAJECTORY);
+  create_subscription<OdometryMsg, Controller, &Controller::on_odometry>(
+    topics::SUB_ODOMETRY);
+  create_subscription<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
+    topics::SUB_ACCELERATION);
+  create_subscription<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
+    topics::SUB_OPERATION_MODE_STATE);
+
   output_mode_ = common::can::configured_control_command_output_mode();
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
 
   // Publishers
   if (common::can::output_mode_uses_dds(output_mode_)) {
-    control_cmd_pub_ = create_publisher<ControlMsg>(
-      topics::PUB_CONTROL_CMD, &autoware_control_msgs_msg_Control_desc);
+    control_cmd_pub_ = create_publisher<ControlMsg>(topics::PUB_CONTROL_CMD);
   }
 
   if (common::can::output_mode_uses_can(output_mode_)) {
@@ -126,95 +118,54 @@ Controller::Controller()
   }
 
   pub_processing_time_lat_ms_ =
-    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS, &tier4_debug_msgs_msg_Float64Stamped_desc);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
   pub_processing_time_lon_ms_ =
-    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS, &tier4_debug_msgs_msg_Float64Stamped_desc);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
 }
 
-// SUBSCRIBER CALLBACKS
-void Controller::callbackSteeringStatus(const SteeringReportMsg* msg, void* arg) {
-  // static int count = 0;
-  // log_debug("-------STEERING STATUS----IDX %d----", count++);
-  // log_debug("Timestamp: %ld", Clock::toDouble(msg->stamp));
-  // log_debug("Received steering status: %f", msg->steering_tire_angle);
-  // log_debug("--------------------------------");
-
-  // Put data into state pointers
-  Controller* controller = static_cast<Controller*>(arg);
-  controller->current_steering_ = *msg;
-  controller->has_steering_ = true;
+// SUBSCRIBER CALLBACKS — RFC-0044 typed member callbacks. The executor
+// deserializes the wire message and dispatches `const Msg&` directly to `this`
+// (no `void* arg` re-cast). Logic is otherwise verbatim from the legacy shim.
+void Controller::on_steering_status(const SteeringReportMsg& msg) {
+  current_steering_ = msg;
+  has_steering_ = true;
 }
 
-void Controller::callbackOperationModeState(const OperationModeStateMsg* msg, void* arg) {
-  // static int count = 0;
-  // log_debug("-------OPERATION MODE STATE----IDX %d----", count++);
-  // log_debug("Timestamp: %ld", Clock::toDouble(msg->stamp));
-  // log_debug("Mode: %d", msg->mode);
-  // log_debug("Autoware control enabled: %d", msg->is_autoware_control_enabled);
-  // log_debug("In transition: %d", msg->is_in_transition);
-  // log_debug("--------------------------------");
-
-  // Put data into state pointers
-  Controller* controller = static_cast<Controller*>(arg);
-  controller->current_operation_mode_ = *msg;
-  controller->has_operation_mode_ = true;
+void Controller::on_operation_mode_state(const OperationModeStateMsg& msg) {
+  current_operation_mode_ = msg;
+  has_operation_mode_ = true;
 }
 
-void Controller::callbackOdometry(const OdometryMsg* msg, void* arg) {
-  // static int count = 0;
-  // log_debug("-------ODOMETRY----IDX %d----", count++);
-  // log_debug("Timestamp: %ld", Clock::toDouble(msg->stamp));
-  // log_debug("Position: %lf, %lf, %lf", msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
-  // log_debug("Linear Twist: %lf, %lf, %lf", msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z);
-  // log_debug("-------------------------------");
-
-  // Put data into state pointers
-  Controller* controller = static_cast<Controller*>(arg);
-  controller->current_odometry_ = *msg;
-  // *msg is a shallow copy of a CycloneDDS loaned sample: its char* members
-  // (header.frame_id, child_frame_id) point into storage the subscriber returns
-  // via dds_return_loan() the moment this callback returns. The controller only
-  // consumes the numeric pose/twist fields, so drop the unused string pointers
-  // instead of retaining them as dangling references into freed loan storage.
-  controller->current_odometry_.header.frame_id = nullptr;
-  controller->current_odometry_.child_frame_id = nullptr;
-  controller->has_odometry_ = true;
+void Controller::on_odometry(const OdometryMsg& msg) {
+  current_odometry_ = msg;
+  // `msg` is a deserialized sample whose char* members (header.frame_id,
+  // child_frame_id) point into storage the subscriber may reclaim once this
+  // callback returns. The controller only consumes the numeric pose/twist
+  // fields, so drop the unused string pointers instead of retaining them as
+  // dangling references into freed storage.
+  current_odometry_.header.frame_id = nullptr;
+  current_odometry_.child_frame_id = nullptr;
+  has_odometry_ = true;
 }
 
-void Controller::callbackAcceleration(const AccelWithCovarianceStampedMsg* msg, void* arg) {
-  // static int count = 0;
-  // log_debug("-------ACCELERATION----IDX %d----", count++);
-  // log_debug("Timestamp: %ld", Clock::toDouble(msg->stamp));
-  // log_debug("Linear acceleration: %lf, %lf, %lf", msg->accel.accel.linear.x, msg->accel.accel.linear.y, msg->accel.accel.linear.z);
-  // log_debug("Angular acceleration: %lf, %lf, %lf", msg->accel.accel.angular.x, msg->accel.accel.angular.y, msg->accel.accel.angular.z);
-  // log_debug("-------------------------------");
-
-  // Put data into state pointers
-  Controller* controller = static_cast<Controller*>(arg);
-  controller->current_accel_ = *msg;
-  // Drop the loaned char* string (header.frame_id) before dds_return_loan() runs
-  // — see callbackOdometry; only the numeric accel fields are consumed.
-  controller->current_accel_.header.frame_id = nullptr;
-  controller->has_accel_ = true;
+void Controller::on_acceleration(const AccelWithCovarianceStampedMsg& msg) {
+  current_accel_ = msg;
+  // Drop the loaned char* string (header.frame_id) — see on_odometry; only the
+  // numeric accel fields are consumed.
+  current_accel_.header.frame_id = nullptr;
+  has_accel_ = true;
 }
 
-void Controller::callbackTrajectory(const TrajectoryMsg_Raw* msg, void* arg) {
-  // static int count = 0;
-  // log_debug("-------TRAJECTORY----IDX %d----", count++);
-  // log_debug("Timestamp: %f", Clock::toDouble(msg->header.stamp));
-  // log_debug("Trajectory size: %u", msg->points._length);
-  // log_debug("-------------------------------");
-
+void Controller::on_trajectory(const TrajectoryMsg_Raw& msg) {
   // Copy the data instead of storing the pointer
-  Controller* controller = static_cast<Controller*>(arg);
-  controller->current_trajectory_ = TrajectoryMsg(msg);  // Copy the entire message
-  // TrajectoryMsg deep-copies points but its `header = msg->header` shallow-copies
-  // the loaned char* frame_id, which dds_return_loan() frees once this callback
-  // returns — see callbackOdometry. Only the points/header.stamp are consumed, so
-  // drop the dangling string pointer rather than retaining it (publishPredictedTraj()
-  // is currently disabled, but this keeps the field safe for any future reader).
-  controller->current_trajectory_.header.frame_id = nullptr;
-  controller->has_trajectory_ = true;
+  current_trajectory_ = TrajectoryMsg(&msg);  // Copy the entire message
+  // TrajectoryMsg deep-copies points but its `header = msg.header` shallow-copies
+  // the loaned char* frame_id — see on_odometry. Only the points/header.stamp are
+  // consumed, so drop the dangling string pointer rather than retaining it
+  // (publishPredictedTraj() is currently disabled, but this keeps the field safe
+  // for any future reader).
+  current_trajectory_.header.frame_id = nullptr;
+  has_trajectory_ = true;
 }
 
 Controller::LateralControllerMode Controller::getLateralControllerMode(
@@ -397,7 +348,7 @@ void Controller::publishControlCommand(
   out.longitudinal = lon_out.control_cmd;
 
   if (common::can::output_mode_uses_dds(output_mode_)) {
-    if (control_cmd_pub_ && control_cmd_pub_->publish(out)) {
+    if (control_cmd_pub_.publish(out).ok()) {
       log_debug("Control command published over DDS");
     } else {
       log_error("Control command not published over DDS");
@@ -418,11 +369,11 @@ void Controller::publishControlCommand(
 }
 
 void Controller::publishProcessingTime(
-  const double t_ms, const std::shared_ptr<Publisher<Float64StampedMsg>> pub)
+  const double t_ms, nros::Publisher<Float64StampedMsg>& pub)
 {
   Float64StampedMsg msg{};
   msg.stamp = Clock::toRosTime(Clock::now());
   msg.data = t_ms;
-  pub->publish(msg);
+  (void)pub.publish(msg);
 }
 }  // namespace autoware::motion::control::trajectory_follower_node

@@ -32,7 +32,12 @@
 #include <utility>
 #include <vector>
 
-#include "common/node/node.hpp"
+// Phase 242.5 (RFC-0044) — the vendored controller is base-swapped off the
+// legacy `common/node` shim onto `nros::ComponentNode`, the rclcpp-faithful
+// IS-A-node base: identity in the ctor, typed member-callback subscriptions,
+// value-returning parameter facade. The 5 subs / 3 pubs / 1 timer migrate 1:1;
+// the MPC/PID control math is untouched.
+#include <nros/component_node.hpp>
 #include "autoware/autoware_msgs/messages.hpp"
 
 namespace autoware::motion::control
@@ -49,10 +54,13 @@ namespace trajectory_follower = ::autoware::motion::control::trajectory_follower
 
 /// \classController
 /// \brief The node class used for generating longitudinal control commands (velocity/acceleration)
-class TRAJECTORY_FOLLOWER_PUBLIC Controller : public Node
+class TRAJECTORY_FOLLOWER_PUBLIC Controller : public nros::ComponentNode
 {
 public:
-  Controller();
+  /// RFC-0044 construct-with-handle ctor: the entry placement-news this node
+  /// with the executor-bound handle *after* `nros::init`; the body creates the
+  /// node + all entities (subs/pubs/timer) and declares params.
+  explicit Controller(nros::NodeHandle handle);
   virtual ~Controller() {}
 
 private:
@@ -70,12 +78,13 @@ private:
   std::shared_ptr<trajectory_follower::LongitudinalControllerBase> longitudinal_controller_;
   std::shared_ptr<trajectory_follower::LateralControllerBase> lateral_controller_;
 
-  // Subscribers
-  static void callbackSteeringStatus(const SteeringReportMsg* msg, void* arg);
-  static void callbackOperationModeState(const OperationModeStateMsg* msg, void* arg);
-  static void callbackOdometry(const OdometryMsg* msg, void* arg);
-  static void callbackAcceleration(const AccelWithCovarianceStampedMsg* msg, void* arg);
-  static void callbackTrajectory(const TrajectoryMsg_Raw* msg, void* arg);
+  // Subscribers — RFC-0044 typed member callbacks (`void on_X(const Msg&)`),
+  // wired via create_subscription<Msg, Controller, &Controller::on_X>(topic).
+  void on_steering_status(const SteeringReportMsg& msg);
+  void on_operation_mode_state(const OperationModeStateMsg& msg);
+  void on_odometry(const OdometryMsg& msg);
+  void on_acceleration(const AccelWithCovarianceStampedMsg& msg);
+  void on_trajectory(const TrajectoryMsg_Raw& msg);
 
   // Current Data
   TrajectoryMsg current_trajectory_;
@@ -99,12 +108,13 @@ private:
   bool has_accel_ = false;
   bool has_operation_mode_ = true;
 
-  // Publishers
-  std::shared_ptr<Publisher<ControlMsg>> control_cmd_pub_;
+  // Publishers — RFC-0044 value-typed `nros::Publisher<M>` members
+  // (default-constructed; assigned from create_publisher<M>(topic) in the ctor).
+  nros::Publisher<ControlMsg> control_cmd_pub_;
   common::can::ControlCommandOutputMode output_mode_{common::can::configured_control_command_output_mode()};
   std::shared_ptr<common::can::ControlCommandCanOutput> can_output_;
-  std::shared_ptr<Publisher<Float64StampedMsg>> pub_processing_time_lat_ms_;
-  std::shared_ptr<Publisher<Float64StampedMsg>> pub_processing_time_lon_ms_;
+  nros::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
+  nros::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
   
   enum class LateralControllerMode {
     INVALID = 0,
@@ -142,7 +152,7 @@ private:
 
   //
   void publishProcessingTime(
-    const double t_ms, const std::shared_ptr<Publisher<Float64StampedMsg>> pub);
+    const double t_ms, nros::Publisher<Float64StampedMsg>& pub);
 
   //
   StopWatch<std::chrono::milliseconds> stop_watch_;

@@ -7,9 +7,10 @@
     nano-ros's `<pkg-dir>::<UserClass>` identity rule (gap I1).
 
     Node identity (name + topics) is declared in
-    include/controller_pkg/node_identity.hpp (gaps I2/I3); the nano-ros
-    component decl is in src/controller_register.cpp (activated in
-    Phase 2.C with nano-ros Phase 235).
+    include/controller_pkg/node_identity.hpp (gaps I2/I3); the RFC-0044
+    component registration (NROS_COMPONENT, shape:"rclcpp") is in
+    src/controller.cpp, wired by nano_ros_node_register() in CMakeLists.txt
+    (Phase 2.C / 242.5).
   -->
   <name>controller_pkg</name>
   <version>0.1.0</version>
@@ -32,8 +33,8 @@
     The 8 autoware component libraries the node links are vendored under
     src/autoware/ as plain CMake libraries (roadmap gap I4: deps, not
     nodes). They are not standalone ament packages, so they are linked via
-    CMake (the AUTOWARE_COMPONENTS foreach + controller_pkg.cmake) rather
-    than declared as <depend> rows here.
+    CMake (the AUTOWARE_COMPONENTS gather + nano_ros_node_register SOURCES in
+    controller_pkg/CMakeLists.txt) rather than declared as <depend> rows here.
   -->
 
   <export>

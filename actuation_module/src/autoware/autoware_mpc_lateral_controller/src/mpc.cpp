@@ -34,7 +34,7 @@ using autoware::universe_utils::calcDistance2d;
 using autoware::universe_utils::normalizeRadian;
 using autoware::universe_utils::rad2deg;
 
-MPC::MPC(Node & node)
+MPC::MPC(nros::ComponentNode & node)
 {
 }
 

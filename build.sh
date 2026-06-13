@@ -115,11 +115,22 @@ function require_nros_checkout() {
 }
 
 function build_actuation_module() {
-  echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
+  echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros workspace mode)...${NC}"
   require_nros_checkout
 
-  # Idempotent bootstrap: builds nros-codegen + stages serdes +
-  # templates + regen's nros-c cbindgen header. Skips work already done.
+  # Phase 2.C / 242.5 — the build now drives the nano-ros declarative Entry:
+  # `controller_pkg` (its own project()) registers `controller_pkg::Controller`
+  # (an `nros::ComponentNode`) via `nano_ros_node_register(... TYPED SHAPE rclcpp
+  # DEPLOY zephyr)`, which GENERATES the bootable `int main()` Zephyr entry into
+  # `app`. The imperative `src/main.cpp` boot and the `common/node` shim *base*
+  # are retired (the shim header survives only for the MPC/PID debug-publisher
+  # alias). There is no `--nano-ros-shim` build mode any more — this is the only
+  # actuation build path.
+  #
+  # The bootstrap below is still required: it builds the host `nros-codegen`
+  # + stages serdes/templates so `nros_generate_interfaces()` can emit the
+  # autoware message bindings (renamed legacy script; it no longer wires any
+  # runtime shim). Skips work already done.
   bash "${ROOT_DIR}"/scripts/bootstrap-nano-ros-shim.sh
 
   typeset CMAKE_PREFIX_PATH=""

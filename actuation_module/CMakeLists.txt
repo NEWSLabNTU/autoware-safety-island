@@ -4,6 +4,22 @@
 # PROJECT SETUP
 cmake_minimum_required(VERSION 3.22.1)
 set(CONF_FILE "prj_actuation.conf")
+
+# Phase 2.C / 215.B — board glue is ONE line. `nano_ros_use_board()` layers the
+# fvp-aemv8r-smp board crate's BOARD / per-board prj.conf / DTS overlay / default
+# RMW (cyclonedds) / runner (armfvp) into this build. It MUST run BEFORE
+# find_package(Zephyr) so those cache vars land in time for Zephyr's
+# board-resolution phase (the fn FATAL_ERRORs otherwise). Replaces the
+# hand-glued EXTRA_CONF_FILE / DTC_OVERLAY / BOARD wiring.
+if(DEFINED ENV{NROS_REPO_DIR})
+  set(_nros_repo "$ENV{NROS_REPO_DIR}")
+else()
+  # ASI consumes nano-ros as a west module checked out at <repo>/modules/nros.
+  get_filename_component(_nros_repo "${CMAKE_CURRENT_SOURCE_DIR}/../modules/nros" ABSOLUTE)
+endif()
+include(${_nros_repo}/zephyr/cmake/nano_ros_use_board.cmake)
+nano_ros_use_board(fvp-aemv8r-smp)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 if(BUILD_TEST STREQUAL "4" OR BUILD_TEST STREQUAL "5")
   set(EIGEN3_INCLUDE_DIR "")
@@ -43,27 +59,23 @@ elseif(BUILD_TEST STREQUAL "4")
 elseif(BUILD_TEST STREQUAL "5")
   target_sources(app PRIVATE test/dds_loopback_test.cpp)
 else()
-  set(AUTOWARE_COMPONENTS
-    autoware_universe_utils
-    autoware_interpolation
-    autoware_motion_utils
-    autoware_vehicle_info_utils
-    autoware_trajectory_follower_base
-    autoware_mpc_lateral_controller
-    autoware_pid_longitudinal_controller
-    autoware_trajectory_follower_node
-  )
+  # Phase 2.C / 242.5 — workspace mode. The controller is the nano-ros Node pkg
+  # `controller_pkg` (its OWN project()); `nano_ros_node_register(... TYPED SHAPE
+  # rclcpp DEPLOY zephyr)` inside it builds the component lib from the controller
+  # + the 8 vendored autoware libs and generates the bootable `int main()` Zephyr
+  # entry directly into `app`. This SUPERSEDES the pre-2.C monolithic
+  # AUTOWARE_COMPONENTS-into-`app` foreach + the imperative `src/main.cpp` boot
+  # (both removed) — topology is now declarative (controller_bringup/) and the
+  # entry is generated, not hand-written.
+  add_subdirectory(src/controller_pkg)
 
-  foreach(component IN LISTS AUTOWARE_COMPONENTS)
-    include(src/autoware/${component}/${component}.cmake)
-  endforeach()
-
-  # Phase 2.A — nano-ros Node pkg carrying ASI's controller node identity
-  # (controller_pkg::Controller). Adds the controller_pkg include dir and,
-  # under NROS_WORKSPACE_MODE (Phase 2.C), the component node decl.
-  include(src/controller_pkg/controller_pkg.cmake)
-
-  target_sources(app PRIVATE src/main.cpp src/common/net/network_config.cpp ${APP_SOURCES})
+  # The network-readiness prologue (previously in main.cpp) is now a STRONG
+  # override of the weak `nros_board_network_wait()` hook the generated entry's
+  # `ZephyrBoard::run_components` calls before `nros::init`. configure_network()
+  # lives in network_config.cpp (compiled into app).
+  target_sources(app PRIVATE
+    src/common/net/network_config.cpp
+    src/board_network_hook.cpp)
 endif()
 
 message("=== Build Summary ===")

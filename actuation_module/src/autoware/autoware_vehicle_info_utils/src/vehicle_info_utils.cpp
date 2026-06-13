@@ -16,7 +16,7 @@
 
 namespace autoware::vehicle_info_utils
 {
-VehicleInfoUtils::VehicleInfoUtils(Node & node)
+VehicleInfoUtils::VehicleInfoUtils(nros::ComponentNode & node)
 {
   const auto wheel_radius_m = node.declare_parameter<double>("wheel_radius", 0.39);
   const auto wheel_width_m = node.declare_parameter<double>("wheel_width", 0.42);
