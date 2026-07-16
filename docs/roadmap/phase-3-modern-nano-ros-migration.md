@@ -112,10 +112,20 @@ the upstream-side work items this phase surfaces.
   the Phase-2.D "9 consumer-surfaced gaps" round.
 
 ### W3 — FVP runtime proof (G5)
+
+> Status (2026-07-17): `--network tap` image BUILDS green (with the W3.b QoS
+> fix baked). W3.b DONE: all five controller input subscriptions bound to
+> KEEP_LAST depth 1 (`nros::QoS::default_profile().keep_last(1)`) — the nros
+> default was depth 10 (safe vs the raw-DDS 500, but still 9 stale buffered
+> trajectories on an only-latest input). The FVP BOOT + compose bridge are
+> HOST-GATED: `FVP_BaseR_AEMv8R` is license-gated (developer.arm.com; put on
+> PATH or set `ARMFVP_BIN_PATH`), tap0 setup needs sudo (commands in
+> demo/README.md), and the demo compose stack needs the Autoware images
+> pulled. Runtime verification resumes when the model is installed.
 - [ ] W3.a `./build.sh --platform zephyr-fvp --network tap` green; boot on
   `FVP_BaseR_AEMv8R`; demo compose bridge delivers
   `/control/trajectory_follower/control_cmd` end-to-end.
-- [ ] W3.b **QoS audit (#42 carry-over)**: bound every nros subscription the
+- [x] W3.b **QoS audit (#42 carry-over)**: bound every nros subscription the
   controller creates (trajectory, kinematic state, acceleration, operation
   mode, steering) to history depth 1 (or the nros equivalent) and verify
   under a real >1400-byte trajectory stream that heap stays bounded.

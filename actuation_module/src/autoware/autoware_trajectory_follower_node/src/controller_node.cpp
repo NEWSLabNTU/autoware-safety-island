@@ -89,16 +89,27 @@ Controller::Controller(nros::NodeHandle handle)
   // subscriber (no descriptor sentinel, no `void*` ctx).
   namespace topics = controller_pkg::node_identity::topics;
 
+  // Phase 3 W3.b — KEEP_LAST depth 1 on every input (upstream fix #42 ported
+  // to the nros side): the controller only ever consumes the MOST RECENT
+  // sample of each input, and its control cycle runs slower than the 10 Hz
+  // producers, so any deeper reader history just buffers stale samples. With
+  // real (>1400 B, ~8.8 KiB serialized) Autoware trajectories the raw-DDS
+  // depth-500 default once grew the reader cache until the allocator aborted
+  // (silent board death, upstream #42); the nros default depth of 10 is far
+  // safer but still buffers 9 stale trajectories nobody reads. Depth 1 bounds
+  // every input's cache to one sample regardless of message size.
+  const nros::QoS latest_only = nros::QoS::default_profile().keep_last(1);
+
   create_subscription<SteeringReportMsg, Controller, &Controller::on_steering_status>(
-    topics::SUB_STEERING_STATUS);
+    topics::SUB_STEERING_STATUS, latest_only);
   create_subscription<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
-    topics::SUB_TRAJECTORY);
+    topics::SUB_TRAJECTORY, latest_only);
   create_subscription<OdometryMsg, Controller, &Controller::on_odometry>(
-    topics::SUB_ODOMETRY);
+    topics::SUB_ODOMETRY, latest_only);
   create_subscription<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
-    topics::SUB_ACCELERATION);
+    topics::SUB_ACCELERATION, latest_only);
   create_subscription<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
-    topics::SUB_OPERATION_MODE_STATE);
+    topics::SUB_OPERATION_MODE_STATE, latest_only);
 
   output_mode_ = common::can::configured_control_command_output_mode();
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
