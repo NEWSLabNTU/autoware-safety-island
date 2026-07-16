@@ -66,6 +66,17 @@ the upstream-side work items this phase surfaces.
   up` → `west build -d ... --target run` → bridge `ros2 topic echo`.
 
 ### W2 — pin bump + canonical consumption (G2, G3, G6)
+
+> Checkpoint (2026-07-17): pin bumped `a7b6eac5c` → `4875289f6`;
+> `./build.sh --platform zephyr-fvp` links `zephyr.elf` — the Phase-2.D
+> compile-context wall is GONE at the current pin (287-W6), and consumer
+> wall #1 (cyclone ipv4-compat force-include global on 3.7 breaking
+> llext-edk's `$<JOIN>`) was fixed on nano-ros main (`4875289f6`,
+> phase-292 W2 intake #1). The OLD carrier entry path builds as-is; W2.b
+> (canonical Entry pkg) proceeds as modernization. Note: `west update`
+> could not fetch a bare sha from the module remote (west fetch fallback
+> failed; manual `git fetch newslab main && git checkout <sha>` needed) —
+> track as a bootstrap-asi.sh hardening item.
 - [ ] W2.a Bump `west.yml` nano-ros revision to current main;
   `nros setup zephyr --rmw cyclonedds`; delete the pre-215.J fallbacks in
   `bootstrap-asi.sh` and retire `bootstrap-nano-ros-shim.sh` (the CLI build
