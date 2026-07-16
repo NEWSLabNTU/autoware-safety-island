@@ -70,7 +70,18 @@ else()
   # AUTOWARE_COMPONENTS-into-`app` foreach + the imperative `src/main.cpp` boot
   # (both removed) — topology is now declarative (controller_bringup/) and the
   # entry is generated, not hand-written.
+  # Phase 3 W2.b — canonical RFC-0048 shape: the verbs come from
+  # find_package(nano_ros) (287-W6 supplies them on Zephyr without
+  # re-importing the runtime), the node pkg registers a carrier-less
+  # component, and the LAUNCH-only entry below assembles the bootable
+  # image from controller_bringup's launch topology.
+  find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
   add_subdirectory(src/controller_pkg)
+
+  nano_ros_add_executable(actuation_entry
+    BOARD   zephyr
+    LAUNCH  "controller_bringup:system.launch.xml"
+    TYPED)
 
   # The network-readiness prologue (previously in main.cpp) is now a STRONG
   # override of the weak `nros_board_network_wait()` hook the generated entry's

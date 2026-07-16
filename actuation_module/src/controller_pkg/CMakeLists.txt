@@ -72,34 +72,24 @@ foreach(_i IN LISTS APP_INCLUDE_DIRS)
 endforeach()
 
 # --- Register the Node pkg + generate the Zephyr typed entry ----------------
-include(${NROS_REPO_DIR}/cmake/NanoRosNodeRegister.cmake)
-# Force the Zephyr carrier branch (the west-module path leaves this unset).
-set(NANO_ROS_PLATFORM zephyr)
-
-nano_ros_node_register(
-  NAME    controller
+# Phase 3 W2.b (nano-ros 287-W6) — the canonical workspace verb. On Zephyr,
+# `find_package(nano_ros)` (in the workspace root, which add_subdirectory's
+# us) supplies the verbs WITHOUT re-importing the runtime — the nano-ros west
+# module already provides NanoRos::*. No DEPLOY: the component is registered
+# CARRIER-LESS; the workspace-root `nano_ros_add_executable` assembles the
+# bootable entry from the launch topology (replacing the phase-240.8 typed
+# carrier + forced NANO_ROS_PLATFORM this file used to need).
+nano_ros_add_node(controller
   CLASS   controller_pkg::Controller
-  LANGUAGE CXX
   TYPED
   SHAPE   rclcpp
   HEADER  controller_pkg/controller.hpp
   SOURCES ${_controller_sources}
-  DEPLOY  zephyr
 )
 
 # --- Give the component lib the full Zephyr + nros-cpp + message context ----
 set(_component controller_pkg_controller_component)
 if(TARGET ${_component})
-  # zephyr_interface carries every `zephyr_compile_*` flag / `-imacros autoconf.h`
-  # / devicetree + the nano-ros module's `zephyr_include_directories(<nros-cpp>)`
-  # so the autoware C++ TUs compile exactly as they did when they were `app`
-  # sources. (The nano_ros_node_register CPP path links NanoRos::NanoRosCpp, which
-  # does not exist on the west-module build — zephyr_interface supplies the
-  # equivalent include set.)
-  if(TARGET zephyr_interface)
-    target_link_libraries(${_component} PRIVATE zephyr_interface)
-  endif()
-
   # ASI common/ + platform/ headers (logger, clock, can, node shim, threading).
   target_include_directories(${_component} PRIVATE
     "${_ACT_ROOT}/include"

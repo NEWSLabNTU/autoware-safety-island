@@ -77,11 +77,27 @@ the upstream-side work items this phase surfaces.
 > could not fetch a bare sha from the module remote (west fetch fallback
 > failed; manual `git fetch newslab main && git checkout <sha>` needed) —
 > track as a bootstrap-asi.sh hardening item.
-- [ ] W2.a Bump `west.yml` nano-ros revision to current main;
+>
+> W2 COMPLETE (2026-07-17): the canonical shape landed GREEN on the first
+> try — `find_package(nano_ros REQUIRED HINTS ${NROS_REPO_DIR})` +
+> carrier-less `nano_ros_add_node(controller ...)` + LAUNCH-only
+> `nano_ros_add_executable(actuation_entry BOARD zephyr LAUNCH
+> "controller_bringup:system.launch.xml" TYPED)`. The `zephyr_interface`
+> hand-glue is GONE (clean rebuild proves 287-W6's verbs supply the full
+> compile context — the exact 2.D wall, now closed). Retired:
+> `nano_ros_smoke/`, `bootstrap-nano-ros-shim.sh` (CLI ensure inlined into
+> build.sh), the pre-215.J bootstrap fallback. The Entry pkg lives as the
+> workspace root's verb call rather than a separate `src/fvp_entry/` dir —
+> the actuation_module root IS the Zephyr app, matching the
+> `ws-realtime-cpp/src/zephyr_entry` structure one level up. Regression
+> pair green: `--platform freertos-posix` AND `--platform zephyr-fvp` from
+> the same tree. Wall intake total for the bump: ONE (the llext-edk genex,
+> fixed upstream same-day).
+- [x] W2.a Bump `west.yml` nano-ros revision to current main;
   `nros setup zephyr --rmw cyclonedds`; delete the pre-215.J fallbacks in
   `bootstrap-asi.sh` and retire `bootstrap-nano-ros-shim.sh` (the CLI build
   moves behind `nros setup` / the build.sh hook).
-- [ ] W2.b New Entry pkg `actuation_module/src/fvp_entry/`:
+- [x] W2.b New Entry pkg `actuation_module/src/fvp_entry/`:
   `find_package(Zephyr)` + `find_package(nano_ros)` +
   `add_subdirectory(../controller_pkg)` +
   `nano_ros_add_executable(fvp_entry BOARD zephyr LAUNCH
@@ -89,9 +105,9 @@ the upstream-side work items this phase surfaces.
   `ws-realtime-cpp/src/zephyr_entry` shape. Retire the root-CMake carrier
   path, the `NANO_ROS_PLATFORM` force, and the `zephyr_interface` hand-glue
   (287-W6 makes the verbs zephyr-aware).
-- [ ] W2.c Retire `nano_ros_smoke/` + the dual-mode `messages.hpp`
+- [x] W2.c Retire `nano_ros_smoke/` + the dual-mode `messages.hpp`
   descriptor shims once W2.b builds.
-- [ ] W2.d Reference-consumer contract: every wall the bump surfaces is
+- [x] W2.d Reference-consumer contract: every wall the bump surfaces is
   filed against nano-ros (phase-292 W2 intake) with a minimal repro, like
   the Phase-2.D "9 consumer-surfaced gaps" round.
 

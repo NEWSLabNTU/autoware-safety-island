@@ -121,17 +121,14 @@ bash "${ROOT}/scripts/bootstrap-nano-ros-shim.sh"
 # patches / RUST_SUPPORTED / cyclonedds fetch). One board-driven command.
 NROS_CLI="${ROOT}/modules/nros/packages/cli/target/release/nros"
 if [[ ! -x "${NROS_CLI}" ]]; then die "nros CLI not built (expected ${NROS_CLI})."; fi
-if "${NROS_CLI}" setup board --help >/dev/null 2>&1; then
-  say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
-  # --zephyr-workspace wants the WEST TOPDIR (the tree containing `zephyr/` +
-  # `modules/`), NOT $ZEPHYR_BASE (the zephyr project dir). `nros setup board`
-  # applies its patch set to <workspace>/zephyr.
-  ( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
-      --zephyr-workspace "${ROOT}" )
-else
-  warn "this nano-ros pin predates 'nros setup board' (Phase 215.J) —"
-  warn "bump the west.yml nano-ros revision; falling back to no auto-provision."
-fi
+# Phase 3 W2.c — the pre-215.J fallback is retired: the pin is current
+# nano-ros main, `nros setup board` always exists.
+say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
+# --zephyr-workspace wants the WEST TOPDIR (the tree containing `zephyr/` +
+# `modules/`), NOT $ZEPHYR_BASE (the zephyr project dir). `nros setup board`
+# applies its patch set to <workspace>/zephyr.
+( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
+    --zephyr-workspace "${ROOT}" )
 
 # ---- 7. write activate-asi.sh (source it before ./build.sh) ----
 cat > "${ROOT}/activate-asi.sh" <<EOF

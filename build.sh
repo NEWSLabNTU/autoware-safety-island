@@ -312,9 +312,20 @@ function build_zephyr_actuation_module() {
   # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
   # here. The FreeRTOS platforms below still use it unchanged.
   require_nros_checkout
-  # Build the host `nros` CLI if missing/stale (full host provisioning is
-  # scripts/bootstrap-asi.sh; this only ensures the CLI binary).
-  bash "${ROOT_DIR}"/scripts/bootstrap-nano-ros-shim.sh
+  # Build the host `nros` CLI if missing or stale (full host provisioning is
+  # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
+  # — inlined from the retired bootstrap-nano-ros-shim.sh.
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  if [ ! -f "${nros_cli_manifest}" ]; then
+    echo -e "${RED}nano-ros CLI manifest missing (${nros_cli_manifest}) — bump the west.yml nano-ros revision.${NC}" 1>&2
+    exit 1
+  fi
+  if [ ! -x "${nros_cli_bin}" ] || [ "${nros_cli_manifest}" -nt "${nros_cli_bin}" ] \
+     || find "${ROOT_DIR}/modules/nros/packages/cli" -name '*.rs' -newer "${nros_cli_bin}" -print -quit 2>/dev/null | grep -q .; then
+    echo -e "${GREEN}Building host nros CLI...${NC}"
+    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  fi
   export CMAKE_PREFIX_PATH=""
   export AMENT_PREFIX_PATH=""
   local extra_conf_files=()
