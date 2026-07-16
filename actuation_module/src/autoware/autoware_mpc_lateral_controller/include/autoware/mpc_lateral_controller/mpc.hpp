@@ -406,7 +406,7 @@ public:
                                               // resampled reference trajectory for debug purpose
 
   //!< Constructor.
-  explicit MPC(nros::ComponentNode & node);
+  explicit MPC(AsiNode & node);
 
   /**
    * @brief Calculate control command using the MPC algorithm.

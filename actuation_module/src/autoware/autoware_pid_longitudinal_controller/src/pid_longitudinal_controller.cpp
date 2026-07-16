@@ -31,7 +31,7 @@ using namespace common::logger;
 
 namespace autoware::motion::control::pid_longitudinal_controller
 {
-PidLongitudinalController::PidLongitudinalController(nros::ComponentNode & node)
+PidLongitudinalController::PidLongitudinalController(AsiNode & node)
 {
   using std::placeholders::_1;
 

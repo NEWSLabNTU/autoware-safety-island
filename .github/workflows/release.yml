@@ -33,17 +33,15 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
-      # Image USER is `dev` (fixuid pattern for local dev). GHA needs
-      # root inside the container so cache extraction + apt installs
-      # work and the workspace bind-mount is freely writable.
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
       options: --user 0:0 --entrypoint=
     strategy:
       matrix:
         include:
-          - target: fvp_baser_aemv8r_smp
+          - platform: zephyr-fvp
             name: FVP
             artifact: zephyr-fvp.elf
-          - target: s32z270dc2_rtu0_r52@D
+          - platform: zephyr-s32z
             name: S32Z
             artifact: zephyr-s32z.elf
 
@@ -51,11 +49,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
 
       - name: Trust workspace (container runs as root)
         shell: bash
         run: git config --global --add safe.directory '*'
+
+      # Initialise only the public submodules. s32ct_config is a PRIVATE
+      # submodule (NXP Confidential generated configs) that the repo-scoped CI
+      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
+      - name: Initialize build submodules (private s32ct_config excluded)
+        shell: bash
+        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+
+      # phase-3 W1 — the Zephyr platforms build on nano-ros (host `nros` CLI
+      # + cargo cross-compile inside the west build). Mirror bootstrap-asi.sh.
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Restore Zephyr workspace cache
         id: zephyr-cache
@@ -65,6 +80,7 @@ jobs:
             .west
             zephyr
             modules
+            actuation_module/zephyr_modules
           key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: zephyr-workspace-
 
@@ -80,16 +96,13 @@ jobs:
           fi
           west zephyr-export
 
-      - name: Install Rust toolchain (nros codegen)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build (${{ matrix.name }} target, nano-ros)
+      - name: Build (${{ matrix.name }} target)
         shell: bash
-        run: ./build.sh -t "${{ matrix.target }}"
+        run: ./build.sh --platform "${{ matrix.platform }}"
 
       - name: Collect artifact
         shell: bash
-        run: cp build/actuation_module/zephyr/zephyr.elf "${{ matrix.artifact }}"
+        run: cp build/${{ matrix.platform }}/zephyr/zephyr.elf "${{ matrix.artifact }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -98,10 +111,55 @@ jobs:
           path: ${{ matrix.artifact }}
           retention-days: 1
 
+  build-freertos:
+    name: FreeRTOS POSIX Runtime Build
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
+      options: --user 0:0 --entrypoint=
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Trust workspace (container runs as root)
+        shell: bash
+        run: git config --global --add safe.directory '*'
+
+      # Initialise only the public submodules. s32ct_config is a PRIVATE
+      # submodule (NXP Confidential generated configs) that the repo-scoped CI
+      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
+      - name: Initialize build submodules (private s32ct_config excluded)
+        shell: bash
+        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+
+      - name: Restore CycloneDDS build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/cyclonedds_host
+            build/cyclonedds_target_out
+          key: cdds-${{ hashFiles('.gitmodules') }}
+
+      - name: Run FreeRTOS POSIX validation
+        shell: bash
+        run: .github/scripts/run-freertos-posix-ci.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freertos-posix
+          path: build/freertos-posix/actuation_freertos
+          retention-days: 1
+
   publish:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-zephyr]
+    needs: [build-zephyr, build-freertos]
     permissions:
       contents: write
 
@@ -116,7 +174,7 @@ jobs:
         shell: bash
         run: |
           cd release
-          sha256sum zephyr-fvp.elf zephyr-s32z.elf > sha256sums.txt
+          sha256sum zephyr-fvp.elf zephyr-s32z.elf actuation_freertos > sha256sums.txt
           cat sha256sums.txt
 
       - name: Create GitHub Release
@@ -127,6 +185,7 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             release/zephyr-fvp.elf \
             release/zephyr-s32z.elf \
+            release/actuation_freertos \
             release/sha256sums.txt \
             --repo "${{ github.repository }}" \
             --title "Release ${{ github.ref_name }}" \

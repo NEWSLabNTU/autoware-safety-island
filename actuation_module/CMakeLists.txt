@@ -29,6 +29,9 @@ endif()
 project(actuation_module)
 include(GNUInstallDirs)
 set(PLATFORM_ZEPHYR ON)
+# Phase 3 W1 — select the nros side of the dual-mode messages.hpp umbrella
+# (the FreeRTOS platforms build without this define and take the idlc side).
+add_compile_definitions(ASI_USE_NANO_ROS=1)
 target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 
 # nano-ros nros-cpp is the sole build path post-Phase 1.3/1.4 cleanup.

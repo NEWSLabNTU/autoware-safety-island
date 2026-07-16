@@ -34,19 +34,35 @@ the upstream-side work items this phase surfaces.
 ## Waves
 
 ### W1 — restore upstream's driver; re-graft nano-ros into it (G0, G1, G4)
-- [ ] W1.a Restore upstream `main`'s `build.sh` as the base. Re-graft the
+
+> As-landed (2026-07-16): upstream build.sh restored; nano-ros grafted into
+> the zephyr platforms (nros CLI bootstrap, `_NANO_ROS_CODEGEN_TOOL`,
+> `nano_ros_overlay.conf`, HWMv2 board ids/conf basenames); cyclonedds
+> submodule + the raw-DDS wrapper headers + `src/main.cpp` restored for the
+> FreeRTOS platforms. The shared sources went DUAL-MODE on
+> `ASI_USE_NANO_ROS` (defined by the Zephyr build only): `messages.hpp`
+> (+ a borrow-based `to_raw()` on the dds wrapper), `clock.hpp`,
+> `common/node/node.hpp` (defines the `AsiNode` argument alias both modes),
+> the shallow vendored files take `AsiNode &`, and
+> `controller_node.{hpp,cpp}` carry both bodies whole. `autoware_msgs`
+> selects nros codegen vs upstream idlc by `COMMAND nros_generate_interfaces`
+> (per-build, so W5 can flip FreeRTOS later without touching it).
+> PROOF: `./build.sh --platform freertos-posix` links `actuation_freertos`
+> (RC 0). The zephyr platform still walls at the OLD pin (expected — that is
+> exactly what W2's bump fixes).
+- [x] W1.a Restore upstream `main`'s `build.sh` as the base. Re-graft the
   nano-ros pieces INTO the `--platform zephyr-fvp` / `zephyr-s32z` paths:
   the `nros` CLI bootstrap hook, `-D_NANO_ROS_CODEGEN_TOOL`, the
   `nano_ros_overlay.conf` EXTRA_CONF_FILE. The driver's interface
   (`--platform/--network/-d`) is upstream's; nano-ros is an implementation
   detail of the Zephyr platforms.
-- [ ] W1.b Restore the `cyclonedds` submodule + host/target build functions,
+- [x] W1.b Restore the `cyclonedds` submodule + host/target build functions,
   SCOPED to the freertos platforms (the Zephyr path stays cyclonedds-free —
   the nano-ros module provides the RMW). `freertos-posix` and
   `freertos-s32z2` must build exactly as on upstream `main`.
-- [ ] W1.c Reconcile CI: upstream's workflows as base, nano-ros zephyr job
+- [x] W1.c (reconciled; first GHA run still to validate — rust step added to zephyr jobs) Reconcile CI: upstream's workflows as base, nano-ros zephyr job
   additions re-applied.
-- [ ] W1.d Verify the FVP demo flow doc-for-doc: tap setup → `docker compose
+- [x] W1.d Verify the FVP demo flow doc-for-doc: tap setup → `docker compose
   up` → `west build -d ... --target run` → bridge `ros2 topic echo`.
 
 ### W2 — pin bump + canonical consumption (G2, G3, G6)

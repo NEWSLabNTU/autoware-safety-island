@@ -40,7 +40,7 @@ class MpcLateralController : public trajectory_follower::LateralControllerBase
 {
 public:
   /// \param node Reference to the node used only for the component and parameter initialization.
-  explicit MpcLateralController(nros::ComponentNode & node);
+  explicit MpcLateralController(AsiNode & node);
   // explicit MpcLateralController();
   virtual ~MpcLateralController();
 
@@ -138,14 +138,14 @@ private:
    * @return Pointer to the created vehicle model.
    */
   std::shared_ptr<VehicleModelInterface> createVehicleModel(
-    const double wheelbase, const double steer_lim, const double steer_tau, nros::ComponentNode & node);
+    const double wheelbase, const double steer_lim, const double steer_tau, AsiNode & node);
 
   /**
    * @brief Create the quadratic problem solver interface.
    * @param node Reference to the node.
    * @return Pointer to the created QP solver interface.
    */
-  std::shared_ptr<QPSolverInterface> createQPSolverInterface(nros::ComponentNode & node);
+  std::shared_ptr<QPSolverInterface> createQPSolverInterface(AsiNode & node);
 
   /**
    * @brief Create the steering offset estimator for offset compensation.
@@ -154,7 +154,7 @@ private:
    * @return Pointer to the created steering offset estimator.
    */
   std::shared_ptr<SteeringOffsetEstimator> createSteerOffsetEstimator(
-    const double wheelbase, nros::ComponentNode & node);
+    const double wheelbase, AsiNode & node);
 
   /**
    * @brief Check if all necessary data is received and ready to run the control.
@@ -251,7 +251,7 @@ private:
    * @brief Declare MPC parameters as ROS parameters to allow tuning on the fly.
    * @param node Reference to the node.
    */
-  void declareMPCparameters(nros::ComponentNode & node);
+  void declareMPCparameters(AsiNode & node);
 
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller

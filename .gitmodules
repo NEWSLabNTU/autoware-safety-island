@@ -9,3 +9,7 @@
 	path = actuation_module/freertos_s32z2/s32ct_config
 	url = https://github.com/autowarefoundation/autoware-safety-island-s32z2-config.git
 	branch = main
+[submodule "cyclonedds"]
+	path = cyclonedds
+	url = https://github.com/autowarefoundation/cyclonedds
+	branch = freertos-s32z2

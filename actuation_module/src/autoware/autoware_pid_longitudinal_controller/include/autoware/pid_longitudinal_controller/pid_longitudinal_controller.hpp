@@ -47,7 +47,7 @@ class PidLongitudinalController : public trajectory_follower::LongitudinalContro
 {
 public:
   /// \param node Reference to the node used only for the component and parameter initialization.
-  explicit PidLongitudinalController(nros::ComponentNode & node);
+  explicit PidLongitudinalController(AsiNode & node);
 
 private:
   struct Motion

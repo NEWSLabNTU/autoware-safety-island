@@ -36,7 +36,7 @@ using namespace common::logger;
 namespace autoware::motion::control::mpc_lateral_controller
 {
 
-MpcLateralController::MpcLateralController(nros::ComponentNode & node)
+MpcLateralController::MpcLateralController(AsiNode & node)
 {
   const auto dp_int = [&](const std::string & s) { return node.declare_parameter<int>(s); };
   const auto dp_bool = [&](const std::string & s) { return node.declare_parameter<bool>(s); };
@@ -150,7 +150,7 @@ MpcLateralController::~MpcLateralController()
 }
 
 std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
-  const double wheelbase, const double steer_lim, const double steer_tau, nros::ComponentNode & node)
+  const double wheelbase, const double steer_lim, const double steer_tau, AsiNode & node)
 {
   std::shared_ptr<VehicleModelInterface> vehicle_model_ptr;
 
@@ -186,7 +186,7 @@ std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
 }
 
 std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface(
-  nros::ComponentNode & node)
+  AsiNode & node)
 {
   std::shared_ptr<QPSolverInterface> qpsolver_ptr;
 
@@ -202,7 +202,7 @@ std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface
 }
 
 std::shared_ptr<SteeringOffsetEstimator> MpcLateralController::createSteerOffsetEstimator(
-  const double wheelbase, nros::ComponentNode & node)
+  const double wheelbase, AsiNode & node)
 {
   const std::string ns = "steering_offset.";
   const auto vel_thres = node.declare_parameter<double>(ns + "update_vel_threshold", 5.56);
@@ -552,7 +552,7 @@ bool MpcLateralController::isMpcConverged()
   return (max_steering_value - min_steering_value) < m_mpc_converged_threshold_rps;
 }
 
-void MpcLateralController::declareMPCparameters(nros::ComponentNode & node)
+void MpcLateralController::declareMPCparameters(AsiNode & node)
 {
   m_mpc->m_param.prediction_horizon = node.declare_parameter<int>("mpc_prediction_horizon", 50);
   m_mpc->m_param.prediction_dt = node.declare_parameter<double>("mpc_prediction_dt", 0.1);
