@@ -122,9 +122,22 @@ the upstream-side work items this phase surfaces.
 > PATH or set `ARMFVP_BIN_PATH`), tap0 setup needs sudo (commands in
 > demo/README.md), and the demo compose stack needs the Autoware images
 > pulled. Runtime verification resumes when the model is installed.
-- [ ] W3.a `./build.sh --platform zephyr-fvp --network tap` green; boot on
-  `FVP_BaseR_AEMv8R`; demo compose bridge delivers
-  `/control/trajectory_follower/control_cmd` end-to-end.
+- [~] W3.a (2026-07-17) **firmware side DONE** — the controller BOOTS AND
+  SPINS on FVP_BaseR_AEMv8R 11.31.28 (single-core image): cyclone
+  participant up, 74 launch params seeded, all 5 subscriptions +
+  publishers + timers created, steady "Control is skipped since input
+  data is not ready" idle, SPDP streaming on tap0. Getting there took
+  eight consumer walls, all intaken/fixed on nano-ros main (phase-292 W2
+  intake log #2–#8) plus ASI-side wiring in this repo: FVP
+  `bp.smsc_91c111.enabled=1` (build.sh, the model's NIC is off by
+  default), `NROS_MAX_PARAMETERS=256` / `NROS_EXECUTOR_MAX_CBS=16` /
+  `NROS_SUBSCRIPTION_BUFFER_SIZE=16384` build-time knobs (build.sh),
+  stub `package.xml` per vendored msg_ros package (rosidl_adapter
+  requires one for descriptor IDL generation). REMAINING: multicast
+  join error -1 (IGMP — image runs unicast-only; peers must reach us by
+  unicast SPDP), SMP-4 crash (nano-ros wall #6 — single-core image in
+  the meantime), and the demo compose bridge delivery check
+  (`/control/trajectory_follower/control_cmd` end-to-end).
 - [x] W3.b **QoS audit (#42 carry-over)**: bound every nros subscription the
   controller creates (trajectory, kinematic state, acceleration, operation
   mode, steering) to history depth 1 (or the nros equivalent) and verify

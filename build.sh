@@ -345,6 +345,18 @@ function build_zephyr_actuation_module() {
   # Zephyr platforms.
   extra_conf_files+=("${ROOT_DIR}/actuation_module/nano_ros_overlay.conf")
 
+  # The Autoware trajectory follower declares ~150 node parameters (MPC
+  # lateral + PID longitudinal); nano-ros's parameter server is a static
+  # pool sized at Rust build time (nros-params build.rs, default 32 ->
+  # declare_parameter fails with ErrorCode::Full = -5 at boot).
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  # Executor sizing (nros-node build.rs): the controller registers 5
+  # subscriptions + timers + publishers (default MAX_CBS=4 → creation fails
+  # with TransportError at boot), and /planning trajectories run ~8.8 KiB
+  # (default per-subscription RX buffer is 1 KiB).
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+
   # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
   # resolves the codegen tool from `_NANO_ROS_CODEGEN_TOOL` (then $NROS_CLI,
   # then PATH); see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.
@@ -364,10 +376,17 @@ function build_zephyr_actuation_module() {
     extra_conf_files+=("${board_conf}")
   fi
 
+  # The FVP's SMSC 91C111 ethernet model defaults to disabled
+  # (bp.smsc_91c111.enabled=0); without it Zephyr's eth_smsc91x probe fails
+  # ("Identification value not in BSR", MAC 00:00:00:00:00:00) and the net
+  # stack times out waiting for the interface. Enable it for every FVP run;
+  # promiscuous so the guest sees DDS multicast frames off the host bridge.
+  export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1"
+
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
     extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/${conf_base}_tap_network.conf")
     local fvp_tap_interface="${FVP_TAP_INTERFACE:-tap0}"
-    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
+    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
   fi
 
   # Add device tree overlay only for ARM board variant
