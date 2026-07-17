@@ -155,8 +155,8 @@ On the AVH website, open the *Connect* tab for your device and click
 *Download OVPN File*. SCP the file to the EC2 instance (see
 `Transfer files to Linux instances using an SCP client
 <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-linux-inst-ssh.html#linux-file-transfer-scp>`_).
-The repository convention is ``avh.ovpn`` at the repo root (gitignored —
-rename the downloaded ``… VPN - <id>.ovpn`` file); the snippet below assumes
+The repository convention is ``tools/avh/avh.ovpn`` (gitignored — rename
+the downloaded ``… VPN - <id>.ovpn`` file; see ``tools/README.md``); the snippet below assumes
 ``~/avh.ovpn`` on the EC2 side:
 
 .. code-block:: console

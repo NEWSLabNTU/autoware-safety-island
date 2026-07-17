@@ -138,6 +138,10 @@ export ZEPHYR_SDK_INSTALL_DIR="${SDK_DIR}"
 export PATH="\${HOME}/.cargo/bin:\${HOME}/.local/bin:${ROOT}/modules/nros/packages/cli/target/release:\${PATH}"
 export NROS_CLI="${ROOT}/modules/nros/packages/cli/target/release/nros"
 EOF
+# Local FVP model (phase-3 W3 tools/ layout) — exported only when extracted.
+if [[ -x "${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin/FVP_BaseR_AEMv8R" ]]; then
+  echo "export ARMFVP_BIN_PATH=\"${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin\"" >> "${ROOT}/activate-asi.sh"
+fi
 say "wrote ${ROOT}/activate-asi.sh"
 
 cat <<EOF
