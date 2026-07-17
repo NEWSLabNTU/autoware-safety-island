@@ -39,7 +39,7 @@ manifest:
     # discovered by the Zephyr module crawler.
     - name: nano-ros
       remote: newslab
-      revision: 4ea1f4a2eb74c10e1280f1fe8afa868fd28b2a7d
+      revision: 12655803a15e5f7001e511e4dfb5378f7111f690
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
