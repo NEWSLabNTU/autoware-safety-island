@@ -45,11 +45,23 @@ Copy ``template.env`` to ``.env`` at the repository root and fill in:
 - ``AVH_API_ENDPOINT`` — leave as-is for staging, or change to
   ``https://app.avh.arm.com/api`` (or your production endpoint).
 - ``AVH_API_TOKEN`` — from the Corellium dashboard → *profile / api*.
-- ``AVH_PROJECT_NAME`` — the project name as it appears in the dashboard.
-- ``AVH_INSTANCE_NAME`` — any name; the script creates it if it does not
-  exist.
+- ``AVH_PROJECT_ID`` / ``AVH_INSTANCE_ID`` — the dashboard's device page
+  hands both out directly; when set, the script uses them verbatim and
+  skips the name lookups. This is the recommended path for an
+  already-created device.
+- ``AVH_PROJECT_NAME`` / ``AVH_INSTANCE_NAME`` — name fallbacks, used only
+  when the IDs are unset (and by the create-instance path).
 - ``AVH_INSTANCE_FLAVOR`` — leave as ``aem8r64-lan9c111``. The firmware is
   specifically built for this flavor.
+
+The device page also lists the direct debug endpoints, reachable once the
+VPN (below) is up — with a device at ``10.11.1.8`` for example:
+
+.. code-block:: console
+
+  $ nc 10.11.1.8 2000                                # firmware console
+  $ nc 10.11.1.8 2003                                # system console
+  $ lldb --one-line "gdb-remote 10.11.1.8:4000"      # attach a debugger
 
 Deploy with the script (recommended)
 ====================================
@@ -61,7 +73,8 @@ From inside the development container:
   $ ./avh.py --deploy --ssh
 
 This authenticates, creates or finds the instance, uploads
-``build/actuation_module/zephyr/zephyr.elf``, reboots the instance, and
+``build/zephyr-fvp/zephyr/zephyr.elf`` (phase-3 layout; ``--firmware`` /
+``AVH_FIRMWARE_PATH`` override), reboots the instance, and
 streams the console over SSH until you disconnect.
 
 Deploy via the web UI
@@ -142,7 +155,9 @@ On the AVH website, open the *Connect* tab for your device and click
 *Download OVPN File*. SCP the file to the EC2 instance (see
 `Transfer files to Linux instances using an SCP client
 <https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-linux-inst-ssh.html#linux-file-transfer-scp>`_).
-The snippet below assumes the file lives at ``~/avh.ovpn``:
+The repository convention is ``avh.ovpn`` at the repo root (gitignored —
+rename the downloaded ``… VPN - <id>.ovpn`` file); the snippet below assumes
+``~/avh.ovpn`` on the EC2 side:
 
 .. code-block:: console
 

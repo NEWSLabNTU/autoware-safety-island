@@ -25,8 +25,9 @@ from datetime import datetime
 # nano-ros shim path when both are present. Override with AVH_FIRMWARE_PATH
 # or pass --firmware on the command line.
 DEFAULT_FIRMWARE_CANDIDATES = (
-    'build/actuation_module_nano_ros/zephyr/zephyr.elf',  # ./build.sh --nano-ros-shim
-    'build/actuation_module/zephyr/zephyr.elf',           # ./build.sh (legacy)
+    'build/zephyr-fvp/zephyr/zephyr.elf',      # ./build.sh --platform zephyr-fvp
+    'build/zephyr-fvp-tap/zephyr/zephyr.elf',  # ./build.sh --platform zephyr-fvp --network tap
+    'build/actuation_module/zephyr/zephyr.elf',  # legacy pre-phase-3 layout
 )
 BOOT_TIMEOUT_SECONDS = 7200  # 2 hours
 STATE_CHECK_INTERVAL = 2  # seconds
@@ -37,20 +38,28 @@ def load_config():
     
     api_endpoint = os.getenv('AVH_API_ENDPOINT')
     api_token = os.getenv('AVH_API_TOKEN')
+    # Phase 3 W3 — the dashboard hands out IDs directly; when set they bypass
+    # the name lookups entirely (names remain as fallbacks for the
+    # create-instance path).
+    project_id = os.getenv('AVH_PROJECT_ID')
+    instance_id = os.getenv('AVH_INSTANCE_ID')
     project_name = os.getenv('AVH_PROJECT_NAME')
     instance_name = os.getenv('AVH_INSTANCE_NAME')
     instance_flavor = os.getenv('AVH_INSTANCE_FLAVOR')
-    
-    if not all([api_token, api_endpoint, project_name, instance_name, instance_flavor]):
+
+    have_project = project_id or project_name
+    have_instance = instance_id or instance_name
+    if not all([api_token, api_endpoint, have_project, have_instance, instance_flavor]):
         print("❌ Missing required environment variables:")
         print("   - AVH_API_TOKEN")
-        print("   - AVH_API_ENDPOINT") 
-        print("   - AVH_PROJECT_NAME")
-        print("   - AVH_INSTANCE_NAME")
+        print("   - AVH_API_ENDPOINT")
+        print("   - AVH_PROJECT_ID or AVH_PROJECT_NAME")
+        print("   - AVH_INSTANCE_ID or AVH_INSTANCE_NAME")
         print("   - AVH_INSTANCE_FLAVOR")
         sys.exit(1)
-          
-    return api_endpoint, api_token, project_name, instance_name, instance_flavor
+
+    return (api_endpoint, api_token, project_id, instance_id,
+            project_name, instance_name, instance_flavor)
 
 
 async def authenticate(api_instance, api_token):
@@ -337,7 +346,8 @@ async def main(args):
         return 0
     
     # Setup API client
-    api_endpoint, api_token, project_name, instance_name, instance_flavor = load_config()
+    (api_endpoint, api_token, project_id_env, instance_id_env,
+     project_name, instance_name, instance_flavor) = load_config()
     configuration = AvhAPI.Configuration(host=api_endpoint)
     
     async with AvhAPI.ApiClient(configuration=configuration) as api_client:        
@@ -351,10 +361,10 @@ async def main(args):
             return 0
 
         configuration.access_token = access_token
-        project_id = await get_project_id(api_instance, project_name)
+        project_id = project_id_env or await get_project_id(api_instance, project_name)
 
         # Find instance or create new instance if not found
-        instance_id = await find_instance(api_instance, instance_name, instance_flavor)
+        instance_id = instance_id_env or await find_instance(api_instance, instance_name, instance_flavor)
         if instance_id is None:
             instance_id = await create_instance(api_instance, project_id, instance_name, instance_flavor)
 
