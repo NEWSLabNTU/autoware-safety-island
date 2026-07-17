@@ -159,6 +159,20 @@ the upstream-side work items this phase surfaces.
 - [ ] W3.c Soak: the Phase-2.D real-run checkpoint scenario re-run on the
   modern stack; record deltas.
 
+> Runbook notes for W3.c / future runs (2026-07-17): interactive FVP runs
+> need `-C cache_state_modelled=0` — with the Zephyr-default `=1` the model
+> fast-forwards idle but crawls ~1000x under busy code (a "hang" at
+> `net_config: Initializing network` is usually just this). Headless demo
+> bring-up without rviz: seed `/initialpose`
+> (x 3722.16, y 73723.1, ori z 0.777 w 0.629 on sample-map-planning), then
+> `/planning/mission_planning/goal` ~30 m along the ego heading
+> (x 3715.9, y 73752.5, same orientation); probe with
+> `ros2 topic hz /control/trajectory_follower/control_cmd` inside the
+> autoware container (`source /opt/autoware/setup.bash`). Open upstream
+> items tracked in nano-ros: issue 0231 (IGMP join → firmware unicast-only,
+> tap must stay promiscuous), 0230 (spurious SMP boot FATAL print), 0232
+> (FVP runtime lane).
+
 ### W4 — zephyr-s32z parity (G7; hardware-gated)
 - [ ] W4.a Consume nano-ros's s32z board crate once phase-292 W3 lands
   (`nano_ros_use_board(s32z270dc2-rtu0-r52)`), replacing the hand-glued
