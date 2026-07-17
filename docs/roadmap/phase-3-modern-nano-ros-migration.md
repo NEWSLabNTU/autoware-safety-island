@@ -122,7 +122,16 @@ the upstream-side work items this phase surfaces.
 > PATH or set `ARMFVP_BIN_PATH`), tap0 setup needs sudo (commands in
 > demo/README.md), and the demo compose stack needs the Autoware images
 > pulled. Runtime verification resumes when the model is installed.
-- [~] W3.a (2026-07-17) **firmware side DONE** — the controller BOOTS AND
+- [x] W3.a (2026-07-17) **DONE — end-to-end closed loop on the FVP.**
+  Final leg: demo compose stack (autoware planning sim + domain bridge) up,
+  island pinned to DDS domain 2 (tap conf), ego seeded via `/initialpose`
+  (x 3722.16, y 73723.1, ori z 0.777 w 0.629) + goal 30 m along heading →
+  trajectory at 10 Hz through the bridge → firmware MPC engages (emergency
+  stop on spawn-position tracking error — controller logic live) →
+  `/control/trajectory_follower/control_cmd` back on domain 1 at ~26 Hz.
+  Notes: single-core image (nano-ros wall #6 open for SMP-4); firmware
+  runs unicast-only (IGMP join fails; SPDP still converges).
+  Earlier same-day: firmware side — the controller BOOTS AND
   SPINS on FVP_BaseR_AEMv8R 11.31.28 (single-core image): cyclone
   participant up, 74 launch params seeded, all 5 subscriptions +
   publishers + timers created, steady "Control is skipped since input
