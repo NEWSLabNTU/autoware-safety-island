@@ -129,8 +129,13 @@ the upstream-side work items this phase surfaces.
   trajectory at 10 Hz through the bridge → firmware MPC engages (emergency
   stop on spawn-position tracking error — controller logic live) →
   `/control/trajectory_follower/control_cmd` back on domain 1 at ~26 Hz.
-  Notes: single-core image (nano-ros wall #6 open for SMP-4); firmware
-  runs unicast-only (IGMP join fails; SPDP still converges).
+  Notes: 2026-07-17 later same day — **stock SMP-4 image validated**:
+  nano-ros wall #6 resolved (duplicate of wall #9, the mutex-pool
+  exhaustion), full closed loop on the 4-core build at ~18 Hz
+  control_cmd, zero faults over 30+ min sim. No .config surgery needed.
+  Firmware still unicast-only (IGMP join fails; SPDP converges);
+  spurious boot-time `ComponentNode failed at ? (code=0)` print tracked
+  as nano-ros issue 0230.
   Earlier same-day: firmware side — the controller BOOTS AND
   SPINS on FVP_BaseR_AEMv8R 11.31.28 (single-core image): cyclone
   participant up, 74 launch params seeded, all 5 subscriptions +
