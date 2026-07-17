@@ -78,9 +78,14 @@ else()
   find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
   add_subdirectory(src/controller_pkg)
 
+  # Phase 3 W4.3 (nano-ros phase-296) — canonical-path pilot: the entry
+  # bakes from the play_launch-RESOLVED SystemModel (committed artifact,
+  # `play_launch resolve launch/system.launch.xml --system system.toml`)
+  # instead of re-parsing the launch XML. LAUNCH remains the transitional
+  # fallback; regenerate the model after editing launch/system.toml.
   nano_ros_add_executable(actuation_entry
     BOARD   zephyr
-    LAUNCH  "controller_bringup:system.launch.xml"
+    MODEL   "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup/config/system_model.yaml"
     TYPED)
 
   # The network-readiness prologue (previously in main.cpp) is now a STRONG

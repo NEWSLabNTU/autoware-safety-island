@@ -1,0 +1,35 @@
+meta:
+  version: 1
+  inputs:
+  - path: /home/aeon/repos/autoware-safety-island/actuation_module/src/controller_bringup/config/system_model.record.json
+    sha256: 6428999dfb44b63a1dd8c8b1ae8fd4f36a178b4f53ee2a3f869be5c2e3aa07bb
+  - path: /home/aeon/repos/autoware-safety-island/actuation_module/src/controller_bringup/launch/system.launch.xml
+    sha256: b7723a918bb6a735868144e0b0fd08826e06489f4c9ab3fbca669852b03623f3
+  - path: /home/aeon/repos/autoware-safety-island/actuation_module/src/controller_bringup/system.toml
+    sha256: eb260b2889d1428a7d004cc5871c7efbde78f39f73fec4dafba49dba317f0c07
+  resolver:
+    tool: play_launch
+    version: 0.8.2
+  record:
+    path: /home/aeon/repos/autoware-safety-island/actuation_module/src/controller_bringup/config/system_model.record.json
+    sha256: 6428999dfb44b63a1dd8c8b1ae8fd4f36a178b4f53ee2a3f869be5c2e3aa07bb
+structure:
+  scopes:
+    /: {}
+  nodes:
+    /controller:
+      scope: /
+      pkg: controller_pkg
+      exec: controller
+      params:
+        control_output: DDS_ONLY
+execution:
+  deploy:
+    /controller:
+      target: mcu:fvp-aemv8r-smp
+      domain: 0
+      rmw: cyclonedds
+      extra:
+        deploy_name: fvp
+        kind: zephyr
+        target: fvp_baser_aemv8r_smp

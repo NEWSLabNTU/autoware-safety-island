@@ -173,6 +173,19 @@ the upstream-side work items this phase surfaces.
 > tap must stay promiscuous), 0230 (spurious SMP boot FATAL print), 0232
 > (FVP runtime lane).
 
+### W3.b — SystemModel canonical-path pilot (nano-ros phase-296 W4.3)
+- [x] Resolve the launch + system.toml into a committed SystemModel
+  (`controller_bringup/config/system_model.yaml` + record companion,
+  `play_launch resolve launch/system.launch.xml --system system.toml`);
+  params (`control_output`) ride the model (play_launch model_builder
+  producer fix), deploy carries `kind: zephyr` for board-family slicing.
+- [x] Entry bakes from the model: `nano_ros_add_executable(... MODEL
+  "<config/system_model.yaml>" TYPED)` replaces the LAUNCH keyword;
+  nano-ros pin bumped to 4ea1f4a2e (MODEL keyword + plan_from_model +
+  kind-family slicing).
+- [ ] FVP rebuild from the model-baked entry + tap-demo smoke (same W3
+  runbook) — validates phase-296 W4.3's done-when on AVH/FVP.
+
 ### W4 — zephyr-s32z parity (G7; hardware-gated)
 - [ ] W4.a Consume nano-ros's s32z board crate once phase-292 W3 lands
   (`nano_ros_use_board(s32z270dc2-rtu0-r52)`), replacing the hand-glued
