@@ -53,13 +53,11 @@ export ARMFVP_BIN_PATH=/path/to/fvp/bin
 
 Set `FVP_TAP_INTERFACE` before building if your TAP interface is not named `tap0`; the TAP interface name is embedded in the generated FVP runner command.
 
-Set up the host TAP interface:
+Set up the host TAP interface (idempotent; `--help` for options,
+`--delete` to tear down):
 
 ```bash
-sudo ip tuntap add dev tap0 mode tap user "$(id -un)" 2>/dev/null || true
-sudo ip addr replace 192.168.10.1/24 dev tap0
-sudo ip link set dev tap0 up multicast on
-sudo ip link set dev tap0 promisc on
+sudo ./scripts/setup-tap.sh
 ```
 
 From this `demo/` directory, start the demo containers:
