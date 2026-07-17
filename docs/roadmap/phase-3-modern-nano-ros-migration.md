@@ -168,10 +168,12 @@ the upstream-side work items this phase surfaces.
 > `/planning/mission_planning/goal` ~30 m along the ego heading
 > (x 3715.9, y 73752.5, same orientation); probe with
 > `ros2 topic hz /control/trajectory_follower/control_cmd` inside the
-> autoware container (`source /opt/autoware/setup.bash`). Open upstream
-> items tracked in nano-ros: issue 0231 (IGMP join → firmware unicast-only,
-> tap must stay promiscuous), 0230 (spurious SMP boot FATAL print), 0232
-> (FVP runtime lane).
+> autoware container (`source /opt/autoware/setup.bash`). Upstream items
+> in nano-ros: 0231 RESOLVED 2026-07-17 (Zephyr multicast join fixed —
+> `ip_mreqn` + EALREADY, cyclonedds fork 1d794c0a; closed loop re-verified
+> at ~19 Hz; the promiscuous-tap requirement is likely obsolete — verify
+> once with promisc off, needs root); still open: 0230 (spurious SMP boot
+> FATAL print), 0232 (FVP runtime lane).
 
 ### W3.b — SystemModel canonical-path pilot (nano-ros phase-296 W4.3)
 - [x] Resolve the launch + system.toml into a committed SystemModel
