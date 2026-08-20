@@ -184,7 +184,9 @@ static void add_zephyr_can_filter(const uint32_t id)
   struct can_filter filter{};
   filter.id = id;
   filter.mask = CAN_STD_ID_MASK;
-  filter.flags = CAN_FILTER_DATA;
+  // Zephyr 3.7: CAN_FILTER_DATA/RTR flags are gone (RTR frames are
+  // rejected at the driver level); a standard-ID data filter is flags 0.
+  filter.flags = 0U;
 
   const int filter_id = ::can_add_rx_filter_msgq(
     common::can::platform::can_device(), &zephyr_can_rx_msgq, &filter);

@@ -54,6 +54,8 @@ using SteeringReportMsg               = autoware_vehicle_msgs::msg::SteeringRepo
 using AccelWithCovarianceStampedMsg   = geometry_msgs::msg::AccelWithCovarianceStamped;
 using TrajectoryPointMsg              = autoware_planning_msgs::msg::TrajectoryPoint;
 using PoseStampedMsg                  = geometry_msgs::msg::PoseStamped;
+using TimeMsg                         = builtin_interfaces::msg::Time;
+using DurationMsg                     = builtin_interfaces::msg::Duration;
 
 // nros codegen emits message constants as `<MessageName>_<CONSTANT>`
 // constexpr at namespace scope (per message_cpp.hpp.jinja template),
@@ -80,6 +82,7 @@ inline constexpr dds_topic_descriptor_t geometry_msgs_msg_AccelWithCovarianceSta
 inline constexpr dds_topic_descriptor_t autoware_adapi_v1_msgs_msg_OperationModeState_desc  {};
 inline constexpr dds_topic_descriptor_t autoware_control_msgs_msg_Control_desc              {};
 inline constexpr dds_topic_descriptor_t tier4_debug_msgs_msg_Float64Stamped_desc            {};
+inline constexpr dds_topic_descriptor_t geometry_msgs_msg_PoseStamped_desc                  {};
 
 // Conversion wrapper. Legacy version assigns from Cyclone's raw
 // `_buffer`/`_length` sequence; the nros version copies via the

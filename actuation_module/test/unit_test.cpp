@@ -12,9 +12,10 @@ using namespace common::logger;
 
 #include "platform/platform_threading.h"
 
-// Msgs
-#include "PoseStamped.h"
-using PoseStampedMsg = geometry_msgs_msg_PoseStamped;
+// Msgs — the dual-mode umbrella: nros mode aliases the generated C++
+// types (PoseStampedMsg) and ships sentinel `<type>_desc` stubs for the
+// shim's ignored descriptor arg.
+#include "autoware/autoware_msgs/messages.hpp"
 
 // Test state with thread-safe access
 struct TestState {

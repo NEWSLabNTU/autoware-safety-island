@@ -6,11 +6,10 @@
 #include "common/node/node.hpp"
 #include "platform/platform_threading.h"
 
-#include "SteeringReport.h"
+// Dual-mode umbrella: SteeringReportMsg alias + sentinel `_desc` stubs.
+#include "autoware/autoware_msgs/messages.hpp"
 
 using namespace common::logger;
-
-using SteeringReportMsg = autoware_vehicle_msgs_msg_SteeringReport;
 
 static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE);
 #define STACK_SIZE (K_THREAD_STACK_SIZEOF(node_stack))

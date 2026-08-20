@@ -5,17 +5,11 @@ using namespace common::logger;
 
 #include "platform/platform_threading.h"
 
-// Msgs
-#include "SteeringReport.h"
-#include "Trajectory.h"
-#include "Odometry.h"
-#include "AccelWithCovarianceStamped.h"
-#include "OperationModeState.h"
-using SteeringReportMsg = autoware_vehicle_msgs_msg_SteeringReport;
-using TrajectoryMsg = autoware_planning_msgs_msg_Trajectory;
-using OdometryMsg = nav_msgs_msg_Odometry;
-using AccelerationMsg = geometry_msgs_msg_AccelWithCovarianceStamped;
-using OperationModeStateMsg = autoware_adapi_v1_msgs_msg_OperationModeState;
+// Msgs — dual-mode umbrella: nros mode aliases the generated C++ types
+// (SteeringReportMsg, TrajectoryMsg_Raw, OdometryMsg, AccelerationMsg,
+// OperationModeStateMsg) and ships sentinel `_desc` stubs for the shim's
+// ignored descriptor arg.
+#include "autoware/autoware_msgs/messages.hpp"
 
 static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE);
 #define STACK_SIZE (K_THREAD_STACK_SIZEOF(node_stack))
@@ -62,7 +56,7 @@ int main(void) {
     
     // Create publishers for all message types
     auto steering_publisher = node.create_publisher<SteeringReportMsg>("/vehicle/status/steering_status", &autoware_vehicle_msgs_msg_SteeringReport_desc);
-    auto trajectory_publisher = node.create_publisher<TrajectoryMsg>("/planning/scenario_planning/trajectory", &autoware_planning_msgs_msg_Trajectory_desc);
+    auto trajectory_publisher = node.create_publisher<TrajectoryMsg_Raw>("/planning/scenario_planning/trajectory", &autoware_planning_msgs_msg_Trajectory_desc);
     auto odometry_publisher = node.create_publisher<OdometryMsg>("/localization/kinematic_state", &nav_msgs_msg_Odometry_desc);
     auto acceleration_publisher = node.create_publisher<AccelerationMsg>("/localization/acceleration", &geometry_msgs_msg_AccelWithCovarianceStamped_desc);
     auto operation_mode_publisher = node.create_publisher<OperationModeStateMsg>("/system/operation_mode/state", &autoware_adapi_v1_msgs_msg_OperationModeState_desc);
@@ -103,15 +97,13 @@ int main(void) {
         constexpr uint32_t TRAJ_POINTS = 10;
         constexpr double TRAJ_SPACING_M = 8.0;     // distance between points (80 m path)
         constexpr float  TRAJ_SPEED_MPS = 5.0f;    // matches published odometry vx
-        TrajectoryMsg trajectory_msg{};
+        // The generated wire type carries a bounded FixedSequence (value
+        // storage, push_back API) — no manual _buffer management.
+        TrajectoryMsg_Raw trajectory_msg{};
         trajectory_msg.header.stamp = current_time;
         trajectory_msg.header.frame_id = "map";
-        trajectory_msg.points._length = TRAJ_POINTS;
-        trajectory_msg.points._maximum = TRAJ_POINTS;
-        trajectory_msg.points._release = false;
-        trajectory_msg.points._buffer = new autoware_planning_msgs_msg_TrajectoryPoint[TRAJ_POINTS]();
         for (uint32_t i = 0; i < TRAJ_POINTS; ++i) {
-            auto & pt = trajectory_msg.points._buffer[i];
+            TrajectoryPointMsg pt{};
             pt.pose.position.x = 10.0 + i * TRAJ_SPACING_M;
             pt.pose.position.y = 20.0;
             pt.pose.position.z = 0.0;
@@ -125,10 +117,10 @@ int main(void) {
             const double t_s = (i * TRAJ_SPACING_M) / TRAJ_SPEED_MPS;
             pt.time_from_start.sec = (int32_t)t_s;
             pt.time_from_start.nanosec = (uint32_t)((t_s - (int32_t)t_s) * 1e9);
+            (void)trajectory_msg.points.push_back(pt);
         }
         trajectory_publisher->publish(trajectory_msg);
-        log_info("Published trajectory with %u points\n", trajectory_msg.points._length);
-        delete[] trajectory_msg.points._buffer;
+        log_info("Published trajectory with %u points\n", TRAJ_POINTS);
 
         // Publish Odometry message (child_frame_id left NULL via value-init)
         OdometryMsg odometry_msg{};

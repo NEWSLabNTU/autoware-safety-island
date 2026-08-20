@@ -51,6 +51,17 @@ set(APP_SOURCES "" CACHE INTERNAL "Global source files list")
 set(APP_INCLUDE_DIRS "" CACHE INTERNAL "Global include directories list")
 
 # Build Type
+# Test programs use the idlc-style C headers/types (SteeringReport.h,
+# autoware_vehicle_msgs_msg_SteeringReport) so the CAN/DDS tests stay
+# middleware-independent. Since the eace28852 pin the Zephyr module emits
+# those compat headers under cyclonedds-ts/_genroot/<pkg>/msg/ and keeps
+# that root PRIVATE to the per-package descriptor libs — expose it to the
+# test sources (includes are spelled <pkg>/msg/<Name>.h).
+if(NOT BUILD_TEST STREQUAL "0")
+  target_include_directories(app PRIVATE
+    "${CMAKE_BINARY_DIR}/cyclonedds-ts/_genroot")
+endif()
+
 if(BUILD_TEST STREQUAL "1")
   target_sources(app PRIVATE test/unit_test.cpp)
 elseif(BUILD_TEST STREQUAL "2")
