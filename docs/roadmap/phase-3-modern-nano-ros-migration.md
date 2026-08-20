@@ -201,6 +201,120 @@ the upstream-side work items this phase surfaces.
 - [ ] W5.b `freertos-s32z2` after: NETC/hardware specifics; retires the
   vendored cyclonedds submodule for good.
 
+### W6 — 2026-08-20 pin bump 7dfe4fe4e → eace28852 (+ submodule adoption)
+
+Main had NOT moved (`a76b63f` = merge-base = origin/main); no rebase.
+nano-ros jumped ~2394 commits. nano-ros became a git SUBMODULE at
+`modules/nros` in lockstep with the west.yml revision (west adopts the
+checkout in place; `.gitignore` un-ignores `modules/nros`). Provisioning
+follows the nano-ros book's board-crate consumer shape
+(`book/src/porting/board-crate-import.md`, written for the ASI
+archetype). Host idlc now comes from the nros SDK store
+(`nros setup fvp-aemv8r-smp --rmw cyclonedds`). All six build modes
+re-verified green (full, unit-test, dds-loopback, can-output,
+dds-publisher, dds-subscriber), and the full 5-phase CI runtime script
+(`run-zephyr-fvp-ci.sh`) passed locally on FVP 11.31.28: controller
+boot markers, `=== All Tests Passed ===`, DDS loopback, CAN output,
+tap build smoke — "Zephyr FVP runtime validation OK".
+
+Wall ledger (symptom → cause → fix):
+
+1. **`nros setup board fvp-aemv8r-smp` fails: "no board crate at
+   packages/boards/nros-board-fvp-aemv8r-smp"** — run_board (setup.rs)
+   still resolves the pre-phase-337 board-crate layout; bundle boards
+   live at `packages/boards/nros-board-zephyr/boards/<name>/` and the
+   bundle-aware resolver exists (`nros board info` uses it). UNFIXED at
+   upstream HEAD (12f5d1d8f). ASI: bootstrap-asi.sh inlines the four
+   run_board steps (RMW source, 3.7 patch set, rustup target, lang-rust
+   check). → UPSTREAM ISSUE CANDIDATE (fix the class: `nros ws
+   board-facts` has the same bundle-blind descriptor match, see #3).
+2. **Configure FATAL: "host Cyclone idlc not found"** — the pin's
+   cyclonedds cmake resolves idlc from the nros SDK store before PATH.
+   Fix: bootstrap provisions `nros setup fvp-aemv8r-smp --rmw
+   cyclonedds` (cyclonedds prebuilt 0.10.5-nros1 + cyclonedds-src fork
+   `8601ca66a` + rosidl).
+3. **"board facts NOT delivered … no nano-ros checkout found"** — `nros
+   ws board-facts` resolves the nano-ros checkout via `--nano-ros-path`
+   → `NROS_REPO_DIR` → walk-up; an app dir outside the nano-ros tree
+   needs the env var. Fix: build.sh exports `NROS_REPO_DIR`. Residual
+   (non-fatal): facts still not delivered — "no board descriptor claims
+   `fvp-aemv8r-smp`", the same pre-bundle directory match as #1.
+4. **`nros-cpp` E0599: no variant `BackendDynamic`** — the Zephyr
+   EMBEDDED C++ cyclonedds lane composes cargo features without `alloc`
+   (zephyr/CMakeLists.txt:387) while nros-cpp's error mapper
+   hard-references the alloc-gated variant (phase-361 W3 un-gating,
+   lib.rs claims no buildable config lacks it — embedded cyclonedds C++
+   is the counterexample; native_sim's `,std` hides it upstream).
+   UNFIXED at upstream HEAD. ASI carries the idempotent
+   `scripts/patches/nros-cpp-embedded-alloc-patch.sh` (build.sh applies;
+   self-retires on upstream fix). → UPSTREAM ISSUE CANDIDATE.
+5. **Test programs: "PoseStamped.h: No such file", then unknown flat
+   type names** — the pin dropped the flat idlc-name compat layer; the
+   Zephyr module now emits standard idlc names (`<pkg>_msg_dds__X_`)
+   under `cyclonedds-ts/_genroot/<pkg>/msg/`, kept PRIVATE to the
+   descriptor libs, and the nros-cpp `Publisher<T>`/`Subscription<T>`
+   templates are typed-FFI-only (need generated C++ types). Fix: tests
+   migrated onto the dual-mode umbrella (`messages.hpp` aliases +
+   sentinel `_desc` stubs; FixedSequence push_back for Trajectory);
+   `_genroot` exposed to test builds for any remaining C-header use.
+   Branch policy: nros-only, no new `ASI_USE_NANO_ROS` gates.
+6. **`CAN_FILTER_DATA` undeclared (can_output_test)** — pre-existing
+   Zephyr 3.7 migration gap on this branch (flag removed after 3.5;
+   standard-ID data filter is `flags 0`). First surfaced now because the
+   mode was rebuilt on 3.7 for the first time since the migration.
+7. **Entry panic default changed upstream** (phase-366 M5/R2): absent
+   `PANIC` now means `platform` (`k_panic()` on Zephyr) where embedded
+   images used to halt; `nano_ros_add_executable` exposes no PANIC
+   keyword. Accepted (loud fatal is right for the island); revisit if a
+   halt-on-panic policy is wanted — needs the `nano_ros_entry` spelling.
+8. **Kconfig knobs went live** (#316): `CONFIG_NROS_EXECUTOR_MAX_CBS`
+   default 16→4 and now actually forwarded; environment wins over
+   Kconfig, and build.sh's `NROS_MAX_PARAMETERS=256` /
+   `NROS_EXECUTOR_MAX_CBS=16` / `NROS_SUBSCRIPTION_BUFFER_SIZE=16384`
+   exports were confirmed still read at the pin.
+
+9. **FVP runtime smoke: controller runs (timer loop prints "Control is
+   skipped since input data is not ready") but CI phase-1 markers never
+   appear** — "Starting Controller Node"/"Controller Node Started"/
+   "Actuation Safety Island is Live" lived only in the retired
+   `src/main.cpp` imperative boot; the generated Entry prints no ASI
+   banner, so the marker greps were a latent main-branch artifact never
+   re-validated on this branch. Fix: `controller_pkg::Controller`'s ctor
+   now owns the markers (before/after base construction — a ctor throw
+   ends boot before they print, which is the failure CI should catch).
+
+10. **Test images: `nros::create_node failed: -7`
+    (NROS_CPP_RET_NOT_INIT)** — the polling shim's lifecycle note still
+    said "`nros::init` is called from main.cpp"; test images carry their
+    own `main()` (no generated Entry, no `Board::run_components`), so
+    since the pin nothing initialized the runtime. Fix: the shim Node
+    ctor performs a one-time `nros::init()`; the full image's generated
+    Entry still owns init there (the guard never fires — the shim Node
+    is test-only).
+
+11. **unit_test hang after "Timer stopped via Node request"** — the
+    polling shim's `stop()` used `pthread_cancel` + join; Zephyr POSIX
+    implements deferred cancellation only and the poll loop's `usleep`
+    tick is not a cancellation point there, so the cancel never lands
+    and the join blocks forever. Fix: cooperative `running_` flag — the
+    loop polls it, `stop()` clears it and joins; `spin()` is idempotent
+    while spinning. (First exposed now: the runtime phases were never
+    re-run on this branch since the Zephyr 3.7 migration, same story as
+    the CAN filter flag in #6.) Companion observation: seven `os: tid
+    0x… is in use!` prints at cyclone participant creation — Zephyr
+    POSIX thread-pool slot reuse noise; session comes up and runs;
+    watch, not currently actioned.
+
+Overlay conf cleaned in the same pass: stale `CONFIG_NROS_CODEGEN_TOOL`
+devcontainer path dropped (`-D_NANO_ROS_CODEGEN_TOOL` wins) and the
+pinned domain-ID literal removed (Kconfig defaults to `NROS_DOMAIN_ID`;
+the tap conf still deliberately sets 2 — nano-ros phase-180 split-brain
+rule).
+
+Note for the next bump: `eace28852` sits mid-workstream on nano-ros #260
+(a53 SMP bring-up — different board family; no interference observed on
+the armv8r FVP lane).
+
 ## Acceptance
 - All four upstream runtime targets build from ONE branch; zephyr targets on
   nano-ros, freertos targets unchanged (until W5).
