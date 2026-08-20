@@ -128,14 +128,21 @@ cargo build --release \
 # patches / RUST_SUPPORTED / cyclonedds fetch). One board-driven command.
 NROS_CLI="${ROOT}/modules/nros/packages/cli/target/release/nros"
 if [[ ! -x "${NROS_CLI}" ]]; then die "nros CLI not built (expected ${NROS_CLI})."; fi
-# Phase 3 W2.c — the pre-215.J fallback is retired: the pin is current
-# nano-ros main, `nros setup board` always exists.
-say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
-# --zephyr-workspace wants the WEST TOPDIR (the tree containing `zephyr/` +
-# `modules/`), NOT $ZEPHYR_BASE (the zephyr project dir). `nros setup board`
-# applies its patch set to <workspace>/zephyr.
-( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
-    --zephyr-workspace "${ROOT}" )
+# FRICTION (eace28852 pin): `nros setup board` still resolves the pre-phase-337
+# board-crate path `packages/boards/nros-board-<name>` and misses bundle boards
+# under `packages/boards/nros-board-zephyr/boards/<name>/` (nros-cli-core
+# setup.rs run_board vs the bundle-aware resolver `nros board info` uses).
+# Until that lands upstream, run the four setup-board steps by hand — same
+# order as run_board: (a) RMW source, (b) zephyr-line patches, (c) rust
+# targets, (d) zephyr-lang-rust module presence (west update already fetched
+# it at the board's pinned rev).
+say "provisioning zephyr for board fvp-aemv8r-smp (manual setup-board steps)…"
+( cd "${ROOT}/modules/nros" \
+  && "${NROS_CLI}" setup --source cyclonedds-src \
+  && bash scripts/zephyr/patches/3.7.sh "${ROOT}" )
+rustup target add aarch64-unknown-none
+[[ -d "${ROOT}/modules/lang/rust" ]] || \
+  die "zephyr-lang-rust module missing at modules/lang/rust — run west update."
 
 # ---- 7. write activate-asi.sh (source it before ./build.sh) ----
 cat > "${ROOT}/activate-asi.sh" <<EOF
