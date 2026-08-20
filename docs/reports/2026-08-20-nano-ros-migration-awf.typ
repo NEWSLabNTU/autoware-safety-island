@@ -30,7 +30,7 @@
   #v(6pt)
   #text(11pt)[NEWSLab, National Taiwan University]
   #v(2pt)
-  #text(9.5pt, fill: luma(90))[Technical report for the Autoware Foundation — 2026-08-20 (rev. 3)]
+  #text(9.5pt, fill: luma(90))[Technical report for the Autoware Foundation]
 ]
 
 #v(8pt)
@@ -41,21 +41,22 @@
   *Abstract.* The Autoware Safety Island (ASI) runs Autoware's trajectory
   follower --- MPC lateral and PID longitudinal control --- as a standalone
   application on a safety-class Arm processor, exchanging commands with a
-  full Autoware stack over DDS. This report documents its migration from a
-  hand-glued CycloneDDS port onto _nano-ros_, a lightweight ROS 2 client
-  library for embedded RTOSes, and the co-evolution the migration drove:
-  ASI acts as nano-ros's _reference consumer_, so the port was equally an
-  effort to make nano-ros fit a real safety application --- nineteen
-  consumer-surfaced defects across two integration rounds were fixed
-  upstream or filed as tracked issues. We summarize what nano-ros enables
-  for a safety island (an unmodified vendored controller behind an
-  rclcpp-faithful API, declarative bringup with a generated entry,
-  wire-level ROS 2 interoperability by construction, bounded-memory typed
-  messaging), what changed in the ASI repository, the Arm FVP integration,
-  the validation evidence (six build modes, a five-phase emulator runtime
-  suite, and a closed-loop demonstration against unmodified ROS 2 Humble
-  Autoware at pre-migration control rates), and the gaps that remain on
-  both sides.
+  full Autoware stack over DDS. This report describes the current state of
+  ASI's migration from a hand-glued CycloneDDS port onto _nano-ros_, a
+  lightweight ROS 2 client library for embedded RTOSes, contrasting the
+  original firmware with the nano-ros-enabled one. The migration was
+  bidirectional: ASI acts as nano-ros's _reference consumer_, and nineteen
+  consumer-surfaced defects were fixed upstream or filed as tracked issues
+  along the way --- the effort of making nano-ros fit a real safety
+  application is part of the result. We summarize what nano-ros enables
+  (an unmodified vendored controller behind an rclcpp-faithful API,
+  declarative bringup with a generated entry, wire-level ROS 2
+  interoperability by construction, bounded-memory typed messaging), the
+  concrete before/after differences in the firmware and repository, the
+  Arm FVP integration, the validation evidence (six build modes, a
+  five-phase emulator runtime suite, a closed-loop demonstration against
+  unmodified ROS 2 Humble Autoware), and the gaps that remain on both
+  sides.
 ])
 
 #v(6pt)
@@ -78,7 +79,7 @@ wire-compatible middleware layer. The migration was deliberately
 bidirectional: rather than adapting ASI around middleware limitations, we
 fixed nano-ros where it did not yet fit a real safety application. Every
 integration failure ("wall") was reproduced minimally and either landed as
-an upstream fix or filed as a tracked nano-ros issue; downstream
+an upstream fix or was filed as a tracked nano-ros issue; downstream
 workarounds exist only as stop-gaps designed to retire themselves.
 
 = System overview
@@ -158,8 +159,8 @@ the safety argument:
 - *Bounded memory on the data path.* Generated message types carry
   fixed-capacity sequences and strings (e.g. a 250-point trajectory bound),
   and every controller input is bound to KEEP_LAST depth 1 --- no unbounded
-  queues or heap growth on the receive path, and sizing is set at build
-  time and verified under a real trajectory stream.
+  queues or heap growth on the receive path; sizing is set at build time
+  and verified under a real trajectory stream.
 - *A maintained middleware instead of a private fork.* CycloneDDS-on-Zephyr
   fixes (multicast join, mutex-pool exhaustion, thread bring-up) now live
   upstream where they are tested continuously, instead of in ASI patches.
@@ -167,8 +168,7 @@ the safety argument:
   backends, which keeps ASI's future porting surface small.
 - *Reproducible provisioning.* Toolchains, the RMW source, patch sets and
   host tools are declared as data and applied by idempotent commands; ASI's
-  host bootstrap is thin and survived a $approx 2,400$-commit upstream
-  refactor with two scripted workarounds.
+  host bootstrap is thin and robust against upstream restructuring.
 
 #figure(
   diagram(
@@ -213,32 +213,72 @@ the safety argument:
   are data; everything executable is generated.],
 ) <fig-entry>
 
-= Making nano-ros fit ASI
+= From the original ASI to the nano-ros ASI
 
-The enabling properties above did not come for free --- they were earned by
-running ASI against nano-ros and fixing what broke, on whichever side the
-root cause lay. Two integration rounds:
+@tab-diff contrasts the two firmwares seam by seam. The common thread: in
+the original, every seam was _owned code_; in the nano-ros ASI it is either
+_declared data_ or _generated_, and the only hand-written C++ left outside
+the vendored controller is thin adapters.
 
-*Round 1 (July 2026, first modern pin).* Eight consumer-surfaced walls,
-_all fixed on nano-ros main within the cycle_: Zephyr multicast join in the
-CycloneDDS fork; mutex-pool exhaustion under SMP against a 40-participant
-Autoware graph; parameter-pool and subscription-buffer capacity for a
-controller with 150+ parameters and 8.8 kB trajectory samples; per-package
-message FFI generation; and board/entry plumbing. This round is why the
-closed loop first ran (at $approx$ 19 Hz control output, 30+ min, zero
-faults).
+#figure(
+  align(left, block(width: 100%)[
+    #set text(8.6pt)
+    #table(
+      columns: (auto, 1fr, 1fr),
+      inset: 4.5pt,
+      stroke: 0.4pt + luma(160),
+      table.header([*Seam*], [*Original ASI*], [*nano-ros ASI*]),
+      [Middleware],
+      [vendored CycloneDDS tree, patched in-repo; hand-built host `idlc`],
+      [nano-ros submodule in lockstep with the west pin; CycloneDDS fork and host tools provisioned by the nano-ros CLI],
+      [Boot],
+      [imperative `main.cpp`: network wait, SNTP, node construction, banner prints],
+      [generated entry baked from the resolved system model; a weak network hook and the component constructor carry the app-specific parts],
+      [Node API],
+      [bespoke `Node` class: raw descriptor-based pub/sub, own pthread poll loop, ad-hoc parameter map],
+      [`nros::ComponentNode`, rclcpp-faithful; the controller registers as a component under the package/class identity rule; the polling shim survives only for test images],
+      [Launch & params],
+      [topics and 150+ parameters hardcoded or seeded in C++],
+      [authored in `system.toml` + launch XML, resolved to a committed system model; 74 launch parameters seeded by the generated entry],
+      [Messages],
+      [idlc-generated C structs; raw `_buffer/_length` sequences, manual memory management in tests and adapters],
+      [generated C++ value types with fixed-capacity sequences/strings; one umbrella header maps ASI's aliases; descriptors wire-compatible with `rmw_cyclonedds`],
+      [QoS],
+      [deep default histories (up to 500) --- stale buffered trajectories],
+      [KEEP_LAST depth 1 on every controller input, audited under a real >1400-byte trajectory stream],
+      [Host workflow],
+      [hand-maintained scripts per concern; devcontainer-oriented],
+      [thin no-sudo bootstrap (`scripts/bootstrap-asi.sh`), one-command demo (`scripts/run-tap-demo.sh`), CI runtime suite that also runs on a developer host],
+      [Portability],
+      [one path: Zephyr + vendored CycloneDDS],
+      [board-bundle import (one CMake call per board); the same app API spans four RTOSes and three RMW backends upstream],
+    )
+  ]),
+  caption: [Firmware and repository diff, original vs. nano-ros-enabled
+  ASI. Vendored Autoware component logic: unchanged in both.],
+) <tab-diff>
 
-*Round 2 (August 2026, this modernization).* The pin advanced
-$approx 2,400$ commits in one step. Eleven walls (@tab-walls): two are
-genuine nano-ros defects invisible to its own CI --- filed as issues
-\#0729 (board provisioning misses the new board-bundle layout) and \#0730
-(the embedded C++ CycloneDDS build omits an `alloc` capability its error
-path requires; masked upstream by simulator-only coverage) --- and are
-carried downstream only as self-retiring workaround scripts. Four more were
-pre-existing ASI validation gaps that the first complete re-validation
-exposed; the rest were consumer-side adaptations to intentional upstream
-changes. Notably, _no wall from round 1 regressed_ --- the fixes the
-reference consumer drove upstream held across months of internal change.
+= Migration status
+
+*Current state.* The Zephyr targets are fully migrated: the FVP reference
+platform builds, boots and closes the loop on nano-ros with no legacy
+middleware in the image. The FreeRTOS targets still run the original
+CycloneDDS path unchanged (their migration is scoped, not started). All
+six firmware build modes, the five-phase FVP runtime suite, and the
+closed-loop demo pass on the current pin; control-command output rates
+match the original port's baseline ($approx$ 19 Hz and above).
+
+*What the port surfaced.* Making nano-ros fit ASI produced nineteen
+precisely-reproduced defects. Most were fixed on nano-ros main and are now
+covered by its own CI --- among them Zephyr multicast join in the
+CycloneDDS fork, mutex-pool exhaustion against a 40-participant Autoware
+graph, parameter-pool and subscription-buffer capacity for a controller of
+this size, and per-package message FFI generation. Two remain open as
+tracked nano-ros issues with self-retiring ASI workarounds
+(@tab-walls \#1, \#4); a further group were latent ASI validation gaps that
+full re-validation exposed (\#6, \#9--11) --- defects of the original port,
+not of nano-ros. None of the previously fixed defects has regressed on the
+current pin.
 
 #figure(
   align(left, block(width: 100%)[
@@ -261,45 +301,10 @@ reference consumer drove upstream held across months of internal change.
       [11], [Test hangs on node stop], [Thread cancellation never lands on Zephyr's POSIX layer], [Cooperative stop flag],
     )
   ]),
-  caption: [Round-2 wall ledger. Full detail in the repository's phase-3
-  roadmap document.],
+  caption: [Defects surfaced while bringing ASI onto the current nano-ros
+  pin (the earlier-resolved defects live in nano-ros's tracker). Full
+  detail in the repository's phase-3 roadmap document.],
 ) <tab-walls>
-
-= What changed in ASI
-
-The vendored Autoware algorithms are untouched; change concentrates in the
-integration layers:
-
-#figure(
-  align(left, block(width: 100%)[
-    #set text(8.6pt)
-    #table(
-      columns: (auto, 1.3fr, 1fr),
-      inset: 4.5pt,
-      stroke: 0.4pt + luma(160),
-      table.header([*Category*], [*What changed*], [*Examples*]),
-      [Dependencies],
-      [nano-ros as a git submodule in lockstep with the west manifest pin; vendored CycloneDDS retired from the Zephyr path],
-      [`modules/nros`, `west.yml`],
-      [Node layer],
-      [controller re-homed as a component package satisfying nano-ros's package/class identity rule; boot markers moved into the component constructor; a small polling shim retained for test images],
-      [`src/controller_pkg/`, `common/node/node_nros.hpp`],
-      [Bringup],
-      [topology, remappings and launch parameters authored declaratively and resolved into a committed system model],
-      [`src/controller_bringup/`],
-      [Messages],
-      [ten ROS interface packages vendored as `.msg` sources; one dual-mode umbrella maps ASI's aliases onto the generated types],
-      [`autoware_msgs/messages.hpp`],
-      [Build & scripts],
-      [build driver hands codegen and sizing to the nano-ros CLI; thin no-sudo host bootstrap; one-command demo],
-      [`build.sh`, `scripts/bootstrap-asi.sh`, `scripts/run-tap-demo.sh`],
-      [Tests],
-      [five on-target programs kept middleware-honest through the umbrella; CAN test moved to the Zephyr 3.7 API],
-      [`test/unit_test.cpp`, `test/can_output_test.cpp`],
-    )
-  ]),
-  caption: [ASI change surface by category.],
-)
 
 = FVP integration
 
@@ -356,7 +361,7 @@ DDS loopback, CAN output, DDS publisher/subscriber). *Runtime:* the
 five-phase FVP suite passes end to end. *Closed loop:* with the stack of
 @fig-loop brought up headless, the planner streams the trajectory at 10 Hz
 and the island returns control commands at 19 Hz and above --- matching the
-pre-modernization baseline; from the spawn position the MPC correctly
+original port's baseline; from the spawn position the MPC correctly
 commands an emergency stop on excessive tracking error, i.e. the controller
 logic is demonstrably live. Interoperability was spot-checked at field
 level from the Humble side. `scripts/run-tap-demo.sh` reproduces the run,
@@ -386,8 +391,8 @@ On the ASI side:
   entirely.
 - *Services and actions are unexercised* --- the island uses pub/sub and
   timers only; interop claims extend only that far.
-- *Long-duration soak pending* --- the Phase-2 real-run checkpoint scenario
-  has not yet been re-run on the modern stack.
+- *Long-duration soak pending* --- the real-run checkpoint scenario has not
+  yet been re-run on the modern stack.
 - *The demo stops at the control output* --- the simulator's ego is not
   wired to consume the island's commands; closing that last link is a
   demo-wiring change, not a firmware one.
@@ -395,16 +400,16 @@ On the ASI side:
 = Conclusion
 
 The migration replaced ASI's bespoke middleware with nano-ros and paid for
-it in the right currency: nineteen precisely-reproduced defects across two
-rounds, most fixed upstream where they are now continuously tested, the
-rest tracked. In return the safety island gained an unmodified vendored
-controller behind a faithful API, a declaratively-generated image,
-wire-level ROS 2 interoperability with no translation layer, bounded
-memory on the data path, and a validation story (build, emulator runtime,
-closed loop) that one script reproduces. The reference-consumer
-arrangement --- a real application continuously stress-testing a young
-middleware, with an explicit contract that fixes flow upstream --- is, we
-believe, the transferable result.
+it in the right currency: nineteen precisely-reproduced defects, most fixed
+upstream where they are now continuously tested, the rest tracked. In
+return the safety island gained an unmodified vendored controller behind a
+faithful API, a declaratively-generated image, wire-level ROS 2
+interoperability with no translation layer, bounded memory on the data
+path, and a validation story (build, emulator runtime, closed loop) that
+one script reproduces. The reference-consumer arrangement --- a real
+application continuously stress-testing a young middleware, with an
+explicit contract that fixes flow upstream --- is, we believe, the
+transferable result.
 
 #v(4pt)
 #line(length: 30%, stroke: 0.5pt + luma(140))
