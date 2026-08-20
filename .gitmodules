@@ -13,3 +13,7 @@
 	path = cyclonedds
 	url = https://github.com/autowarefoundation/cyclonedds
 	branch = freertos-s32z2
+[submodule "modules/nros"]
+	path = modules/nros
+	url = https://github.com/NEWSLabNTU/nano-ros.git
+	branch = main

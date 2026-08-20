@@ -37,9 +37,10 @@ manifest:
     # clobber the pin below. ASI stays the manifest authority; nano-ros is
     # consumed only as a leaf project whose zephyr/module.yml is auto-
     # discovered by the Zephyr module crawler.
+    # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     - name: nano-ros
       remote: newslab
-      revision: 7dfe4fe4e27dd57f4a625b93facb91f792956708
+      revision: eace28852ab0ef8273d2b2cc1919f695586d57e0
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
