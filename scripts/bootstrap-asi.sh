@@ -140,6 +140,13 @@ say "provisioning zephyr for board fvp-aemv8r-smp (manual setup-board steps)…"
 ( cd "${ROOT}/modules/nros" \
   && "${NROS_CLI}" setup --source cyclonedds-src \
   && bash scripts/zephyr/patches/3.7.sh "${ROOT}" )
+# Host idlc: the pin's cyclonedds cmake resolves idlc from the nros SDK store
+# (~/.nros/sdk/cyclonedds/<ver>/bin/idlc) before PATH. Provision the board's
+# tool ∪ rmw set (cyclonedds prebuilt + cyclonedds-src + rosidl; the gated
+# arm-fvp entry only prints its license hint).
+say "provisioning SDK store (cyclonedds idlc + rosidl)…"
+( cd "${ROOT}/modules/nros" \
+  && "${NROS_CLI}" setup fvp-aemv8r-smp --rmw cyclonedds )
 rustup target add aarch64-unknown-none
 [[ -d "${ROOT}/modules/lang/rust" ]] || \
   die "zephyr-lang-rust module missing at modules/lang/rust — run west update."

@@ -312,6 +312,9 @@ function build_zephyr_actuation_module() {
   # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
   # here. The FreeRTOS platforms below still use it unchanged.
   require_nros_checkout
+  # Consumer-side friction patches for the current nano-ros pin (idempotent,
+  # nano-ros's own zephyr-patch pattern; each self-retires when upstream fixes).
+  bash "${ROOT_DIR}/scripts/patches/nros-cpp-embedded-alloc-patch.sh"
   # Build the host `nros` CLI if missing or stale (full host provisioning is
   # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
   # — inlined from the retired bootstrap-nano-ros-shim.sh.
@@ -328,6 +331,10 @@ function build_zephyr_actuation_module() {
   fi
   export CMAKE_PREFIX_PATH=""
   export AMENT_PREFIX_PATH=""
+  # Board-facts lane (nano-ros phase-351 W5): `nros ws board-facts` resolves
+  # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
+  # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   local extra_conf_files=()
 
   # Zephyr 3.7 hardware-model-v2 board identifiers: the HWMv1 short name
