@@ -91,10 +91,11 @@ jobs:
           retention-days: 7
 
   build-freertos:
-    name: FreeRTOS POSIX
+    name: FreeRTOS POSIX (nano-ros)
     runs-on: ubuntu-latest
     container:
       image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
@@ -106,20 +107,33 @@ jobs:
         shell: bash
         run: git config --global --add safe.directory '*'
 
-      # Initialise only the public submodules. s32ct_config is a PRIVATE
-      # submodule (NXP Confidential generated configs) that the repo-scoped CI
-      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
-      - name: Initialize build submodules (private s32ct_config excluded)
+      # Phase-4 W5.a — the lane builds against the nano-ros submodule (the
+      # vendored cyclonedds/zephyr trees are not used here). The CLI's
+      # play_launch dep is the only nested submodule needed.
+      - name: Initialize build submodules
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: |
+          git submodule update --init modules/nros
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
 
-      - name: Restore CycloneDDS build cache
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Restore nros CLI + cargo cache
         uses: actions/cache@v4
         with:
           path: |
-            build/cyclonedds_host
-            build/cyclonedds_target_out
-          key: cdds-${{ hashFiles('.gitmodules') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            modules/nros/packages/cli/target
+            modules/nros/packages/cli/nros-launch-resolve/target
+          key: nros-cli-freertos-${{ hashFiles('actuation_module/west.yml') }}
+          restore-keys: nros-cli-freertos-
 
       - name: Run FreeRTOS POSIX validation
         shell: bash
