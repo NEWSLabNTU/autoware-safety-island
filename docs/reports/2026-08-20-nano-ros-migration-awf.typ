@@ -3,6 +3,8 @@
 //
 // Build: typst compile docs/reports/2026-08-20-nano-ros-migration-awf.typ
 
+#import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
+
 #set document(
   title: "Porting the Autoware Safety Island onto nano-ros",
   author: "NEWSLab, National Taiwan University",
@@ -15,6 +17,11 @@
 #show raw.where(block: false): it => box(fill: luma(240), inset: (x: 2pt), outset: (y: 2pt), radius: 2pt, it)
 #show figure: set block(breakable: true)
 
+#let dnode(pos, body, w: auto, fill: luma(248)) = node(
+  pos, body, width: w, fill: fill, stroke: 0.6pt + luma(100),
+  corner-radius: 3pt, inset: 6pt,
+)
+
 #align(center)[
   #text(17pt, weight: "bold")[
     Porting the Autoware Safety Island onto nano-ros:\
@@ -23,7 +30,7 @@
   #v(6pt)
   #text(11pt)[NEWSLab, National Taiwan University]
   #v(2pt)
-  #text(9.5pt, fill: luma(90))[Technical report for the Autoware Foundation — 2026-08-20]
+  #text(9.5pt, fill: luma(90))[Technical report for the Autoware Foundation — 2026-08-20 (rev. 2)]
 ]
 
 #v(8pt)
@@ -36,135 +43,247 @@
   application on a safety-class Arm processor, exchanging commands with a
   full Autoware stack over DDS. This report documents the migration of ASI's
   Zephyr targets from a hand-glued CycloneDDS port onto _nano-ros_, a
-  lightweight `no_std` ROS 2 client library for embedded RTOSes, and the
-  methodology used: ASI serves as nano-ros's _canonical reference consumer_,
-  so every integration failure ("wall") is either fixed upstream or captured
-  as a tracked issue rather than papered over downstream. We describe the
-  consumption model (git submodule in lockstep with a `west` manifest pin,
-  board-crate provisioning, generated entry from a resolved system model),
-  a modernization step that advanced the middleware pin by roughly 2,400
-  commits in one pass, the eleven walls that step surfaced with their root
-  causes, and the resulting validation: six firmware build modes, a
-  five-phase emulator runtime suite, and a closed-loop demonstration against
-  an unmodified ROS 2 Humble Autoware stack at control rates matching the
-  pre-migration baseline. Wire-level interoperability with `rmw_cyclonedds`
-  is preserved by construction. We conclude with lessons transferable to
-  other middleware migrations in the Autoware ecosystem.
+  lightweight `no_std` ROS 2 client library for embedded RTOSes. We show how
+  nano-ros's workspace concepts (component node, bringup, and generated
+  entry packages) restructure the firmware, what changed in the repository
+  by category, how the Arm FVP integration works, and the outcome of a
+  modernization step that advanced the middleware pin by $approx 2,400$
+  commits: eleven "walls" with root causes, two upstream issues, and full
+  re-validation --- six build modes, a five-phase emulator runtime suite,
+  and a closed-loop demonstration against unmodified ROS 2 Humble Autoware
+  at pre-migration control rates. ASI serves as nano-ros's canonical
+  _reference consumer_: every integration failure is fixed upstream or
+  tracked, never papered over downstream.
 ])
 
 #v(6pt)
 
 = Introduction
 
-Safety architectures for autonomous driving increasingly separate a
-_safety island_ --- a minimal, certifiable control path on a lockstep-capable
-processor --- from the performance-oriented compute domain running the full
-autonomy stack. The Autoware Safety Island project realizes this pattern for
-Autoware: the trajectory follower (MPC lateral controller and PID
-longitudinal controller, vendored unmodified from Autoware) executes on an
-Arm Cortex-R82 class target under Zephyr RTOS, receives the planned
-trajectory and vehicle kinematic state over DDS, and returns
-`autoware_control_msgs/Control` commands to the primary stack (optionally
-mirrored onto CAN).
+Safety architectures for autonomous driving separate a _safety island_ ---
+a minimal, certifiable control path on a lockstep-capable processor --- from
+the performance-oriented compute domain running the full autonomy stack.
+ASI realizes this pattern for Autoware: the trajectory follower (MPC lateral
+and PID longitudinal controllers, vendored unmodified from Autoware) runs on
+an Arm Cortex-R82 target under Zephyr RTOS, consumes the planned trajectory
+and vehicle state over DDS, and returns `autoware_control_msgs/Control`
+commands (optionally mirrored onto CAN).
 
-The original port carried its own middleware glue: a vendored CycloneDDS
-tree, hand-written IDL tooling on the host, and a bespoke node/executor shim.
-That glue is exactly the part a safety argument least wants to own. nano-ros
---- a lightweight ROS 2 client for embedded RTOSes (Zephyr, FreeRTOS, NuttX,
-ThreadX) with interchangeable RMW backends (CycloneDDS, zenoh-pico,
-Micro-XRCE) --- offers the same wire compatibility with a maintained,
-testable, upstreamable middleware layer. This report documents how ASI's
-Zephyr targets were moved onto nano-ros, and what the process taught both
-projects.
-
-Two properties make this migration worth reporting beyond its immediate
-result. First, it was run as a _reference-consumer_ engagement: ASI is
-nano-ros's named consumer archetype, and the migration contract required
-every consumer-surfaced defect to be intaken upstream (nano-ros's phase-292
-intake and issue tracker) rather than worked around silently. Second, the
-final modernization step was deliberately large --- a single pin advance of
-$approx 2,400$ upstream commits --- which stress-tests how well a
-middleware's consumer surface holds together across months of internal
-change.
+The original port owned its middleware: a vendored CycloneDDS tree, host IDL
+tooling, and a bespoke node/executor shim --- exactly the code a safety
+argument least wants to own. nano-ros (a `no_std` ROS 2 client for Zephyr,
+FreeRTOS, NuttX and ThreadX with interchangeable RMW backends) replaces that
+glue with a maintained, wire-compatible middleware layer. The migration was
+run as a _reference-consumer_ engagement: ASI is nano-ros's named consumer
+archetype, and every consumer-surfaced defect is intaken upstream rather
+than worked around silently.
 
 = System overview
 
-== The safety island application
+@fig-loop shows the validated closed loop. An unmodified Autoware container
+(ROS 2 Humble, `rmw_cyclonedds`) runs the planning simulator on DDS
+domain 1; a DDS bridge relays the five controller inputs to domain 2, which
+is pinned to a host TAP interface; the island on the Arm FVP consumes them
+and publishes control commands back through the same path. There is no type
+adaptation anywhere: nano-ros pins its CycloneDDS fork to the 0.10.5
+release ROS Humble ships and emits `rmw_cyclonedds`-compatible type names
+and CDR, so interoperability holds by construction (verified in both
+directions with `ros2 topic hz`/`echo`).
 
-ASI bundles the relevant Autoware components (trajectory follower node, MPC
-and PID controllers, interpolation and vehicle-info utilities) unmodified
-under an adapter layer. Platform specifics sit behind `common/` interfaces
-(node, clock, logger, CAN, network). Production target is the Arm
-FVP_BaseR_AEMv8R fixed virtual platform (Cortex-R82, SMP-4) and the NXP
-S32Z270 board; a FreeRTOS POSIX simulator serves development. The controller
-subscribes to five inputs (trajectory, kinematic state, acceleration,
-steering status, operation mode), runs a 30~ms control timer, and publishes
-control commands, all over DDS domain boundaries bridged to the primary
-Autoware domain.
+#figure(
+  diagram(
+    spacing: (64pt, 16pt),
+    node-stroke: 0.6pt + luma(100),
+    edge-stroke: 0.7pt + luma(60),
+    label-size: 7.5pt,
+    label-sep: 2pt,
 
-== nano-ros consumption model
+    dnode((0, 0), w: 118pt, align(center)[
+      *Autoware container*\
+      #text(8pt)[universe-20250207, Humble\ planning simulator + rviz]\
+      #text(8pt, fill: luma(90))[DDS domain 1]
+    ]),
+    dnode((1, 0), w: 86pt, align(center)[
+      *DDS bridge*\
+      #text(8pt)[domain 1 $arrow.l.r$ 2 relay\ (compose service)]
+    ]),
+    dnode((2, 0), w: 150pt, fill: rgb("#eef3ea"), align(center)[
+      *Safety island — Arm FVP*\
+      #text(8pt)[
+        `controller_pkg::Controller`\
+        (Autoware MPC + PID, unmodified)\
+        nros-cpp `ComponentNode` / executor\
+        RMW: CycloneDDS 0.10.5 fork\
+        Zephyr 3.7, Cortex-R82 SMP-4
+      ]\
+      #text(8pt, fill: luma(90))[DDS domain 2]
+    ]),
 
-The migration adopted nano-ros's _board-crate consumer_ shape, which the
-nano-ros book documents with ASI as the archetype:
+    edge((0, 0), (1, 0), "->", shift: 8pt, label-side: left,
+      text(7pt)[5 input topics\ (traj \@ 10 Hz)]),
+    edge((1, 0), (2, 0), "->", shift: 8pt, label-side: left,
+      text(7pt)[tap0]),
+    edge((2, 0), (1, 0), "->", shift: 8pt, label-side: left,
+      text(7pt)[`Control` #sym.approx 19 Hz+]),
+    edge((1, 0), (0, 0), "->", shift: 8pt, label-side: left,
+      text(7pt)[`…/control_cmd`]),
+  ),
+  caption: [The closed-loop demo (`scripts/run-tap-demo.sh`). The island's
+  smsc-91c111 NIC model attaches to the host TAP; both DDS sides run stock
+  CycloneDDS wire format.],
+) <fig-loop>
 
-- *Checkout.* nano-ros is a git submodule at `modules/nros`, pinned in
-  lockstep with the `west` manifest revision (`import: false`; ASI keeps
-  manifest authority). `west update` adopts the submodule checkout in place.
-- *Provisioning.* The in-tree `nros` CLI provisions the consumer's Zephyr
-  tree from the board's declared contract: the RMW source (a CycloneDDS
-  0.10.5 fork pinned to the version ROS~2 Humble ships), a Zephyr-line patch
-  set, Rust cross-targets, and host tools (the CycloneDDS `idlc` from an SDK
-  store) --- one command per concern, no hand-maintained forks downstream.
-- *Board import.* One CMake call, `nano_ros_use_board(fvp-aemv8r-smp)`,
-  placed before `find_package(Zephyr)`, layers in the board id, Kconfig
-  fragments, device-tree overlay, default RMW, and the runner hint.
-- *Messages.* The ten vendored ROS interface packages (`geometry_msgs`,
-  `autoware_control_msgs`, …) are declared once; nano-ros codegen emits C++
-  value types with fixed-capacity sequences/strings (no heap growth on the
-  receive path), per-package Rust FFI crates, and CycloneDDS topic
-  descriptors whose type names match `rmw_cyclonedds`'s on-wire naming.
-- *Entry.* The bootable image is _generated_: the launch topology and
-  parameters are authored declaratively (`system.toml` + launch XML),
-  resolved by `play_launch` into a system model, and baked by
-  `nano_ros_add_executable(... MODEL ... TYPED)` into a Zephyr entry that
-  constructs the controller component with its 74 launch parameters.
-  The controller itself is an `nros::ComponentNode` (rclcpp-faithful
-  surface: `declare_parameter`, member-function-pointer subscriptions and
-  timers, value-typed publishers), registered under nano-ros's package/class
-  identity rule.
+= nano-ros concepts in the firmware
 
-This shape eliminates the three artifacts a hand-glued port accumulates:
-duplicated board configuration, hardcoded launch/parameter wiring, and a
-private middleware fork.
+nano-ros structures an application as three roles, and the port maps ASI
+onto them directly:
 
-= Migration method: the reference-consumer contract
+- *Node package* — `actuation_module/src/controller_pkg/`: the controller as
+  a _component_. `controller_pkg::Controller` derives from the vendored
+  Autoware controller (now a plain implementation library) so the package
+  directory and registered class satisfy nano-ros's
+  `<pkg-dir>::<Class>` identity rule; `NROS_COMPONENT(Controller)`
+  registers it with an rclcpp shape marker. The base class uses the
+  rclcpp-faithful `nros::ComponentNode` surface: `declare_parameter`
+  (150+ MPC/PID parameters), member-function-pointer
+  `create_subscription`/`create_timer`, value-typed publishers, and
+  KEEP_LAST-1 QoS on every input.
+- *Bringup package* — `actuation_module/src/controller_bringup/`:
+  language-agnostic topology. `system.toml` + `launch/system.launch.xml`
+  declare the node, its remappings and its 74 launch parameters;
+  `play_launch resolve` turns them into a _SystemModel_ (a fully resolved,
+  reproducible description with pinned inputs).
+- *Entry package* — generated, never hand-written. One CMake call bakes the
+  bootable image from the model (@fig-entry); the generated `main` seeds
+  parameters, constructs components by placement-new with executor handles,
+  waits on the board's network hook, and spins. The retired imperative
+  `main.cpp` is fully superseded --- application liveness markers moved into
+  the component constructor as a consequence.
 
-The port proceeded in phases (tracked in the repository's phase-1 through
-phase-3 roadmap documents): an initial build-system and codegen spike, a
-node-adapter phase introducing a polling shim over nros-cpp, migration of
-the controller onto `ComponentNode`, adoption of workspace mode and the
-canonical CMake verbs, and finally runtime proof on the FVP. Each phase
-ended with the same discipline:
+#figure(
+  diagram(
+    spacing: (34pt, 18pt),
+    label-sep: 2pt,
+    node-stroke: 0.6pt + luma(100),
+    edge-stroke: 0.7pt + luma(60),
+    label-size: 7.5pt,
 
-+ Attempt the step exactly as nano-ros's user documentation prescribes.
-+ Record every failure as a numbered _wall_ with a minimal reproduction.
-+ File the wall upstream (nano-ros intake/issue) when the cause is
-  upstream; fix it downstream only when it is genuinely consumer-side.
-+ Re-verify from a clean workspace before declaring the phase done.
+    dnode((0, 0), w: 105pt, align(center)[
+      `system.toml`\ `launch/system.launch.xml`\
+      #text(8pt, fill: luma(90))[bringup pkg (authored)]
+    ]),
+    dnode((1, 0), w: 95pt, align(center)[
+      `config/`\ `system_model.yaml`\
+      #text(8pt, fill: luma(90))[SystemModel (resolved)]
+    ]),
+    dnode((2, 0), w: 120pt, align(center)[
+      generated entry TU\ + components stub\
+      #text(8pt, fill: luma(90))[`nano_ros_add_executable(`\ `... MODEL ... TYPED)`]
+    ]),
+    dnode((3, 0), w: 78pt, align(center)[
+      `zephyr.elf`\
+      #text(8pt, fill: luma(90))[one fused image]
+    ]),
+    dnode((1, 1), w: 105pt, align(center)[
+      ten `msg_ros/` pkgs\
+      #text(8pt, fill: luma(90))[`nros_generate_interfaces()`]
+    ]),
+    dnode((2, 1), w: 150pt, align(center)[
+      #text(8.5pt)[C++ value types (fixed-capacity) ·\
+      per-pkg Rust FFI crates ·\
+      CycloneDDS descriptors + idlc TUs]
+    ]),
 
-An earlier pin advance (July 2026) surfaced eight walls, all of which were
-fixed on nano-ros main within the same cycle --- among them Zephyr
-multicast-join in the CycloneDDS fork, a mutex-pool exhaustion under SMP,
-and per-package FFI generation. The consumer benefit of that discipline
-showed up in this modernization: the follow-on jump of $approx 2,400$
-commits produced _no_ regression in any area an earlier wall had hardened.
+    edge((0, 0), (1, 0), "->", text(7pt)[resolve]),
+    edge((1, 0), (2, 0), "->", [`nros` codegen]),
+    edge((2, 0), (3, 0), "->", [west/CMake\ link]),
+    edge((1, 1), (2, 1), "->"),
+    edge((2, 1), (3, 0), "->"),
+  ),
+  caption: [Declarative bringup to bootable image. The launch topology and
+  the interface packages are data; everything executable is generated.],
+) <fig-entry>
+
+= What changed: organization and code
+
+The port left the vendored Autoware algorithms untouched and concentrated
+change in the integration layers. By category, with representative examples:
+
+#figure(
+  align(left, block(width: 100%)[
+    #set text(8.6pt)
+    #table(
+      columns: (auto, 1fr, 1.15fr),
+      inset: 4.5pt,
+      stroke: 0.4pt + luma(160),
+      table.header([*Category*], [*Organization*], [*Representative changes*]),
+      [Dependencies],
+      [nano-ros as git submodule `modules/nros`, lockstep with the `west.yml` revision; vendored CycloneDDS retired from the Zephyr path (FreeRTOS targets untouched)],
+      [`.gitmodules`, `actuation_module/west.yml` (zephyr v3.7.0 + zephyr-lang-rust pinned per nano-ros's contract)],
+      [Build glue],
+      [`build.sh` drives the nros CLI (host build, codegen tool handoff, board-id mapping, FVP flags); consumer patches are idempotent scripts],
+      [`-D_NANO_ROS_CODEGEN_TOOL=...`, `NROS_MAX_PARAMETERS=256` / `NROS_EXECUTOR_MAX_CBS=16` / `NROS_SUBSCRIPTION_BUFFER_SIZE=16384`, `scripts/patches/nros-cpp-embedded-alloc-patch.sh`],
+      [Node layer],
+      [controller re-homed as component pkg `controller_pkg/`; polling shim `common/node/node_nros.hpp` retained for test images only],
+      [`NROS_COMPONENT(Controller)`; ctor-owned boot markers; one-time `nros::init()` in the shim; cooperative stop flag replacing `pthread_cancel`],
+      [Messages],
+      [ten ROS interface pkgs vendored as `.msg` sources; a dual-mode umbrella maps ASI aliases onto generated C++ types],
+      [`autoware_msgs/messages.hpp` (`TrajectoryMsg_Raw`, sentinel `_desc` stubs); fixed-capacity sequences (250-point trajectory bound)],
+      [Tests],
+      [five on-target programs kept middleware-honest through the umbrella],
+      [`unit_test.cpp`, `dds_loopback_test.cpp` on typed pub/sub; `can_output_test.cpp` on Zephyr 3.7 CAN API],
+      [Provisioning],
+      [thin host bootstrap + one-command demo; no sudo ever executed by scripts],
+      [`scripts/bootstrap-asi.sh` (west, SDK, CLI, board provisioning, SDK-store `idlc`), `scripts/run-tap-demo.sh`, `scripts/setup-tap.sh`],
+    )
+  ]),
+  caption: [Change surface by category. Vendored Autoware component logic:
+  zero changes beyond the port's adapter seams.],
+)
+
+= FVP integration
+
+The Arm FVP_BaseR_AEMv8R (Cortex-R82, SMP-4) is the reference platform, and
+its integration is board-crate-driven rather than hand-glued:
+
+- *Board bundle.* nano-ros ships
+  `packages/boards/nros-board-zephyr/boards/fvp-aemv8r-smp/` with a
+  `board.cmake` single source of truth: hardware-model-v2 board id
+  `fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp`, toolchain `aarch64-zephyr-elf`,
+  default RMW CycloneDDS, Rust target `aarch64-unknown-none`, runner
+  `armfvp`, plus the board's Kconfig/DTS fragments and a
+  `zephyr-rust-support` module. `nano_ros_use_board(fvp-aemv8r-smp)` before
+  `find_package(Zephyr)` layers all of it in; `nros board info` prints the
+  resolved contract.
+- *NIC and networking.* The model's smsc-91c111 NIC is off by default;
+  `build.sh` enables it (`-C bp.smsc_91c111.enabled=1`, promiscuous for the
+  bridge path). Two profiles: FVP user-mode networking (DHCP; used by CI)
+  and the TAP profile (`--network tap`: `-C bp.hostbridge.userNetworking=0
+  -C bp.hostbridge.interfaceName=tap0`, DDS domain 2 pinned in the board
+  conf) for the demo. IGMP is enabled for SPDP multicast join (fixed in the
+  CycloneDDS fork during phase 3).
+- *Run model.* `west build --target run` launches the FVP through Zephyr's
+  `armfvp` runner --- no hand-rolled launch scripts. One model flag matters
+  operationally: `-C cache_state_modelled=0`; with the default the model
+  crawls $approx 1000 times$ under busy code, which presents as a "hang" at
+  network bring-up.
+- *CI.* A five-phase runtime suite downloads the sha-pinned FVP from Arm's
+  public CDN and runs: full controller boot to its liveness markers; the
+  on-target unit suite; a DDS loopback; CAN output over Zephyr's CAN
+  loopback; and the TAP image build. The same script runs unchanged on a
+  developer host (`.github/scripts/run-zephyr-fvp-ci.sh`).
+- *Sizing.* The full image links to 9.7 MB of the FVP's 128 MB RAM; the
+  build-time knobs above bound the parameter pool, executor slots, and the
+  subscription buffer (an 8.8 kB trajectory must fit a single buffer).
 
 = The 2026-08-20 modernization
 
 The step advanced the nano-ros pin from `7dfe4fe4e` (2026-07-21) to
-`eace28852` (2026-08-20) and adopted the submodule layout described above.
-Eleven walls were logged; none required changes to the vendored Autoware
-components, and application logic was untouched throughout.
+`eace28852` (2026-08-20) --- $approx 2,400$ upstream commits --- and adopted
+the submodule layout. Eleven walls were logged (@tab-walls); none touched
+application logic. An earlier advance (July 2026) had surfaced eight walls,
+all fixed upstream within the cycle; notably, this jump produced _no_
+regression in any area an earlier wall had hardened.
 
 #figure(
   align(left, block(width: 100%)[
@@ -189,89 +308,57 @@ components, and application logic was untouched throughout.
   ]),
   caption: [Wall ledger for the $approx 2,400$-commit pin advance. Full
   details in the repository's phase-3 roadmap document.],
-)
+) <tab-walls>
 
-Three observations generalize:
-
-*Latent-validation debt surfaces on middleware moves.* Walls 6, 9, 10 and 11
-were not caused by the new pin --- they were pre-existing gaps (a Zephyr 3.7
-API removal, boot markers owned by retired code, tests relying on an
-implicit initialization, a cancellation idiom that never worked on this
-RTOS) that the first _complete_ runtime re-validation exposed. A migration
-is only as trustworthy as the test surface actually re-run on it.
-
-*Coverage gaps are pairwise, not per-axis.* Wall 4's failing coordinate is
-the _combination_ (embedded Zephyr $times$ C++ $times$ CycloneDDS); every
-individual axis value was covered upstream, but the pairing was not. This is
-the classic covering-array argument, and it argues for pairwise CI lanes on
-any matrixed middleware.
-
-*Consumer workarounds should be designed to die.* The two downstream
-workarounds (walls 1 and 4) are idempotent scripts that detect the upstream
-fix and retire themselves, keeping the consumer's fork-pressure at zero.
+Three observations generalize. *Latent-validation debt surfaces on
+middleware moves*: walls 6, 9, 10, 11 were pre-existing gaps that the first
+complete runtime re-validation exposed, not regressions. *Coverage gaps are
+pairwise, not per-axis*: wall 4's failing coordinate is the combination
+(embedded Zephyr $times$ C++ $times$ CycloneDDS); each axis value was
+covered upstream, the pairing was not. *Consumer workarounds should be
+designed to die*: both downstream workarounds are idempotent scripts that
+detect the upstream fix and retire themselves.
 
 = Validation
 
-*Build.* All six firmware build modes compile and link from one branch:
-the full controller image, unit test, DDS loopback, CAN output test, and
-the DDS publisher/subscriber pair (RAM footprint of the full image: 9.7~MB
-of 128~MB).
+*Build.* Six firmware modes from one branch: full controller, unit test,
+DDS loopback, CAN output, DDS publisher/subscriber.
 
-*Runtime.* The repository's five-phase CI script was run against Arm
-FVP_BaseR_AEMv8R 11.31.28: (1) full controller boot to its liveness
-markers; (2) on-target unit suite --- parameters, timers, thread lifecycle,
-DDS pub/sub round-trip, clock conversions --- to `All Tests Passed`;
-(3) DDS loopback; (4) CAN output over Zephyr's CAN loopback driver;
-(5) TAP-network image build. All phases pass.
+*Runtime.* The five-phase FVP suite passes end to end (boot markers,
+`All Tests Passed`, DDS loopback, CAN output, TAP build).
 
-*Closed loop.* The demonstration stack --- unmodified Autoware
-(`ghcr.io/autowarefoundation/autoware:universe-20250207`, ROS 2 Humble,
-`rmw_cyclonedds`) with its planning simulator, a DDS domain bridge, and the
-island on the FVP attached via a TAP interface on DDS domain 2 --- was
-brought up headless; the ego pose and a goal were seeded from the command
-line. The planner streams the trajectory at 10~Hz through the bridge; the
-island's MPC engages (and, from the spawn position, correctly commands an
-emergency stop on excessive tracking error) and publishes
-`/control/trajectory_follower/control_cmd` back onto domain 1 at 19--22~Hz,
-matching the pre-modernization baseline (\~19~Hz). A single command,
-`scripts/run-tap-demo.sh`, now reproduces this end-to-end.
-
-*ROS interoperability.* Interoperability with stock ROS 2 is exercised in
-both directions by the closed loop itself: the island deserializes the
-planner's trajectory, odometry, acceleration and operation-mode messages,
-and the Humble side subscribes to and field-level-decodes the island's
-`Control` messages (verified with `ros2 topic echo`; CDR layout and
-`dds__`-style type names match `rmw_cyclonedds` by construction, since
-nano-ros pins its CycloneDDS fork to the release ROS ships). No bridge-side
-type adaptation exists anywhere in the path.
+*Closed loop.* With the stack of @fig-loop brought up headless (ego pose
+and goal seeded from the command line), the planner streams the trajectory
+at 10 Hz; the island's MPC engages --- from the spawn position it correctly
+commands an emergency stop on excessive tracking error --- and publishes
+control commands back onto domain 1 at 19 Hz and above, matching the
+pre-modernization baseline. `scripts/run-tap-demo.sh` reproduces the run,
+including the rate check, in one command. Interoperability was additionally
+spot-checked at field level with `ros2 topic echo` on the Humble side.
 
 = Lessons for the ecosystem
 
-+ *A reference consumer is cheap leverage for a middleware project.* Eleven
-  walls in one step, two of them genuine upstream bugs invisible to the
-  project's own CI, at the cost of a disciplined ledger.
-+ *Pin in lockstep, and make the pin visible.* A submodule pointer plus a
-  manifest revision that must agree gives reviewers one diffable fact and
-  makes "what moved?" answerable by `git log` on the submodule.
++ *A reference consumer is cheap leverage for a middleware project* ---
+  eleven walls in one step, two genuine upstream bugs invisible to the
+  project's own CI.
++ *Pin in lockstep, and make the pin visible* --- one submodule pointer plus
+  one manifest revision, required to agree.
 + *Generated entries beat imperative boot code* --- but application-level
-  observability (liveness markers, boot status) must then be owned by
-  application components, not assumed from retired scaffolding.
-+ *Treat provisioning as data.* Everything the consumer's host needs
-  (toolchains, RMW sources, patch sets) is declared in nano-ros's SDK index
-  and applied by idempotent commands; the consumer's bootstrap is thin and
-  survives upstream refactors that would break hand-rolled scripts.
-+ *Re-run everything on every move.* The walls that cost the most wall-clock
-  time were the ones hiding behind validation that had silently stopped
-  running.
+  observability must then be owned by application components.
++ *Treat provisioning as data* --- toolchains, RMW sources and patch sets
+  come from nano-ros's SDK index via idempotent commands; the consumer
+  bootstrap stays thin across upstream refactors.
++ *Re-run everything on every move* --- the costliest walls hid behind
+  validation that had silently stopped running.
 
 = Status and future work
 
 The Zephyr FVP target is fully migrated and validated on the modern
-nano-ros pin. Open items: S32Z270 board parity (its upstream board bundle
-is pending), moving the FreeRTOS targets onto nano-ros's platform layer
+nano-ros pin. Open items: S32Z270 board parity (upstream board bundle
+pending), moving the FreeRTOS targets onto nano-ros's platform layer
 (retiring the vendored CycloneDDS entirely), adopting the launch-resolved
-entry spelling end-to-end, a long-duration soak against the Phase-2 real-run
-checkpoint scenario, and upstreaming resolutions for issues \#0729/\#0730.
+entry spelling end-to-end, a long-duration soak, and upstreaming
+resolutions for issues \#0729/\#0730.
 
 #v(4pt)
 #line(length: 30%, stroke: 0.5pt + luma(140))
