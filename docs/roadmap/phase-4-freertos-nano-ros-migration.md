@@ -26,26 +26,68 @@ Cyclone-on-FreeRTOS cell), filed from this scoping.
   S32Z bundle, no Cortex-R52 FreeRTOS toolchain file, no NETC netif in
   nano-ros. Expensive; hardware-gated.
 
-## W5.a — `freertos-posix` (first)
+## W5.a — `freertos-posix` (DONE 2026-08-20)
 
-Consumes nano-ros phase-370 W1–W3 (board variant + fixtures). ASI side:
+Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
+0729/0730 fixed at the bump, retiring the phase-3 workarounds). ASI side:
 
-- [ ] Bump the nano-ros pin once phase-370's board variant lands
-      (submodule + west.yml lockstep, as in phase-3 W6).
-- [ ] `build.sh --platform freertos-posix` switches to the nano-ros verbs:
-      `nano_ros_use_board(freertos-posix)` shape, entry baked from the
-      same `controller_bringup` model as the Zephyr targets (one bringup,
-      two platforms — the point of workspace mode).
-- [ ] Retire `build_cyclonedds_host` / `build_cyclonedds_target_posix`,
-      the `actuation_module/freertos/` CMake glue that links the vendored
-      fork, and the legacy `common/dds/dds.hpp` + bespoke `Node` for this
-      target. `freertos_main.cpp` (`-Dmain=actuation_main`) is superseded
-      by the generated entry + the board's scheduler glue.
-- [ ] Keep the CAN tests middleware-independent (existing rule); re-run
-      the FreeRTOS POSIX smoke; walls filed upstream per the
-      reference-consumer contract.
-- [ ] Delete the vendored `cyclonedds/` submodule when nothing references
-      it (S32Z2 still does until W5.b — deletion lands there).
+- [x] nano-ros pin bumped to `b13241d41` (submodule + west.yml lockstep);
+      Zephyr full mode re-verified green with zero carried patches.
+- [x] `build.sh --platform freertos-posix` switched to workspace mode:
+      root CMakeLists gains a `NANO_ROS_PLATFORM=freertos` branch
+      (`nano_ros_workspace` over autoware_msgs + controller_pkg + a new
+      `freertos_posix_entry` Entry pkg, `BOARD/DEPLOY freertos-posix`,
+      LAUNCH default from the SAME `controller_bringup` as Zephyr — one
+      bringup, two platforms). `[deploy.freertos-posix]` added to
+      system.toml (kind embedded, no netstack — host kernel owns it).
+      Kernel = nros-provisioned (`nros setup --source freertos-kernel`).
+- [x] Legacy posix path retired: `actuation_module/freertos/`
+      (CMake + `freertos_main.cpp` + local dds/config/helper headers)
+      deleted; `build_cyclonedds_target_posix()` deleted.
+- [x] Runtime verified: `actuation_posix_entry` boots — FreeRTOS
+      scheduler up, boot markers, CAN mock initialized, controller task
+      ticking its input-wait cadence over host CycloneDDS, clean bounded
+      exit (`NROS_ENTRY_SPIN_MS`), rpath-clean (no LD_LIBRARY_PATH).
+- [ ] Closed-loop smoke vs the demo compose stack (domain wiring: the
+      nros lane runs the bringup's domain, not the legacy hardwired 2) —
+      follow-up alongside W3.c-style soak.
+
+### W5.a wall ledger (all consumer-side unless noted)
+
+1. `nros sync` requires `nros-launch-resolve` BESIDE the nros binary —
+   built from `packages/cli/nros-launch-resolve` + symlinked
+   (bootstrap-asi.sh now does both).
+2. sync's internal cmake probes resolve the codegen tool from PATH, not
+   from our `-D` — build.sh puts the CLI dir on PATH for the lane.
+3. `nano_ros_workspace(ORDER_FROM_DEPENDS)` requires a package.xml per
+   SUBDIR — added one to the `autoware_msgs` aggregation pkg.
+4. Canonical `nros_generate_interfaces` wires INSTALL(EXPORT) an in-app
+   aggregation never populates — `SKIP_INSTALL`, gated to the workspace
+   lane (the Zephyr module variant doesn't parse the flag).
+5. Workspace codegen is BUILD-time: the component must link the
+   per-package `<pkg>__nano_ros_cpp` targets (include dirs + generation
+   edge); the Zephyr lane's configure-time glob sees empty dirs there.
+6. Platform dispatch: component defines `PLATFORM_FREERTOS` (PUBLIC —
+   the generated entry TU compiles the same headers), `PLATFORM_ZEPHYR`
+   stays on the Zephyr lane.
+7. `platform_config.h` wants the legacy Kconfig-mirror
+   `freertos_config_generated.h` — configure_file'd in controller_pkg's
+   workspace branch (legacy defaults; DDS knobs inert, nano-ros owns
+   transport; DDS_AND_CAN keeps the mock CAN path exercised).
+8. Shim `usleep` needs explicit `<unistd.h>` on host (transitive on
+   Zephyr).
+9. **Upstream friction candidate:** with the Unix Makefiles generator,
+   the entry TU's OBJECT_DEPENDS on nros-c's mirrored
+   `nros_config_generated.h` hits "No rule to make target" — Makefiles
+   can't see cross-directory custom-command OUTPUTs (Ninja can; upstream
+   fixtures likely never hit it because the mirror pre-exists in their
+   flow). Workaround: second build pass / pre-building
+   `nros_c_config_header`; consider `-G Ninja` or an upstream
+   add_dependencies fix.
+10. Component include dirs must be PUBLIC for the generated entry TU
+    (zephyr lane hand-fed `app` instead).
+11. Self-provisioned CycloneDDS emits shared `libddsc` into
+    `<build>/lib` — `CMAKE_BUILD_RPATH` bakes the run path.
 
 Acceptance: `./build.sh --platform freertos-posix` builds with no vendored
 cyclonedds involvement; controller smoke passes on the simulator; the
@@ -53,19 +95,18 @@ legacy DDS wrapper is gone from the FreeRTOS-POSIX path.
 
 ### Deletion map (inventoried 2026-08-20; delete-when-replaced)
 
-Dies with W5.a (POSIX path):
-- `build.sh` — `build_cyclonedds_host()` (:267), `build_cyclonedds_target_posix()`
-  (:283) and their calls in `build_freertos_posix()`; the whole
-  legacy `build_freertos_posix()` body becomes the nano-ros verbs path.
-- `actuation_module/freertos/` — `CMakeLists.txt` (links the vendored fork)
-  + `freertos_main.cpp` (`-Dmain=actuation_main` carrier; superseded by the
-  generated entry + the board's scheduler glue).
-- `actuation_module/include/common/dds/` — `dds.hpp`, `publisher.hpp`,
-  `subscriber.hpp`, `config.hpp`, `helper.hpp`, `network_config.hpp`
-  (the raw-CycloneDDS wrapper; nros mode never includes it).
-- Dual-mode `#else` (legacy) sides — once no FreeRTOS target builds them:
-  `common/node/node.hpp` (bespoke `Node` + param variant),
-  `common/clock/clock.hpp` (idlc `Time.h` side),
+Died with W5.a (POSIX path) — DONE 2026-08-20:
+- `build.sh` `build_cyclonedds_target_posix()` and the legacy
+  `build_freertos_posix()` body (now the nano-ros workspace lane).
+  `build_cyclonedds_host()` SURVIVES until W5.b (s32z2 host tools).
+- `actuation_module/freertos/` — deleted whole (CMake, `freertos_main.cpp`,
+  local dds/config/helper headers).
+
+Dies with W5.b (correction to the original map: these serve the s32z2
+legacy build via node.hpp's `#else` side, so they outlive W5.a):
+- `actuation_module/include/common/dds/` (raw-CycloneDDS wrapper).
+- Dual-mode `#else` (legacy) sides: `common/node/node.hpp` (bespoke
+  `Node` + param variant), `common/clock/clock.hpp` (idlc `Time.h` side),
   `autoware_msgs/messages.hpp` (idlc include block + flat aliases +
   legacy `TrajectoryMsg` borrow-wrapper),
   `autoware_trajectory_follower_node/controller_node.{hpp,cpp}` (the

@@ -50,6 +50,7 @@
 #include <optional>
 #include <pthread.h>
 #include <string>
+#include <unistd.h>  // usleep — transitive on Zephyr, explicit for host builds
 #include <unordered_map>
 #include <variant>
 #include <vector>

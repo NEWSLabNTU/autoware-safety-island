@@ -43,3 +43,12 @@ kind   = "zephyr"
 target = "fvp_baser_aemv8r_smp"
 board  = "fvp-aemv8r-smp"
 launch = "system.launch.xml"
+
+# Phase 4 W5.a — FreeRTOS POSIX simulator (nano-ros phase-370 board).
+# kind "embedded", not "self": the controller runs as a FreeRTOS TASK under
+# the scheduler the board's main() starts — over HOST CycloneDDS sockets.
+# No netstack/site block: the board declares supported_netstacks = [] (the
+# host kernel owns the stack); FREERTOS_DIR flows via env at configure time.
+[deploy.freertos-posix]
+kind  = "embedded"
+board = "freertos-posix"

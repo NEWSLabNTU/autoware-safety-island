@@ -3,6 +3,37 @@
 
 # PROJECT SETUP
 cmake_minimum_required(VERSION 3.22.1)
+
+# ---------------------------------------------------------------------------
+# Phase 4 W5.a — FreeRTOS POSIX simulator lane (nano-ros workspace mode).
+# Selected by -DNANO_ROS_PLATFORM=freertos (build.sh --platform freertos-posix).
+# The same controller_pkg / controller_bringup / autoware_msgs sources build
+# as a host process: the nros-board-freertos-posix board owns main() + the
+# scheduler, nodes run as FreeRTOS tasks over host CycloneDDS (nano-ros
+# phase-370). The Zephyr app below is untouched by this branch.
+# ---------------------------------------------------------------------------
+if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
+  project(actuation_module_freertos LANGUAGES C CXX)
+  find_package(Eigen3 REQUIRED)
+  find_package(nano_ros REQUIRED COMPONENTS workspace)
+  if(NOT DEFINED NROS_RMW)
+    set(NROS_RMW cyclonedds)
+  endif()
+  add_compile_definitions(ASI_USE_NANO_ROS=1)
+  # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
+  # bake the run path so the entry runs without LD_LIBRARY_PATH.
+  set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
+  nano_ros_workspace(
+    ORDER_FROM_DEPENDS
+    BACKEND  ${NROS_RMW}
+    PLATFORM "${NANO_ROS_PLATFORM}"
+    SUBDIRS
+      src/autoware/autoware_msgs
+      src/controller_pkg
+      src/freertos_posix_entry)
+  return()
+endif()
+
 set(CONF_FILE "prj_actuation.conf")
 
 # Phase 2.C / 215.B — board glue is ONE line. `nano_ros_use_board()` layers the

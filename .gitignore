@@ -44,3 +44,5 @@ tools/*
 !tools/README.md
 avh_key
 FVP_Base_AEMv8R_*
+actuation_module/build/
+actuation_module/src/controller_pkg/metadata/

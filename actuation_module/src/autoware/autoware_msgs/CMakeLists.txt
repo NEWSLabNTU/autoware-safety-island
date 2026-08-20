@@ -28,12 +28,22 @@ if(COMMAND nros_generate_interfaces)
   # chain. (Per-pkg msg_ros/<pkg>/CMakeLists.txt stubs are kept on
   # disk for documentation of dependency intent; they are no longer
   # add_subdirectory'd.)
+  # Workspace lane (phase-4 W5.a, freertos-posix): the canonical
+  # nros_generate_interfaces() wires INSTALL(EXPORT <pkg>Targets), which an
+  # in-app aggregation never populates — pass SKIP_INSTALL there. The Zephyr
+  # module variant does not parse the flag (it would read it as a message
+  # path), so gate on the lane.
+  if(TARGET zephyr_interface)
+      set(_asi_gen_extra "")
+  else()
+      set(_asi_gen_extra SKIP_INSTALL)
+  endif()
   function(_asi_gen pkg)
       cmake_parse_arguments(_a "" "" "DEPENDENCIES" ${ARGN})
       file(GLOB _msgs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
           "${_msg_ros_root}/${pkg}/msg/*.msg")
       nros_generate_interfaces(${pkg} ${_msgs} LANGUAGE CPP
-          DEPENDENCIES ${_a_DEPENDENCIES})
+          DEPENDENCIES ${_a_DEPENDENCIES} ${_asi_gen_extra})
       set(${pkg}_GENERATED_RS_FILES "${${pkg}_GENERATED_RS_FILES}" PARENT_SCOPE)
   endfunction()
 

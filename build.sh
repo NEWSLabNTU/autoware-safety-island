@@ -280,22 +280,6 @@ function build_cyclonedds_host() {
   cmake --build "${CYCLONEDDS_HOST_BUILD_DIR}" --target install -j"$(nproc)"
 }
 
-function build_cyclonedds_target_posix() {
-  if [ -f "${CYCLONEDDS_TARGET_PREFIX}/lib/libddsc.a" ]; then
-    echo -e "${GREEN}CycloneDDS POSIX target library already built at ${CYCLONEDDS_TARGET_PREFIX}${NC}"
-    return
-  fi
-
-  echo -e "${GREEN}Building CycloneDDS POSIX target library...${NC}"
-  cmake cyclonedds -B "${CYCLONEDDS_TARGET_BUILD_DIR}" \
-    -DBUILD_SHARED_LIBS=OFF -DENABLE_SECURITY=OFF \
-    -DENABLE_SSL=OFF -DENABLE_SHM=OFF -DENABLE_IPV6=OFF \
-    -DBUILD_IDLC=OFF -DBUILD_DDSPERF=OFF \
-    -DCMAKE_INSTALL_PREFIX="${CYCLONEDDS_TARGET_PREFIX}" \
-    -DCMAKE_BUILD_TYPE=Debug
-  cmake --build "${CYCLONEDDS_TARGET_BUILD_DIR}" --target install -j"$(nproc)"
-}
-
 function require_nros_checkout() {
   if [ ! -d "${ROOT_DIR}"/modules/nros ]; then
     echo -e "${RED}nano-ros checkout missing at modules/nros.${NC}" 1>&2
@@ -419,37 +403,58 @@ function build_zephyr_actuation_module() {
 }
 
 function build_freertos_posix() {
-  echo -e "${GREEN}Building FreeRTOS POSIX runtime...${NC}"
-  if [ "${BUILD_TEST_FLAG}" = "5" ]; then
-    echo -e "${RED}--dds-loopback-test is not supported by the FreeRTOS POSIX CMake path${NC}" 1>&2
+  # Phase 4 W5.a — nano-ros workspace mode (nros-board-freertos-posix,
+  # nano-ros phase-370): host process, board-owned main()/scheduler, nodes
+  # as FreeRTOS tasks over HOST CycloneDDS (self-provisioned from the
+  # pinned fork; no vendored-cyclonedds involvement).
+  echo -e "${GREEN}Building FreeRTOS POSIX runtime (nano-ros workspace mode)...${NC}"
+  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only; the FreeRTOS POSIX lane builds the controller image${NC}" 1>&2
     exit 1
   fi
+
+  require_nros_checkout
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  if [ ! -x "${nros_cli_bin}" ]; then
+    echo -e "${GREEN}Building host nros CLI...${NC}"
+    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  fi
+  export CMAKE_PREFIX_PATH=""
+  export AMENT_PREFIX_PATH=""
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+  # `nros sync` spawns its own cmake probes that resolve the codegen tool
+  # from PATH/~/.nros/bin — our -D_NANO_ROS_CODEGEN_TOOL doesn't reach them.
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
+
+  # FreeRTOS kernel source — nros-provisioned (phase-4 kernel-provenance
+  # decision: nano-ros's index-pinned checkout is the SSOT).
+  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  if [ ! -d "${FREERTOS_DIR}/portable/ThirdParty/GCC/Posix" ]; then
+    echo -e "${RED}FreeRTOS kernel missing at ${FREERTOS_DIR}.${NC}" 1>&2
+    echo -e "${YELLOW}Run: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
+    exit 1
+  fi
+
+  # Same sizing knobs as the Zephyr lane (environment wins over defaults):
+  # the controller declares 150+ parameters and 8.8 KiB trajectory samples.
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
 
-  build_cyclonedds_host
-  build_cyclonedds_target_posix
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
 
-  export PATH="${CYCLONEDDS_HOST_PREFIX}"/bin:$PATH
-  export LD_LIBRARY_PATH="${CYCLONEDDS_HOST_PREFIX}"/lib:${LD_LIBRARY_PATH:-}
-  local freertos_args=(
-    actuation_module/freertos
-    -B "${app_build_dir}"
-    -DCDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}"
-    -DCDDS_TARGET_PREFIX="${CYCLONEDDS_TARGET_PREFIX}"
-    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
-  )
-
-  if [ -n "${DDS_NETWORK_INTERFACE}" ]; then
-    freertos_args+=(-DCONFIG_DDS_NETWORK_INTERFACE="${DDS_NETWORK_INTERFACE}")
-  fi
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ]; then
-    freertos_args+=(-DCONFIG_CONTROL_CMD_OUTPUT_MODE="${CONTROL_CMD_OUTPUT_MODE}")
-  fi
-
-  cmake "${freertos_args[@]}"
-  cmake --build "${app_build_dir}" -j"$(nproc)"
+  cmake -S actuation_module -B "${app_build_dir}" \
+    -DNANO_ROS_PLATFORM=freertos \
+    -DNANO_ROS_BOARD=freertos-posix \
+    -DNROS_RMW=cyclonedds \
+    -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
+    -DNROS_CLI_BIN="${nros_cli_bin}" \
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
+  cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
 }
 
 function build_freertos_s32z2() {

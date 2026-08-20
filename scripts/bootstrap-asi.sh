@@ -142,6 +142,18 @@ say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
 say "provisioning SDK store (cyclonedds idlc + rosidl)…"
 ( cd "${ROOT}/modules/nros" \
   && "${NROS_CLI}" setup fvp-aemv8r-smp --rmw cyclonedds )
+
+# ---- 6c. FreeRTOS POSIX lane (phase-4 W5.a) ----
+# Kernel source (nros-provisioned SSOT) + the launch-resolver helper that
+# `nros sync` requires beside the nros binary (nano-ros issue-0285 rule:
+# resolved by absolute sibling path, never $PATH).
+say "provisioning FreeRTOS kernel + nros-launch-resolve…"
+( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup --source freertos-kernel )
+( cd "${ROOT}/modules/nros" \
+  && cargo build --release \
+       --manifest-path packages/cli/nros-launch-resolve/Cargo.toml )
+ln -sf "${ROOT}/modules/nros/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
+       "${ROOT}/modules/nros/packages/cli/target/release/nros-launch-resolve"
 rustup target add aarch64-unknown-none
 [[ -d "${ROOT}/modules/lang/rust" ]] || \
   die "zephyr-lang-rust module missing at modules/lang/rust — run west update."

@@ -91,7 +91,10 @@ nano_ros_add_node(controller
 set(_component controller_pkg_controller_component)
 if(TARGET ${_component})
   # ASI common/ + platform/ headers (logger, clock, can, node shim, threading).
-  target_include_directories(${_component} PRIVATE
+  # PUBLIC: the workspace lane's generated entry TU includes
+  # controller_pkg/controller.hpp (which pulls the vendored controller tree)
+  # and inherits these by linking the component.
+  target_include_directories(${_component} PUBLIC
     "${_ACT_ROOT}/include"
     ${_controller_includes}
     "${EIGEN3_INCLUDE_DIR}")
@@ -110,9 +113,51 @@ if(TARGET ${_component})
   set(_gen_base "${CMAKE_BINARY_DIR}/src/autoware/autoware_msgs/nano_ros_cpp")
   if(EXISTS "${_gen_base}")
     file(GLOB _gen_pkg_dirs LIST_DIRECTORIES true "${_gen_base}/*")
-    target_include_directories(${_component} PRIVATE "${_gen_base}" ${_gen_pkg_dirs})
+    target_include_directories(${_component} PUBLIC "${_gen_base}" ${_gen_pkg_dirs})
   endif()
-  target_compile_definitions(${_component} PRIVATE PLATFORM_ZEPHYR=1)
+  # Workspace lane (phase-4 W5.a): the canonical generator produces headers
+  # at BUILD time and carries include dirs + the generation dependency on the
+  # per-package `<pkg>__nano_ros_cpp` INTERFACE targets — link them (the glob
+  # above sees empty dirs at configure there). No-op on the Zephyr lane,
+  # whose module variant attaches everything to `app` at configure.
+  foreach(_msgpkg builtin_interfaces std_msgs geometry_msgs nav_msgs
+                  autoware_perception_msgs autoware_vehicle_msgs
+                  autoware_planning_msgs autoware_control_msgs
+                  autoware_adapi_v1_msgs tier4_debug_msgs)
+    if(TARGET ${_msgpkg}__nano_ros_cpp)
+      target_link_libraries(${_component} PUBLIC ${_msgpkg}__nano_ros_cpp)
+    endif()
+  endforeach()
+  if(TARGET zephyr_interface)
+    target_compile_definitions(${_component} PRIVATE PLATFORM_ZEPHYR=1)
+  else()
+    # Workspace lane runs on the FreeRTOS POSIX simulator board. PUBLIC —
+    # the generated entry TU compiles the same platform-dispatch headers.
+    target_compile_definitions(${_component} PUBLIC PLATFORM_FREERTOS=1 NROS_CPP_STD=1)
+    # platform_config.h wants the legacy Kconfig-mirror header. DDS knobs in
+    # it are inert on this lane (nano-ros owns transport); logger/CAN/thread
+    # values mirror the retired actuation_module/freertos/CMakeLists.txt
+    # defaults (DDS_AND_CAN keeps the mock CAN path exercised).
+    set(CONFIG_LOG_LEVEL 1)
+    set(CONFIG_LOG_THROTTLE_RATE 3)
+    set(CONFIG_DDS_DOMAIN_ID 2)
+    set(CONFIG_DDS_NETWORK_INTERFACE "lo")
+    set(CONFIG_DDS_LOG_LEVEL 0)
+    set(CONFIG_THREAD_STACK_SIZE 262144)
+    set(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX 0)
+    set(CONFIG_ENABLE_SNTP OFF)
+    set(CONFIG_CONTROL_CMD_OUTPUT_DDS_ONLY 0)
+    set(CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY 0)
+    set(CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN 1)
+    set(CONFIG_CONTROL_CMD_CAN_OUTPUT 1)
+    set(CONFIG_CONTROL_CMD_DDS_OUTPUT 1)
+    configure_file(
+      "${_ACT_ROOT}/include/platform/freertos/freertos_config_generated.h.in"
+      "${CMAKE_CURRENT_BINARY_DIR}/generated/freertos_config_generated.h")
+    target_include_directories(${_component} PUBLIC
+      "${CMAKE_CURRENT_BINARY_DIR}/generated"
+      "${_ACT_ROOT}/include/platform/freertos")
+  endif()
 
   # FVP has no `fabsl`; same substitute the app used (matches outer CMakeLists).
   if(ZEPHYR_TARGET STREQUAL "fvp_baser_aemv8r_smp")
