@@ -13,6 +13,7 @@
 #set heading(numbering: "1.1")
 #show link: set text(fill: rgb("#1a4a8a"))
 #show raw.where(block: false): it => box(fill: luma(240), inset: (x: 2pt), outset: (y: 2pt), radius: 2pt, it)
+#show figure: set block(breakable: true)
 
 #align(center)[
   #text(17pt, weight: "bold")[
