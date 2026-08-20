@@ -185,8 +185,15 @@ the upstream-side work items this phase surfaces.
   "<config/system_model.yaml>" TYPED)` replaces the LAUNCH keyword;
   nano-ros pin bumped to 4ea1f4a2e (MODEL keyword + plan_from_model +
   kind-family slicing).
-- [ ] FVP rebuild from the model-baked entry + tap-demo smoke (same W3
+- [x] FVP rebuild from the model-baked entry + tap-demo smoke (same W3
   runbook) — validates phase-296 W4.3's done-when on AVH/FVP.
+  (2026-08-20, on the eace28852 pin + submodule layout: tap image
+  rebuilt with `-C cache_state_modelled=0` baked, boot markers at
+  0.2 s sim time, compose stack up, initialpose + goal seeded headless
+  per runbook → trajectory ~10 Hz through the bridge →
+  `/control/trajectory_follower/control_cmd` back on domain 1 at
+  ~19–22 Hz; MPC engages and emergency-stops on the spawn-position
+  tracking error, same as the W3.a baseline.)
 
 ### W4 — zephyr-s32z parity (G7; hardware-gated)
 - [ ] W4.a Consume nano-ros's s32z board crate once phase-292 W3 lands
