@@ -128,18 +128,13 @@ cargo build --release \
 # patches / RUST_SUPPORTED / cyclonedds fetch). One board-driven command.
 NROS_CLI="${ROOT}/modules/nros/packages/cli/target/release/nros"
 if [[ ! -x "${NROS_CLI}" ]]; then die "nros CLI not built (expected ${NROS_CLI})."; fi
-# FRICTION (eace28852 pin): `nros setup board` still resolves the pre-phase-337
-# board-crate path `packages/boards/nros-board-<name>` and misses bundle boards
-# under `packages/boards/nros-board-zephyr/boards/<name>/` (nros-cli-core
-# setup.rs run_board vs the bundle-aware resolver `nros board info` uses).
-# Until that lands upstream, run the four setup-board steps by hand — same
-# order as run_board: (a) RMW source, (b) zephyr-line patches, (c) rust
-# targets, (d) zephyr-lang-rust module presence (west update already fetched
-# it at the board's pinned rev).
-say "provisioning zephyr for board fvp-aemv8r-smp (manual setup-board steps)…"
-( cd "${ROOT}/modules/nros" \
-  && "${NROS_CLI}" setup --source cyclonedds-src \
-  && bash scripts/zephyr/patches/3.7.sh "${ROOT}" )
+# Board-driven provisioning (nano-ros issue 0729 fixed upstream: bundle
+# boards resolve through setup board again). Fetches the board's RMW
+# source, applies the zephyr-line patch set to ${ROOT}/zephyr, rustup-adds
+# the board's targets, checks the zephyr-lang-rust pin.
+say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
+( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
+    --zephyr-workspace "${ROOT}" )
 # Host idlc: the pin's cyclonedds cmake resolves idlc from the nros SDK store
 # (~/.nros/sdk/cyclonedds/<ver>/bin/idlc) before PATH. Provision the board's
 # tool ∪ rmw set (cyclonedds prebuilt + cyclonedds-src + rosidl; the gated

@@ -312,9 +312,6 @@ function build_zephyr_actuation_module() {
   # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
   # here. The FreeRTOS platforms below still use it unchanged.
   require_nros_checkout
-  # Consumer-side friction patches for the current nano-ros pin (idempotent,
-  # nano-ros's own zephyr-patch pattern; each self-retires when upstream fixes).
-  bash "${ROOT_DIR}/scripts/patches/nros-cpp-embedded-alloc-patch.sh"
   # Build the host `nros` CLI if missing or stale (full host provisioning is
   # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
   # — inlined from the retired bootstrap-nano-ros-shim.sh.
