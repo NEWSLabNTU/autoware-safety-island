@@ -73,6 +73,11 @@ say "west: $(west --version)"
 # (cmsis, hal_nxp, nano-ros @ the pin, zephyr@3.7). The private NXP
 # `s32ct_config` is an S32Z2-only git submodule, NOT a west project — the FVP
 # target does not need it, so it is never fetched here.
+# modules/nros is a tracked git submodule (lockstep with the west.yml pin);
+# init it (plus zephyr and the CLI's play_launch dep) before west adopts them.
+say "git submodule init (zephyr, modules/nros)…"
+git -C "${ROOT}" submodule update --init zephyr modules/nros
+git -C "${ROOT}/modules/nros" submodule update --init packages/cli/third-party/play_launch
 if [[ ! -d "${ROOT}/.west" ]]; then
   say "west init -l (manifest = actuation_module/)…"
   west init -l "${ROOT}/actuation_module"
@@ -110,8 +115,10 @@ fi
 [[ -d "${SDK_DIR}" ]] && say "Zephyr SDK: ${SDK_DIR}" || warn "Zephyr SDK skipped (--no-sdk); set ZEPHYR_SDK_INSTALL_DIR yourself."
 
 # ---- 6. build the nano-ros `nros` CLI (the codegen tool) ----
+# Inlined (the old bootstrap-nano-ros-shim.sh is retired) — mirrors build.sh.
 say "building the nano-ros nros CLI…"
-bash "${ROOT}/scripts/bootstrap-nano-ros-shim.sh"
+cargo build --release \
+  --manifest-path "${ROOT}/modules/nros/packages/cli/Cargo.toml" -p nros-cli
 
 # ---- 6b. board-driven Zephyr provisioning (nano-ros Phase 215.J) ----
 # The board crate provisions THIS consumer's zephyr tree: fetches the board's
