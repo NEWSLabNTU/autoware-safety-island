@@ -48,9 +48,18 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       scheduler up, boot markers, CAN mock initialized, controller task
       ticking its input-wait cadence over host CycloneDDS, clean bounded
       exit (`NROS_ENTRY_SPIN_MS`), rpath-clean (no LD_LIBRARY_PATH).
-- [ ] Closed-loop smoke vs the demo compose stack (domain wiring: the
-      nros lane runs the bringup's domain, not the legacy hardwired 2) —
-      follow-up alongside W3.c-style soak.
+- [x] Closed-loop smoke vs the demo compose stack (2026-08-21): posix
+      compose override up (`SAFETY_ISLAND_DDS_INTERFACE=<iface>`), entry
+      joined domain 2 via the HOSTED env rungs
+      (`ROS_DOMAIN_ID=2 CYCLONEDDS_URI=file://demo/cyclonedds.posix.xml`
+      — no rebuild needed, the #206 hosted resolution chain), pose+goal
+      seeded headless → `/control/trajectory_follower/control_cmd` back
+      on domain 1 at ~6 Hz, island streaming (CAN mock saturating).
+      OBSERVATION for the soak: ~6 Hz vs the FVP lane's ~19 Hz+ —
+      profile the POSIX-port tick / poll-executor pacing before calling
+      it a regression (legacy posix lane had no recorded rate baseline).
+- [ ] Rate profiling + soak (the ~6 Hz observation above; W3.c-style
+      scenario re-run).
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

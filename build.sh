@@ -454,6 +454,11 @@ function build_freertos_posix() {
     -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
     -DNROS_CLI_BIN="${nros_cli_bin}" \
     -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
+  # nano-ros issue 0740: under the Unix Makefiles generator the entry TU's
+  # file-level dependency on nros-c's mirrored nros_config_generated.h is a
+  # cross-directory custom-command OUTPUT make cannot see on a clean build —
+  # produce the mirror first. Self-retires when 0740 lands (extra no-op pass).
+  cmake --build "${app_build_dir}" --target nros_c_config_header -j"$(nproc)"
   cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
 }
 
