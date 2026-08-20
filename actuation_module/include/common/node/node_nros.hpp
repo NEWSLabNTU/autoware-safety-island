@@ -10,9 +10,12 @@
 // Design notes (full report under
 // /home/aeon/.claude/projects/.../memory and docs/roadmap/phase-1C-node-adapter.md):
 //
-//   - Lifecycle: `nros::init` / `nros::shutdown` are called from
-//     ASI's existing `main.cpp` (preserved to keep the DHCP+SNTP
-//     prologue intact). This file does NOT call them.
+//   - Lifecycle: the full controller image boots through the generated
+//     Entry, where `Board::run_components` owns init/spin/shutdown.
+//     Test images carry their OWN `main()` (no generated Entry), so the
+//     shim Node ctor performs a one-time `nros::init()` before the
+//     first `create_node` (which otherwise fails NROS_CPP_RET_NOT_INIT
+//     = -7 since the eace28852 pin).
 //
 //   - Parameter storage: stays Node-local in a `std::unordered_map<
 //     std::string, param_type>` (variant identical to the legacy
@@ -39,6 +42,7 @@
 #ifndef COMMON__NODE__NODE_NROS_HPP_
 #define COMMON__NODE__NODE_NROS_HPP_
 
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <functional>
@@ -151,6 +155,19 @@ public:
     {
         (void)stack_area;
         (void)stack_size;
+        // One-time runtime init for Entry-less (test) images; the real
+        // image's generated Entry has already initialized by the time any
+        // Node is constructed, and this guard never fires there.
+        static bool nros_initialized = false;
+        if (!nros_initialized) {
+            auto ri = ::nros::init();
+            if (!ri.ok()) {
+                log_error("%s -> nros::init failed: %d. Exiting.\n",
+                          node_name_.c_str(), ri.raw());
+                std::exit(1);
+            }
+            nros_initialized = true;
+        }
         auto r = ::nros::create_node(node_, node_name_.c_str());
         if (!r.ok()) {
             log_error("%s -> nros::create_node failed: %d. Exiting.\n",
@@ -167,17 +184,32 @@ public:
         pthread_attr_destroy(&main_thread_attr_);
     }
 
+    // Cooperative start/stop. Zephyr's POSIX layer implements
+    // pthread_cancel with deferred cancellation only, and the poll
+    // loop's usleep tick is not a cancellation point there — a cancel
+    // never lands and the join blocks forever (unit-test hang on the
+    // eace28852 bring-up). The loop polls a running flag instead.
     int spin()
     {
-        return pthread_create(&main_thread_, &main_thread_attr_,
-                              main_thread_entry_, this);
+        if (running_.load(std::memory_order_acquire)) {
+            return 0;  // already spinning
+        }
+        running_.store(true, std::memory_order_release);
+        int rc = pthread_create(&main_thread_, &main_thread_attr_,
+                                main_thread_entry_, this);
+        if (rc != 0) {
+            running_.store(false, std::memory_order_release);
+        }
+        return rc;
     }
 
     void wait_for_completion() { pthread_join(main_thread_, nullptr); }
 
     void stop()
     {
-        pthread_cancel(main_thread_);
+        if (!running_.exchange(false, std::memory_order_acq_rel)) {
+            return;  // not spinning (or already stopped)
+        }
         pthread_join(main_thread_, nullptr);
     }
 
@@ -323,12 +355,13 @@ private:
     std::unique_ptr<Timer> timer_;
 
     pthread_t main_thread_;
+    std::atomic<bool> running_{false};
     pthread_attr_t main_thread_attr_;
 
     static void * main_thread_entry_(void * arg)
     {
         Node * node = static_cast<Node *>(arg);
-        while (true) {
+        while (node->running_.load(std::memory_order_acquire)) {
             for (auto & sub : node->subs_) {
                 sub->poll();
             }

@@ -34,6 +34,7 @@
 
 #include "autoware/trajectory_follower_node/controller_node.hpp"
 #include "controller_pkg/node_identity.hpp"
+#include "common/logger/logger.hpp"
 
 namespace controller_pkg {
 
@@ -56,7 +57,20 @@ namespace controller_pkg {
 class Controller final
     : public ::autoware::motion::control::trajectory_follower_node::Controller {
   public:
-    using ::autoware::motion::control::trajectory_follower_node::Controller::Controller;
+    /// Boot-status markers around base construction. The legacy imperative
+    /// boot (`src/main.cpp`, retired with the generated Entry) printed these;
+    /// the CI runtime smoke (`run-zephyr-fvp-ci.sh` phase 1) greps them, so
+    /// the component ctor owns them now: "Starting" before the base wires the
+    /// 5 subscriptions + 3 publishers + control timer, "Started"/"Live" once
+    /// construction (entity creation) succeeded — a ctor throw ends the boot
+    /// before the markers, which is exactly the failure CI should catch.
+    explicit Controller(nros::NodeHandle handle)
+        : ::autoware::motion::control::trajectory_follower_node::Controller(
+              (common::logger::log_info("Starting Controller Node...\n"), handle))
+    {
+        common::logger::log_success("Controller Node Started\n");
+        common::logger::log_success("Actuation Safety Island is Live\n");
+    }
 };
 
 }  // namespace controller_pkg
