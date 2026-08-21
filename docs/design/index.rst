@@ -20,3 +20,4 @@ Runtime design, DDS topic contracts, and forward-looking design work.
    freertos-s32z2-bringup
    nano_ros_migration
    workspace_mode
+   rt_evaluation_zephyr
