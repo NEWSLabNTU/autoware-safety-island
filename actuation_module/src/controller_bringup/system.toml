@@ -12,6 +12,11 @@
 [system]
 # MUST equal package.xml <name> (nros check cross-validates).
 name           = "controller_bringup"
+# Phase 4 (issue 0745): launch-param seeding rides the param-services
+# capability (the parameter store lives behind it); this also registers
+# the runtime get/set surface. Without it the entry cannot seed
+# ctrl_period/control_output and the node runs on compiled defaults.
+features       = ["param_services"]
 # ASI runs Cyclone DDS on Zephyr (Phase 1 runtime). A [deploy.<t>] block
 # may override per target; this is the system default.
 rmw            = "cyclonedds"

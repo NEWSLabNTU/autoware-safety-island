@@ -76,23 +76,33 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       are build artifacts) — BOTH lanes now bake from the one authored
       bringup including the tier model. Zephyr revalidated: full 5-phase
       FVP CI green on the tiers + LAUNCH image.
-- [x] Rate profiling round 2 (2026-08-21). Findings, in order ruled out:
-      (a) `ctrl_period` was never configured — the code default (0.15 s,
-      a port TODO) applied; now declared in the launch XML at the stock
-      Autoware 0.03 s → 19 → **25.3 Hz**. (b) Compute exonerated: the
-      controller's own processing_time debug topics show ~20 µs lateral /
-      4 µs longitudinal in the e-stop path (`RelWithDebInfo` confirmed).
-      (c) The residual 80–85 ms stalls survive a priority-7 RT tier with
-      20 µs callbacks — nothing schedulable exists during the stall.
-      Root cause class: the GCC/Posix port cannot preempt a task blocked
-      in a RAW host primitive (the platform shim's pthread-layout condvar
-      arms; blocking syscalls from task context), so a host-side wait
-      parks the whole simulated kernel. Filed as **nano-ros issue 0744**
-      (phase-370's "RTOS threads + host Cyclone" 0715 class, degrading
-      into latency here). ASI ships tiers + the explicit period; the
-      last ~8 Hz waits on 0744.
-- [ ] Soak (W3.c-style scenario re-run) once 0744 lands; re-measure
-      against the 33 Hz ideal.
+- [x] Rate profiling rounds 2–3 (2026-08-21) — CORRECTED STORY. The
+      first analysis (filed as nano-ros 0744, "raw blocking waits park
+      the simulated kernel") was WRONG — port-signal masking and CPU
+      pinning both falsified it; 0744 is closed wontfix. The truth: the
+      launch-declared `ctrl_period=0.03` NEVER REACHED the node — a
+      four-defect upstream chain (emitters gated launch-param seeding on
+      param_services AND emitted it post-construction; the executor
+      store needed pre-node init; ComponentNode read its own per-node
+      store; the capability lowering fn was called from no path). The
+      "80–140 ms stalls" were the compiled 0.15 s default's real ticks.
+      Fixed upstream as **nano-ros issue 0745** (emitter seeding
+      pre-construction + lazy store + seed adoption + wired lowering;
+      pin `93c0956ae`); ASI opts in via
+      `[system].features = ["param_services"]`,
+      `nano_ros_workspace(SYSTEM controller_bringup)`, and the Zephyr
+      lane's `-DNANO_ROS_FEATURES` mirror. Instrumented result:
+      standalone control timer **158.8 ms → 31.6 ms mean** (min 31.4 /
+      max 32.5, n=1265). Both lanes revalidated (freertos-posix build +
+      boot; full 5-phase FVP CI green — the FVP controller also runs at
+      the true 30 ms for the first time).
+- [ ] Follow-up (tracked in 0745's left-open list): load-time timer
+      over-credit — with real subscription traffic the 30 ms timer
+      publishes at ~50 Hz (bursts; max interval == period). Soak
+      (W3.c-style scenario re-run) after that lands; also no bool getter
+      for seed adoption, and `control_output` is still read from the
+      compile-time CONFIG rather than the seeded param (ASI wart, next
+      cleanup).
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

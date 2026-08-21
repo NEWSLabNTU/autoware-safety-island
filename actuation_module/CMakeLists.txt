@@ -25,6 +25,10 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
   set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
   nano_ros_workspace(
     ORDER_FROM_DEPENDS
+    # SYSTEM resolves the bringup's capability axes ([system].features —
+    # param_services for launch-param seeding) BEFORE the runtime import
+    # (nano-ros issue 0353 rule; without it no capability reaches the build).
+    SYSTEM   controller_bringup
     BACKEND  ${NROS_RMW}
     PLATFORM "${NANO_ROS_PLATFORM}"
     SUBDIRS

@@ -357,6 +357,10 @@ function build_zephyr_actuation_module() {
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
     "-DBUILD_TEST=${BUILD_TEST_FLAG}"
+    # Issue 0745 — the bringup declares [system].features=["param_services"]
+    # (launch-param seeding); the Zephyr module lane has no bringup-driven
+    # capability resolution yet, so mirror it explicitly.
+    -DNANO_ROS_FEATURES="param_services"
   )
 
   local board_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_actuation.conf"
