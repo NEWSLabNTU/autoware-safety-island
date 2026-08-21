@@ -40,7 +40,7 @@ manifest:
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     - name: nano-ros
       remote: newslab
-      revision: d03ea3e488355751cb1a7829499269dfbe7d660f
+      revision: 562b4f2da3ae723a6ceb23b0efb1c699281bcd90
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
