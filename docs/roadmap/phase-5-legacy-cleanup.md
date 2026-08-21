@@ -30,12 +30,14 @@ FixedSequence capacity). Landed:
       devcontainer layout); fail-early probe for `autoware_planning_msgs`.
       The devcontainer base is `autoware:universe-devel`, so CI has the env.
 
-## W2 — dead submodules  [ ]
+## W2 — dead submodules  [~]
 
-- [ ] `freertos-kernel/` (19 MB) — zero consumers (the posix lane uses
-      `modules/nros/third-party/freertos/kernel`; the legacy s32z2 lane uses
-      the NXP PlatformSDK FreeRTOS). Remove submodule + the
-      `build-ci.yml`/`release.yml` init lines.
+- [x] `freertos-kernel/` (19 MB) — removed 2026-08-22: zero consumers (the
+      posix lane uses `modules/nros/third-party/freertos/kernel`; the legacy
+      s32z2 lane uses the NXP PlatformSDK FreeRTOS). Submodule +
+      `build-ci.yml`/`release.yml` init lines + CLAUDE.md/AGENTS.md mentions.
+      (The `nros setup --source freertos-kernel` spellings that remain are
+      nano-ros's SDK source NAME, not this submodule.)
 - [ ] `cyclonedds/` (24 MB, fork `freertos-s32z2` branch) — last consumer is
       the legacy `freertos-s32z2` lane (W3). Removed together with it.
 - [~] `actuation_module/freertos_s32z2/s32ct_config` — S32 Config Tools

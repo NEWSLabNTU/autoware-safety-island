@@ -40,8 +40,11 @@ docs/
   design/                                 Design notes (architecture, CAN, nano-ros)
   roadmap/                                Migration plans (phase-1*.md)
   user_guide/                             Sphinx user docs
-cyclonedds/, zephyr/, freertos-kernel/    Upstream dependency trees — do NOT
+cyclonedds/, zephyr/                      Upstream dependency trees — do NOT
                                           edit unless updating that dependency
+                                          (cyclonedds serves only the legacy
+                                          freertos-s32z2 lane; dies with it —
+                                          see docs/roadmap/phase-5)
 ```
 
 ## Build & test commands
@@ -99,7 +102,7 @@ untracked.
 
 ## Things to avoid
 
-- Editing `cyclonedds/`, `zephyr/`, or `freertos-kernel/` unless explicitly
+- Editing `cyclonedds/` or `zephyr/` unless explicitly
   updating that dependency.
 - Modifying upstream Autoware components under `src/autoware/` beyond what
   the port requires — prefer adapter shims in `common/`.

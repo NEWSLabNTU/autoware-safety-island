@@ -10,9 +10,9 @@ files at the module root, Autoware-derived components under `src/autoware/`,
 and test programs under `test/`. Documentation sources are in `docs/`;
 active migration plans live in `docs/roadmap/` and design notes in
 `docs/design/`. `demo/` contains Docker Compose, launch, bridge,
-visualizer, and sample map assets. `cyclonedds/`, `zephyr/`, and
-`freertos-kernel/` are large upstream dependency trees; avoid drive-by edits
-there unless updating that dependency.
+visualizer, and sample map assets. `cyclonedds/` and `zephyr/`
+are large upstream dependency trees; avoid drive-by edits there unless
+updating that dependency.
 
 ## Build, Test, and Development Commands
 
