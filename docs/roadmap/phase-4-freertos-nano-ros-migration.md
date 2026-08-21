@@ -76,10 +76,23 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       are build artifacts) — BOTH lanes now bake from the one authored
       bringup including the tier model. Zephyr revalidated: full 5-phase
       FVP CI green on the tiers + LAUNCH image.
-- [ ] Rate profiling round 2 + soak: residual gap to the 33 Hz ideal
-      (19 Hz, min interval 5 ms / max 80 ms — investigate tier
-      spin_period, timer service granularity, MPC compute in the
-      emergency-stop path) and the W3.c-style scenario re-run.
+- [x] Rate profiling round 2 (2026-08-21). Findings, in order ruled out:
+      (a) `ctrl_period` was never configured — the code default (0.15 s,
+      a port TODO) applied; now declared in the launch XML at the stock
+      Autoware 0.03 s → 19 → **25.3 Hz**. (b) Compute exonerated: the
+      controller's own processing_time debug topics show ~20 µs lateral /
+      4 µs longitudinal in the e-stop path (`RelWithDebInfo` confirmed).
+      (c) The residual 80–85 ms stalls survive a priority-7 RT tier with
+      20 µs callbacks — nothing schedulable exists during the stall.
+      Root cause class: the GCC/Posix port cannot preempt a task blocked
+      in a RAW host primitive (the platform shim's pthread-layout condvar
+      arms; blocking syscalls from task context), so a host-side wait
+      parks the whole simulated kernel. Filed as **nano-ros issue 0744**
+      (phase-370's "RTOS threads + host Cyclone" 0715 class, degrading
+      into latency here). ASI ships tiers + the explicit period; the
+      last ~8 Hz waits on 0744.
+- [ ] Soak (W3.c-style scenario re-run) once 0744 lands; re-measure
+      against the 33 Hz ideal.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

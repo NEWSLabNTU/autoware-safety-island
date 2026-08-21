@@ -36,6 +36,10 @@
   <node pkg="controller_pkg" exec="controller" name="controller">
     <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
     <param name="control_output" value="$(var control_output)"/>
+    <!-- Phase 4 profiling — explicit control period (s). The code default is
+         0.15 (a TODO from the port; stock Autoware runs 0.03). Declared here
+         so the deployment, not a C++ literal, owns the control rate. -->
+    <param name="ctrl_period" value="0.03"/>
 
     <!-- I3 subscriptions (5) — from= MUST match node_identity.hpp exactly. -->
     <remap from="/vehicle/status/steering_status" to="/vehicle/status/steering_status"/>
