@@ -104,10 +104,31 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       compiled DDS_AND_CAN used to); the freertos CI marker now asserts
       the seeded mode end-to-end (CAN stays covered by the Zephyr
       can-output-test phase).
-- [ ] Timer over-credit under load — filed as **nano-ros issue 0746**
-      (30 ms timer at ~50 Hz under real traffic, exact standalone;
-      minimal upstream repro shape named). Soak (W3.c-style scenario
-      re-run) gates on it.
+- [x] Timer over-credit under load — filed as **nano-ros issue 0746**,
+      CLOSED wontfix 2026-08-21: **executor exonerated, the ~50 Hz was
+      `ros2 topic hz` aggregating stale duplicate island processes** on
+      the shared domain (three old `actuation_posix_entry` instances
+      found alive; min~0 bursts + max≈period is the multi-publisher
+      signature; the round-1 "12.4 Hz vs 6.3 Hz effective" datum is
+      exactly 2×6.3 — same artifact). Instrumented upstream spin/timer
+      accounting: per-spin credit == tick clock to the microsecond,
+      standalone AND under the full planner graph; single-process
+      measurement under load: timer fires 31.7 Hz, wire 31.669 Hz avg,
+      min 31 / max 32 ms, std dev 0.06 ms. The 31.6-vs-30 ms offset is
+      the FreeRTOS POSIX port tick thread's usleep overshoot (~5.2 %,
+      simulator-only; absent on FVP/hardware). Soak unblocked.
+      RULE for all future rate measurements: prove the publisher count
+      first (`pgrep -a actuation_posix_entry` / `ros2 topic info -v`).
+- [x] Control-rate soak (2026-08-21): single island vs the demo compose
+      planner (posix override, domain 2, bridge relaying domain 1),
+      5-minute `ros2 topic hz --window 10000` on
+      `/control/trajectory_follower/control_cmd`: **31.672 Hz average
+      over 9633 samples, min 31 ms / max 32 ms, std dev 0.06 ms** —
+      flat at the 30 ms tier period plus the posix-sim tick skew, no
+      drift, no bursts, no stalls. The freertos-posix lane's control
+      cadence question (6 Hz → 12.4 Hz → "50 Hz" across rounds 1–3) is
+      closed: every anomaly was either the unseeded 0.15 s default
+      period (#0745) or multi-process hz contamination (#0746).
 
 ### W5.a wall ledger (all consumer-side unless noted)
 
