@@ -8,6 +8,17 @@ config ENABLE_SNTP
 	  Synchronizes the clock of the system using NTP server.(Requires internet connection)
 	  Disabling means that the timestamps will start from boot up time.
 
+config SNTP_SERVER_ADDRESS
+	string "SNTP server address (host[:port])"
+	depends on ENABLE_SNTP
+	default "time.nist.gov"
+	help
+	  Server passed to Zephyr's sntp_simple(). On an isolated tap/demo
+	  network, point it at the tap host (e.g. "192.168.10.1:12123") and
+	  run an SNTP responder there — without a wall-clock epoch the
+	  island stamps commands from 1970 and Autoware's vehicle_cmd_gate
+	  rejects them as stale, so autonomous mode never actuates.
+
 config DDS_DOMAIN_ID
 	int "Domain ID for CycloneDDS"
 	default 2

@@ -129,6 +129,59 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       cadence question (6 Hz → 12.4 Hz → "50 Hz" across rounds 1–3) is
       closed: every anomaly was either the unseeded 0.15 s default
       period (#0745) or multi-process hz contamination (#0746).
+- [x] **Autonomous DRIVING demo, Zephyr FVP island (2026-08-22)** — the
+      full Autoware + Zephyr ASI stack drives the planning-sim vehicle
+      to a goal, three missions completed (map-derived on-lane seeds,
+      ~60 m / 28 m / 14 m; arrival within 0.21 m / 0.00 m of goal),
+      rviz observing on the host X display. Every prior "closed loop"
+      on this branch had verified only the emergency/stopped path.
+      Chain of defects found and fixed to get here, in order:
+      1. **nano-ros issue 0749** (fixed upstream, pin `d1c5b3b3b`): the
+         Zephyr lane's curated cargo env dropped 5 of 6 executor sizing
+         knobs — every Zephyr image silently built 1024-byte
+         subscription buffers, so real 13.4 KiB trajectories were
+         reassembled + ACKed by cyclone and DISCARDED with zero
+         diagnostics (tshark ACKNACK analysis pinned it). Small
+         degenerate stopped-trajectories fit 1 KiB, which is how the
+         defect hid behind every green marker. Follow-up open upstream:
+         fail-loud at the BUFFER_TOO_SMALL drop site.
+         Consumer side: `NROS_MAX_PARAMETERS` pinned back to 32 in
+         build.sh — 256 HANGS Zephyr boot right after
+         dds_create_participant (bisected; upstream follow-up), and
+         `NROS_EXECUTOR_ARENA_SIZE` capped at 448 KiB (derived ~1 MB).
+      2. **No wall-clock epoch**: the island stamped commands from its
+         boot epoch, and Autoware's vehicle_cmd_gate/monitors reject
+         stale stamps — autonomous mode could never actuate. Fixed:
+         `CONFIG_SNTP_SERVER_ADDRESS` Kconfig (tap conf points at
+         192.168.10.1:12123) + `scripts/sntp-server.py` (unprivileged
+         RFC-4330 responder on the tap host).
+      3. **FVP pacing**: the baked board.cmake args free-run the model
+         when idle (island clock raced 8-14x real → cyclone leases
+         expired island-side, dropping live peers) and appended
+         ARMFVP_EXTRA_FLAGS cannot override them (first-occurrence
+         wins); the rate limiter lives in the VISUALISATION component,
+         so headless FVP cannot pace at all. Demo runs FVP directly
+         with `disable_visualisation=0 rate_limit-enable=1` (window on
+         the host display; pacing measured 1.05x real).
+      4. **Compute reality**: full MPC+PID on FVP takes ~160 ms per
+         tick (~6 Hz island-side, ~4.7 Hz after bridge) — below the
+         stock 5 Hz topic-monitor warn threshold, so
+         `demo/component_state_monitor_topics.yaml` (compose-mounted
+         override) relaxes the two control-command rate checks to
+         2 Hz warn / 0.5 Hz error. Hardware islands run the true 30 ms
+         tier and do not need it.
+      5. **Duplicate-instance hygiene** (the #0746 lesson twice over):
+         an orphaned FVP survived pid-file kills and ran concurrently
+         (same IP/MAC on tap0 — ACKNACK storms, ghost SPDP peers,
+         selective delivery), and the demo visualizer + a host rviz
+         both named `rviz2` trip duplicated_node_checker, which blocks
+         autonomous mode. Rate/engage debugging is invalid until
+         `ps -eo pid,comm | grep FVP` and the node list are clean.
+      Also: feedback-driven demo seeding landed in both demo scripts
+      (pose accepted ⇔ kinematic_state publishes; goal accepted ⇔
+      trajectory streams — blind seeds were silently lost on cold
+      containers), and `scripts/run-posix-demo.sh` is the new
+      one-command posix campaign (stale-island guard built in).
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

@@ -11,10 +11,14 @@
 #include <cstdio>
 #include "common/logger/logger.hpp"
 
+#ifndef CONFIG_SNTP_SERVER_ADDRESS
+#define CONFIG_SNTP_SERVER_ADDRESS "time.nist.gov"
+#endif
+
 static inline int platform_init_clock_via_sntp(void) {
     struct sntp_time ts;
     struct timespec tspec;
-    int res = sntp_simple("time.nist.gov", 10000, &ts);
+    int res = sntp_simple(CONFIG_SNTP_SERVER_ADDRESS, 10000, &ts);
 
     if (res < 0) {
         common::logger::log_error("Cannot set time using SNTP\n");

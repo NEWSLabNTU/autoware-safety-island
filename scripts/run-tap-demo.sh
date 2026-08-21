@@ -111,15 +111,39 @@ grep -q "${BOOT_MARKER}" "${FVP_LOG}" 2>/dev/null || \
 say "island is live."
 
 # ---- seed ego + goal ----
-if ((DO_SEED)); then
+# Seeding is FEEDBACK-DRIVEN (fix shared with run-posix-demo.sh): a pose
+# published before the sim can consume it is silently lost — /initialpose
+# EXISTING is not readiness. Pose is accepted when /localization/
+# kinematic_state starts publishing; the goal when the planner emits a
+# trajectory. Retry each until its effect is observed.
+seed_ego_and_goal() {
   say "waiting for the planning sim, then seeding initialpose + goal…"
   for ((i = 0; i < 60; i++)); do
     in_autoware "ros2 topic list 2>/dev/null | grep -q /initialpose" && break
     sleep 2
   done
-  in_autoware "ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped '${INITIALPOSE}'" >/dev/null
-  sleep 5
-  in_autoware "ros2 topic pub --once /planning/mission_planning/goal geometry_msgs/msg/PoseStamped '${GOALPOSE}'" >/dev/null
+  local ok=0
+  for ((i = 0; i < 10; i++)); do
+    in_autoware "ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped '${INITIALPOSE}'" >/dev/null
+    if in_autoware "timeout 8 ros2 topic echo --once /localization/kinematic_state >/dev/null 2>&1"; then
+      ok=1; break
+    fi
+    warn "initialpose not accepted yet (attempt $((i + 1))/10) — sim still booting; retrying…"
+  done
+  ((ok)) || die "initialpose never accepted — check: docker logs ${AUTOWARE_CTR}"
+  ok=0
+  for ((i = 0; i < 10; i++)); do
+    in_autoware "ros2 topic pub --once /planning/mission_planning/goal geometry_msgs/msg/PoseStamped '${GOALPOSE}'" >/dev/null
+    if in_autoware "timeout 8 ros2 topic echo --once /planning/scenario_planning/trajectory >/dev/null 2>&1"; then
+      ok=1; break
+    fi
+    warn "no trajectory yet (attempt $((i + 1))/10) — retrying goal…"
+  done
+  ((ok)) || die "goal produced no trajectory — check: docker logs ${AUTOWARE_CTR}"
+  say "ego + goal seeded (trajectory streaming)."
+}
+if ((DO_SEED)); then
+  seed_ego_and_goal
 fi
 
 # ---- verify the closed loop ----

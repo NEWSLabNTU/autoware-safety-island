@@ -337,13 +337,27 @@ function build_zephyr_actuation_module() {
   # lateral + PID longitudinal); nano-ros's parameter server is a static
   # pool sized at Rust build time (nros-params build.rs, default 32 ->
   # declare_parameter fails with ErrorCode::Full = -5 at boot).
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  #
+  # ZEPHYR LANE CAVEAT (nano-ros issue 0749 follow-up): these knobs reach
+  # the Zephyr Rust lane only since nano-ros d1c5b3b3b — before that the
+  # curated cargo env dropped them and every Zephyr image silently built the
+  # crate defaults (1024-byte subscription buffers: real trajectories were
+  # ACKed and discarded with no diagnostics). NROS_MAX_PARAMETERS is pinned
+  # to the old effective value 32 here because 256 HANGS Zephyr boot right
+  # after dds_create_participant (bisected 2026-08-22; suspected large-store
+  # stack temp upstream). Params past the 32nd fall back to compiled
+  # defaults — the behavior every Zephyr image has always had. Raise after
+  # the upstream hang is fixed.
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-32}"
   # Executor sizing (nros-node build.rs): the controller registers 5
   # subscriptions + timers + publishers (default MAX_CBS=4 → creation fails
-  # with TransportError at boot), and /planning trajectories run ~8.8 KiB
-  # (default per-subscription RX buffer is 1 KiB).
+  # with TransportError at boot), and /planning trajectories run 9-14 KiB
+  # (default per-subscription RX buffer is 1 KiB). The arena would derive to
+  # ~1 MB from MAX_CBS=16 x 16 KiB buffers (action-client worst case); cap
+  # it at what this image actually needs.
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-458752}"
 
   # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
   # resolves the codegen tool from `_NANO_ROS_CODEGEN_TOOL` (then $NROS_CLI,

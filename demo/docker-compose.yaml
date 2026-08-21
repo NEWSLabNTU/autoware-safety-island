@@ -6,6 +6,12 @@ services:
       - ./map/sample-map-planning:/root/autoware_map
       - ./cyclonedds.xml:/autoware/cyclonedds.xml
       - ./launch/control.launch.xml:/opt/autoware/share/tier4_control_launch/launch/control.launch.xml
+      # Relaxed control-command rate checks (2 Hz warn / 0.5 Hz error): the
+      # FVP island computes full MPC in ~160 ms per tick (~6 Hz effective,
+      # ~4.7 Hz after the bridge), which trips the stock 5 Hz warn threshold
+      # and makes autonomous mode unavailable. Hardware islands run the real
+      # 30 ms tier and do not need this override.
+      - ./component_state_monitor_topics.yaml:/opt/autoware/share/autoware_launch/config/system/component_state_monitor/topics.yaml
     env_file:
       - common.env
     command: >
