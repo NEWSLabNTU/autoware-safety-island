@@ -40,17 +40,13 @@ if(COMMAND nros_generate_interfaces)
   # calls can see it.
   #
   # Plain nano-ros macro calls, no ASI wrapper (phase-5 principle: ASI holds
-  # production logic; ROS infra lives in nano-ros). The ONE residue of lane
-  # divergence is `_nros_skip_install`: the canonical (workspace) variant
-  # wires INSTALL(EXPORT) that an in-app aggregation never populates, while
-  # the Zephyr module variant would misread the flag as a message path —
-  # upstream parity is filed as a phase-5 W6 friction item; this variable
-  # dies with it.
-  if(TARGET zephyr_interface)
-      set(_nros_skip_install "")
-  else()
-      set(_nros_skip_install SKIP_INSTALL)
-  endif()
+  # production logic; ROS infra lives in nano-ros). SKIP_INSTALL is passed
+  # unconditionally: the canonical (workspace) variant needs it (an in-app
+  # aggregation never populates the INSTALL(EXPORT) layout) and the Zephyr
+  # module variant accepts-and-ignores it (parity since nano-ros Phase
+  # 210.E.3.c — verified, nano-ros issue 0753; the old lane gate here
+  # guarded against a misparse that no current pin has).
+  set(_nros_skip_install SKIP_INSTALL)
 
   # NOTE: nros_generate_interfaces() does NOT walk DEPENDENCIES
   # transitively when building the FFI lib.rs include!() set. Every

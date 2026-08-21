@@ -94,15 +94,30 @@ the others):
 - [ ] `common/logger/` → `nros_log` (`nros_error!`/`log.hpp` macros): one
       logging spine instead of two; nros_log reaches no_std targets and
       avoids the native_sim std-stdio hazard class.
-- [ ] `common/net/network_config.hpp` + `SAFETY_ISLAND_DDS_INTERFACE`
-      plumbing — partially superseded by nano-ros boot-config env rungs
-      (#206); audit what is still ASI-specific (CAN stays ASI).
+      SEQUENCED BEHIND W3 (2026-08-22): `logger.hpp` is compiled by the
+      legacy `freertos-s32z2-legacy` lane too, which links no nros — a
+      swap now would need a mode gate (banned) or break that lane. Keep
+      the `log_*` API surface when it lands (20+ vendored Autoware TUs
+      call it); swap the sink to `nros_log_emit_fmt`, and note upstream
+      has no throttle macros yet (`log_*_throttle` stays ASI-side).
+- [x] `common/net/network_config.hpp` + `SAFETY_ISLAND_DDS_INTERFACE`
+      plumbing — AUDITED 2026-08-22: `SAFETY_ISLAND_DDS_INTERFACE` has no
+      remaining consumers (already gone). `configure_network()` stays: it
+      is Zephyr board-net bringup (static IP + VLAN tagging + 2-iface +
+      DHCP lease wait) delivered as the strong `nros_board_network_wait()`
+      override — ASI-board-specific, beyond nano-ros scope. No action.
 - [ ] SNTP epoch (`platform_init_clock_via_sntp` + `scripts/sntp-server.py`)
       — works, but epoch belongs in nano-ros (`ExecutorConfig::epoch_us` /
       RFC-0052 age monitors need it too). Candidate upstream contribution:
       a platform SNTP epoch source; ASI then deletes its copy.
-- [ ] `actuation_module/src/main.cpp` boot banner/init — much of it is now
-      the generated entry's job; fold what remains into board hooks.
+- [x] `actuation_module/src/main.cpp` boot banner/init — AUDITED
+      2026-08-22: already out of every nros lane (Zephyr + posix + s32z2
+      boot through generated entries; the network prologue is the
+      `nros_board_network_hook` strong override; boot markers moved into
+      the `controller_pkg::Controller` ctor in phase-3). Its only
+      remaining consumer is the legacy `freertos-s32z2-legacy` lane
+      (`-Dmain=actuation_main`), so the file dies with W3 — nothing to
+      fold now.
 
 ## W6 — ASI carries production logic; ROS infra belongs to nano-ros  [ ]
 
@@ -111,20 +126,21 @@ nano-ros macro calls; every ASI-local wrapper around them is either dead
 weight or an upstream gap in disguise. W1 already dropped the `_asi_gen`
 wrapper — its two reasons-to-exist become upstream friction items:
 
-- [ ] `SKIP_INSTALL` parity: the canonical `nros_generate_interfaces()`
-      needs it for in-app aggregations; the Zephyr module variant misparses
-      it as a message path. One vocabulary, both variants — then the
-      `_nros_skip_install` lane gate in `autoware_msgs/CMakeLists.txt` dies.
-      File as a nano-ros issue.
-- [ ] The Zephyr module's idlc discovery starts from `find_program(nros)`
-      on PATH even when the build already passes `-D_NANO_ROS_CODEGEN_TOOL`
-      — so consumers must export PATH themselves (build.sh does, since W1's
-      clean reconfigure exposed it). The module should reuse the tool it was
-      handed. File as a nano-ros issue.
-- [ ] Board-facts `--deploy` disambiguation: with two deploys naming one
-      board, `nros ws board-facts` refuses; the zephyr module should pass
-      its deploy through instead of surfacing the refusal to the consumer
-      build. File as a nano-ros issue.
+- [x] `SKIP_INSTALL` parity: STALE BELIEF — the Zephyr module variant has
+      accepted-and-ignored the flag since nano-ros Phase 210.E.3.c (filed +
+      verified as nano-ros issue 0753, resolved on arrival, 2026-08-22).
+      The `_nros_skip_install` lane gate in `autoware_msgs/CMakeLists.txt`
+      is dropped; SKIP_INSTALL passes unconditionally.
+- [x] Zephyr module idlc discovery ignoring the handed codegen tool —
+      filed as nano-ros issue 0754 (2026-08-22). build.sh keeps its PATH
+      export until it lands.
+- [x] Board-facts deploy passthrough — filed as nano-ros issue 0755
+      (2026-08-22): `NanoRosBoardFacts.cmake` should forward the entry's
+      DEPLOY as `--deploy`; today a divergent multi-deploy system.toml
+      soft-skips facts entirely.
+      Also filed the same session: nano-ros 0756 (NROS_MAX_PARAMETERS=256
+      Zephyr boot hang — the build.sh 32-pin's unpin condition) and 0757
+      (BUFFER_TOO_SMALL silent drop fail-loud — 0749's open half).
 - [ ] Longer term: the W5 items above are the same principle applied to
       C++ glue (logger, poll shim, net config, epoch source, boot main).
 
