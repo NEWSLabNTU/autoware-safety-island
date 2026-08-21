@@ -294,9 +294,17 @@ hardening on the QEMU cell before hardware.
 
 ASI-side work breakdown (ordered; 1-3 can start before hardware):
 
-1. [ ] Track/co-develop phase-372 W4→W1→W2 upstream (QEMU multicast +
-       heap first — every defect found there is one not debugged on the
-       board). ASI contribution channel: the seeds above.
+1. [x] Upstream phase-372 W1-W4 LANDED (2026-08-22, pin `d03ea3e48`):
+       Cortex-R52 cross profile (armv8r-none-eabihf + cc-rs FPU env
+       class fix), `nros-board-s32z270-freertos` bundle + cmake overlay
+       (env-provisioned kernel, `GCC/ARM_CRx_No_GIC` link-default),
+       weak fail-loud netif/tick hooks, `[arch.cortex-r52]` profile,
+       emitter allowlist. ACCEPTANCE: the C++ cyclonedds workspace cell
+       cross-links for ARMv8-R from a clean checkout (fixture witness
+       `workspace-cpp-s32z270-freertos`); MPS2 sibling re-verified
+       (builds, boots, SPDP multicast egress on QEMU). The W4 multicast
+       worry was stale: LWIP_IGMP has been on family-wide; RX-side
+       interop + heap-under-graph tests are hardware/tap-gated in W5.
 2. [ ] `system.toml`: add `[deploy.s32z2]` (kind embedded, board
        `s32z270-freertos` once the bundle lands); tier table already
        carries per-platform `[tiers.control.freertos]` priorities.
