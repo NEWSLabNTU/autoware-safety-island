@@ -278,15 +278,51 @@ hardening on the QEMU cell before hardware.
 
 - [x] Upstream: `nros-board-s32z270-freertos` bundle scoped and filed
       (nano-ros phase-372, 2026-08-21).
-- [ ] ASI: replace `freertos_s32z2/scripts/build-cdds-target.sh` + the
-      hand toolchain with the board-bundle consumption; NETC glue moves
-      behind the board crate where generic, stays in ASI where
-      NXP-RTD-licensed.
-- [ ] Retire the vendored `cyclonedds/` submodule and its
-      `freertos-s32z2` fork branch for good.
+- [x] Exploration pass (2026-08-22): full gap analysis recorded in
+      nano-ros phase-372 "Exploration findings". Load-bearing facts:
+      the netif strong-symbol seam already exists upstream
+      (`nros_board_register_netif`/`_poll_netif` — ASI's `ethif_shim.c`
+      becomes a strong override, not a new seam); the Cortex-R52 GIC
+      kernel port is NXP-licensed AND needs ASI's `port.c.patch`
+      (Thumb-resume CPSR bug), so the kernel is consumer-provisioned via
+      `FREERTOS_DIR`/`FREERTOS_PORT` like the posix lane; upstream
+      multicast join is stubbed (`nros-platform-freertos/src/net.c`) —
+      the first blocker Cyclone SPDP hits; the hardware-proven seeds
+      (FreeRTOSConfig/lwipopts, 4 linker fragments incl. the
+      non-cacheable NETC BD region, cp15/board_init) are enumerated for
+      the bundle.
 
-Acceptance: S32Z2 image builds via nano-ros; on-target smoke on the
-board; `cyclonedds/` gone from `.gitmodules`.
+ASI-side work breakdown (ordered; 1-3 can start before hardware):
+
+1. [ ] Track/co-develop phase-372 W4→W1→W2 upstream (QEMU multicast +
+       heap first — every defect found there is one not debugged on the
+       board). ASI contribution channel: the seeds above.
+2. [ ] `system.toml`: add `[deploy.s32z2]` (kind embedded, board
+       `s32z270-freertos` once the bundle lands); tier table already
+       carries per-platform `[tiers.control.freertos]` priorities.
+3. [ ] build.sh: rewrite `freertos-s32z2` as a workspace lane mirroring
+       `build_freertos_posix()` (nros sync + `nano_ros_workspace` +
+       cross toolchain from the bundle; NXP env rungs `S32_RTD_PATH`,
+       `FREERTOS_PATH`, `LWIP_PATH`, `S32CT_GENERATED_DIR` stay).
+       Provisioning script applies `vendor_patched/port.c.patch` +
+       `eth_port.c.patch` to the NXP distro copies.
+4. [ ] Licensed glue re-homed, not rewritten: `ethif_shim.c` →
+       `nros_board_register_netif` strong override; `board_init.c` +
+       `cp15_arm.S` + PBcfg (s32ct_config) compile into the entry via
+       the bundle's consumer hooks; `newlib_stubs.c`/`operator_new.cpp`
+       audit against what the bundle already provides.
+5. [ ] Hardware smoke (gated on board access): boot-parity with the
+       legacy lane's proven baseline (scheduler + NETC RX/TX + Cyclone
+       domain-2 participant + controller live), then the 30 ms tier +
+       launch-seeded params (0745 chain) — the legacy lane ran 150 ms
+       compiled defaults.
+6. [ ] Retire the legacy lane = phase-5 W3 (whole `freertos_s32z2/`
+       legacy set, `cyclonedds/` submodule + fork branch, `msg/*.idl`,
+       idlc CMake branch, dual-mode gates W4) in one commit.
+
+Acceptance: S32Z2 image builds via nano-ros from a clean checkout with
+only NXP-licensed pieces provisioned locally; on-target smoke parity
+with the legacy baseline; `cyclonedds/` gone from `.gitmodules`.
 
 ## Non-goals
 

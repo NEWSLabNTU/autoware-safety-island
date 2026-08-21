@@ -55,7 +55,12 @@ shim, cdds-target build, edge_ecu_peer) + `build.sh` `freertos-s32z2` target
 KEPT until phase-4 W5.b (nros freertos S32Z2 lane: nano-ros phase-372 board
 bundle + hardware) reaches boot parity — it is the only S32Z2 build this
 branch has. The moment W5.b boots on the board, this whole set goes in one
-commit (and W2's `cyclonedds/` with it).
+commit (and W2's `cyclonedds/` with it). The concrete W5.b work breakdown
+(6 ordered items; 1-3 pre-hardware) lives in phase-4; the upstream gap
+analysis lives in nano-ros phase-372 "Exploration findings" — headline:
+the netif seam already exists upstream, the NXP CR52 GIC kernel port stays
+consumer-provisioned (licensed + needs ASI's Thumb-resume CPSR patch), and
+the first Cyclone blocker is the stubbed lwIP multicast join.
 
 ## W4 — dual-mode gates + legacy shims  [ ]
 
