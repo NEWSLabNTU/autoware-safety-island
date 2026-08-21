@@ -87,10 +87,18 @@ the first Cyclone blocker is the stubbed lwIP multicast join.
 Candidates found 2026-08-22 (each is its own small work item; none blocks
 the others):
 
-- [ ] `common/node/node_nros.hpp` poll-shim (`SubscriptionHandler::poll()`
-      over `try_recv`) — superseded by the executor-dispatch `ComponentNode`
-      facade the controller already uses; remaining consumers are the test
-      programs. Port them to `ComponentNode`, delete the shim.
+- [x] `common/node/node_nros.hpp` poll-shim — DELETED 2026-08-22 (with
+      `nros_error.hpp`). The 4 shim-consuming test programs (unit_test,
+      dds_pub, dds_sub, dds_loopback_test) now derive
+      `nros::ComponentNode` with typed member callbacks and drive
+      `nros::init()` + `nros::spin_once()` loops from their own `main()`
+      (dispatch on the main thread — the wait helpers spin, not sleep).
+      `node.hpp`'s nros arm is a thin alias layer (`AsiNode`,
+      `Publisher<M> = nros::Publisher<M>` for the disabled MPC
+      debug-publisher member decls); messages.hpp's sentinel `_desc`
+      stubs are gone. Dropped with the shim: the spin()/stop()
+      thread-management and stop_timer unit tests (executor-owned
+      lifecycle now). can_output_test was already node-free.
 - [ ] `common/logger/` → `nros_log` (`nros_error!`/`log.hpp` macros): one
       logging spine instead of two; nros_log reaches no_std targets and
       avoids the native_sim std-stdio hazard class.

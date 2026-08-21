@@ -1,128 +1,135 @@
-#include "common/node/node.hpp"
+// Copyright (c) 2026, NEWSLab NTU.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Phase 5 W5 — ported off the polling shim onto `nros::ComponentNode`
+// (typed member-callback subscriptions, executor dispatch). Validates the
+// ROS2 <-> Zephyr message conversion for every controller input topic plus
+// the round-trip control output.
+
+#include <cstdlib>
+#include <new>
+
+#include <nros/component_node.hpp>
+#include <nros/nros.hpp>
+
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
 #include "autoware/autoware_msgs/messages.hpp"
+
 using namespace common::logger;
 
-#include "platform/platform_threading.h"
+class DdsTestSub : public nros::ComponentNode {
+public:
+  explicit DdsTestSub(nros::NodeHandle h)
+  : nros::ComponentNode(h, "dds_test_sub")
+  {
+    create_timer<DdsTestSub, &DdsTestSub::on_timer>(500);
 
-// Stack sizes for node and timer threads
-static K_THREAD_STACK_DEFINE(node_stack, CONFIG_THREAD_STACK_SIZE);
-#define STACK_SIZE (K_THREAD_STACK_SIZEOF(node_stack))
+    NROS_SUBSCRIBE(SteeringReportMsg, on_steering_report,
+                   "/vehicle/status/steering_status");
+    NROS_SUBSCRIBE(TrajectoryMsg_Raw, on_trajectory,
+                   "/planning/scenario_planning/trajectory");
+    NROS_SUBSCRIBE(OdometryMsg, on_odometry,
+                   "/localization/kinematic_state");
+    NROS_SUBSCRIBE(AccelerationMsg, on_acceleration,
+                   "/localization/acceleration");
+    NROS_SUBSCRIBE(OperationModeStateMsg, on_operation_mode_state,
+                   "/system/operation_mode/state");
+    NROS_SUBSCRIBE(ControlMsg, on_control_cmd,
+                   "/control/trajectory_follower/control_cmd");
+  }
 
-/*
-    This test is used to test the DDS communication between ROS2 and Zephyr
-    It is used to validate the message conversion between ROS2 and Zephyr
-    It is used to validate the sequence wrapper    
-*/
-static void handle_steering_report(const SteeringReportMsg* msg, void* arg) {
+  void on_timer() { log_info("Callback timer\n"); }
+
+  void on_steering_report(const SteeringReportMsg & msg)
+  {
     log_info("\n------ STEERING REPORT ------\n");
-    log_info("Timestamp: %f\n", Clock::toDouble(msg->stamp));
-    // log_info("Steering tire angle: %lf\n", msg->steering_tire_angle);
+    log_info("Timestamp: %f\n", Clock::toDouble(msg.stamp));
     log_info("-------------------------------\n");
-}
+  }
 
-static void handle_operation_mode_state(const OperationModeStateMsg* msg, void* arg) {
+  void on_operation_mode_state(const OperationModeStateMsg & msg)
+  {
     log_info("\n------ OPERATION MODE STATE ------\n");
-    log_info("Timestamp: %f\n", Clock::toDouble(msg->stamp));
-    // log_info("Mode: %d\n", msg->mode);
-    // log_info("Autoware control enabled: %d\n", msg->is_autoware_control_enabled);
-    // log_info("In transition: %d\n", msg->is_in_transition);
+    log_info("Timestamp: %f\n", Clock::toDouble(msg.stamp));
     log_info("-------------------------------\n");
-}
+  }
 
-static void handle_odometry(const OdometryMsg* msg, void* arg) {
+  void on_odometry(const OdometryMsg & msg)
+  {
     log_info("\n------ ODOMETRY ------\n");
-    log_info("Timestamp: %f\n", Clock::toDouble(msg->header.stamp));
-    // log_info("Position: %lf, %lf, %lf\n", msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
-    // log_info("Linear Twist: %lf, %lf, %lf\n", msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z);
+    log_info("Timestamp: %f\n", Clock::toDouble(msg.header.stamp));
     log_info("-------------------------------\n");
-}
+  }
 
-static void handle_acceleration(const AccelerationMsg* msg, void* arg) {
+  void on_acceleration(const AccelerationMsg & msg)
+  {
     log_info("\n------ ACCELERATION ------\n");
-    log_info("Timestamp: %f\n", Clock::toDouble(msg->header.stamp));
-    // log_info("Linear acceleration: %lf, %lf, %lf\n", msg->accel.accel.linear.x, msg->accel.accel.linear.y, msg->accel.accel.linear.z);
-    // log_info("Angular acceleration: %lf, %lf, %lf\n", msg->accel.accel.angular.x, msg->accel.accel.angular.y, msg->accel.accel.angular.z);
+    log_info("Timestamp: %f\n", Clock::toDouble(msg.header.stamp));
     log_info("-------------------------------\n");
-}
+  }
 
-static void handle_trajectory(const TrajectoryMsg_Raw* msg, void* arg) {
+  void on_trajectory(const TrajectoryMsg_Raw & msg)
+  {
     static int count = 0;
-    TrajectoryMsg trajectory_msg(msg);  // Convert the raw DDS sequence to a vector
+    TrajectoryMsg trajectory_msg(&msg);  // Raw DDS sequence -> vector
     log_success("\n------ TRAJECTORY --IDX: %d ------\n", count++);
     log_success("Timestamp: %f\n", Clock::toDouble(trajectory_msg.header.stamp));
     log_success("Trajectory size: %d\n", trajectory_msg.points.size());
     log_success("-------------------------------\n");
-}
+  }
 
-// Round-trip endpoint: the board's controller output. Receiving this closes the
-// loop (host inputs -> board MPC/PID -> control_cmd -> host).
-static void handle_control_cmd(const ControlMsg* msg, void* arg) {
+  // Round-trip endpoint: the board's controller output. Receiving this closes
+  // the loop (host inputs -> board MPC/PID -> control_cmd -> host).
+  void on_control_cmd(const ControlMsg & msg)
+  {
     static int count = 0;
     log_success("\n====== CONTROL CMD #%d (from board) ======\n", count++);
-    log_success("Timestamp: %f\n", Clock::toDouble(msg->stamp));
-    log_success("steering_tire_angle: %f rad\n", msg->lateral.steering_tire_angle);
+    log_success("Timestamp: %f\n", Clock::toDouble(msg.stamp));
+    log_success("steering_tire_angle: %f rad\n", msg.lateral.steering_tire_angle);
     log_success("accel: %f m/s^2  velocity: %f m/s\n",
-                msg->longitudinal.acceleration, msg->longitudinal.velocity);
+                msg.longitudinal.acceleration, msg.longitudinal.velocity);
     log_success("==========================================\n");
-}
+  }
+};
 
+alignas(DdsTestSub) static unsigned char g_node_buf[sizeof(DdsTestSub)];
 
-static void callbackTimer() {
-    log_info("Callback timer\n");
-}
-
-int main(void) {
-    log_info("--------------------------------\n");
-    log_info("Starting DDS subscriber\n");
-    log_info("--------------------------------\n");
-    log_info("Waiting for DHCP to get IP address...\n");
-    sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
+int main(void)
+{
+  log_info("--------------------------------\n");
+  log_info("Starting DDS subscriber\n");
+  log_info("--------------------------------\n");
+  log_info("Waiting for DHCP to get IP address...\n");
+  sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
 
 #if defined(CONFIG_ENABLE_SNTP) && CONFIG_ENABLE_SNTP
-    if (Clock::init_clock_via_sntp() < 0) {
-        log_error("Failed to set time using SNTP\n");
-    }
-    else {
-        log_info("Time set using SNTP\n");
-    }
+  if (Clock::init_clock_via_sntp() < 0) {
+    log_error("Failed to set time using SNTP\n");
+  } else {
+    log_info("Time set using SNTP\n");
+  }
 #endif
-    
-    // Create a node
-    Node node("dds_test_sub", node_stack, STACK_SIZE);
 
-    // Create test timer for 500ms
-    node.create_timer(500, std::bind(&callbackTimer));
+  if (!nros::init().ok()) {
+    log_error("nros::init failed\n");
+    std::exit(1);
+  }
+  nros::NodeHandle handle(nros::global_handle());
+  auto * node = new (g_node_buf) DdsTestSub(handle);
+  if (!node->ok()) {
+    log_error("Failed to create DDS subscriber node: %s (code=%d)\n",
+              node->error_what(), node->error_code());
+    std::exit(1);
+  }
 
-    // Create subscribers for all the topics the publisher expects
-    node.create_subscription<SteeringReportMsg>("/vehicle/status/steering_status",
-                                                                &autoware_vehicle_msgs_msg_SteeringReport_desc,
-                                                                handle_steering_report, &node);
-    node.create_subscription<TrajectoryMsg_Raw>("/planning/scenario_planning/trajectory",
-                                                                &autoware_planning_msgs_msg_Trajectory_desc,
-                                                                handle_trajectory, &node);
-    node.create_subscription<OdometryMsg>("/localization/kinematic_state",
-                                                                &nav_msgs_msg_Odometry_desc,
-                                                                handle_odometry, &node);
-    node.create_subscription<AccelerationMsg>("/localization/acceleration",
-                                                                &geometry_msgs_msg_AccelWithCovarianceStamped_desc,
-                                                                handle_acceleration, &node);
-    node.create_subscription<OperationModeStateMsg>("/system/operation_mode/state",
-                                                                &autoware_adapi_v1_msgs_msg_OperationModeState_desc,
-                                                                handle_operation_mode_state, &node);
-    node.create_subscription<ControlMsg>("/control/trajectory_follower/control_cmd",
-                                                                &autoware_control_msgs_msg_Control_desc,
-                                                                handle_control_cmd, &node);
+  log_info("--------------------------------\n");
+  log_info("DDS subscriber started\n");
+  log_info("--------------------------------\n");
 
-    log_info("--------------------------------\n");
-    log_info("DDS subscriber started\n");
-    log_info("--------------------------------\n");
-    node.spin();
+  while (true) {
+    (void)nros::spin_once(10);
+  }
 
-    while(true) {
-        sleep(1);
-    }
-
-    return 0;
+  return 0;
 }

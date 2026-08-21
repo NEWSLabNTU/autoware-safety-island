@@ -1,30 +1,31 @@
 #ifndef COMMON__NODE_HPP_
 #define COMMON__NODE_HPP_
 
-// Phase 3 W1 (nano-ros branch) — DUAL-MODE node shim:
-//   * ASI_USE_NANO_ROS (Zephyr build): the nros-cpp shim + ComponentNode base
-//     (node_nros.hpp — the active nano-ros implementation).
-//   * otherwise (FreeRTOS platforms): upstream's raw-CycloneDDS node base,
+// Phase 3 W1 (nano-ros branch) — DUAL-MODE node header:
+//   * ASI_USE_NANO_ROS (Zephyr build): thin aliases over nros-cpp
+//     (`nros::ComponentNode` — the active nano-ros implementation).
+//   * otherwise (FreeRTOS legacy lane): upstream's raw-CycloneDDS node base,
 //     which rides the restored common/dds wrapper.
 #ifdef ASI_USE_NANO_ROS
 
-// nano-ros nros-cpp shim — only build path post-Phase 1.3/1.4 cleanup.
-// Legacy raw-Cyclone path lived behind `#ifdef ASI_USE_NANO_ROS` until
-// commit history pre-deletion; kept for archaeology in
-// `node_nros.hpp` (the active implementation).
-#include "common/node/node_nros.hpp"
+// Phase 5 W5 — the polling shim (`node_nros.hpp`) is GONE: the controller
+// derives `nros::ComponentNode` (Phase 242.5 / RFC-0044) and the test
+// programs were ported to it too. nros mode is a thin alias layer over
+// nros-cpp.
+#include <memory>
 
-// Phase 242.5 (RFC-0044) — the controller now derives `nros::ComponentNode`
-// (base-swapped off the shim `Node`), and the vendored MPC / PID / VehicleInfoUtils
-// take `nros::ComponentNode&` instead of the shim `Node&`. Make the rclcpp-faithful
-// node base visible everywhere the shim header is pulled in. The shim `Node` +
-// the global `Publisher<M>` alias above stay for the MPC/PID debug-publisher member
-// declarations that still reference them (the assignments are disabled).
 #include <nros/component_node.hpp>
+#include <nros/nros.hpp>
 
 // Phase 3 W1 — the node-argument type the vendored autoware components take
 // (`AsiNode &`). nros mode: the rclcpp-faithful ComponentNode base.
 using AsiNode = nros::ComponentNode;
+
+// MPC/PID debug-publisher member declarations reference a global
+// `Publisher<M>` (assignments disabled — see mpc.hpp). Alias it to the
+// nros-cpp publisher now that the shim wrapper is gone.
+template <typename M>
+using Publisher = nros::Publisher<M>;
 
 
 #else  // !ASI_USE_NANO_ROS — upstream raw-DDS node base (FreeRTOS)

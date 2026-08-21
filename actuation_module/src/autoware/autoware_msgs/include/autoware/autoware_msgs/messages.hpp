@@ -67,22 +67,9 @@ using DurationMsg                     = builtin_interfaces::msg::Duration;
 #define OPERATION_MODE_STATE_LOCAL        autoware_adapi_v1_msgs::msg::OperationModeState_LOCAL
 #define OPERATION_MODE_STATE_REMOTE       autoware_adapi_v1_msgs::msg::OperationModeState_REMOTE
 
-// Sentinel topic-descriptor stubs. The nros-cpp shim's
-// `create_publisher` / `create_subscription` carry an ignored
-// `const void*` second arg so existing controller call sites of the
-// form
-//   create_publisher<ControlMsg>("/topic", &<type>_desc);
-// compile under both legacy and shim builds. Under the shim the
-// pointer is never dereferenced; the struct is empty.
-struct dds_topic_descriptor_t {};
-inline constexpr dds_topic_descriptor_t autoware_vehicle_msgs_msg_SteeringReport_desc       {};
-inline constexpr dds_topic_descriptor_t autoware_planning_msgs_msg_Trajectory_desc          {};
-inline constexpr dds_topic_descriptor_t nav_msgs_msg_Odometry_desc                          {};
-inline constexpr dds_topic_descriptor_t geometry_msgs_msg_AccelWithCovarianceStamped_desc   {};
-inline constexpr dds_topic_descriptor_t autoware_adapi_v1_msgs_msg_OperationModeState_desc  {};
-inline constexpr dds_topic_descriptor_t autoware_control_msgs_msg_Control_desc              {};
-inline constexpr dds_topic_descriptor_t tier4_debug_msgs_msg_Float64Stamped_desc            {};
-inline constexpr dds_topic_descriptor_t geometry_msgs_msg_PoseStamped_desc                  {};
+// (Phase 5 W5: the polling shim's sentinel `<type>_desc` stubs are gone —
+// every nros-mode call site now uses ComponentNode's descriptor-less
+// typed entities.)
 
 // Conversion wrapper. Legacy version assigns from Cyclone's raw
 // `_buffer`/`_length` sequence; the nros version copies via the
