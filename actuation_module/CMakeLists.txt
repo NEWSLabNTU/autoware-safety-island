@@ -120,15 +120,20 @@ else()
   find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
   add_subdirectory(src/controller_pkg)
 
-  # Phase 3 W4.3 (nano-ros phase-296) — canonical-path pilot: the entry
-  # bakes from the play_launch-RESOLVED SystemModel (committed artifact,
-  # `play_launch resolve launch/system.launch.xml --system system.toml`)
-  # instead of re-parsing the launch XML. LAUNCH remains the transitional
-  # fallback; regenerate the model after editing launch/system.toml.
-  nano_ros_add_executable(actuation_entry
+  # Phase 4 — canonical LAUNCH+BRINGUP spelling (nano-ros phase-330 W7):
+  # the SystemModel is resolved at CONFIGURE time from the bringup's
+  # system.toml + launch XML (`nros model-path`), replacing the committed
+  # play_launch model (upstream rule: SystemModels are build artifacts,
+  # never committed). Both entries — this Zephyr one and the
+  # freertos_posix_entry pkg — now read the SAME authored bringup,
+  # including the [tiers.control] RT model.
+  nano_ros_entry(
+    NAME    actuation_entry
     BOARD   zephyr
-    MODEL   "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup/config/system_model.yaml"
-    TYPED)
+    BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup"
+    LAUNCH  default
+    TYPED
+    DEPLOY  fvp)
 
   # The network-readiness prologue (previously in main.cpp) is now a STRONG
   # override of the weak `nros_board_network_wait()` hook the generated entry's

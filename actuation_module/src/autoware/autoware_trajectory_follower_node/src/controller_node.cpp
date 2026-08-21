@@ -78,10 +78,14 @@ Controller::Controller(nros::NodeHandle handle)
       std::exit(1);
   }
 
-  // Timer — RFC-0044 typed member timer (`void Controller::callbackTimerControl()`).
+  // Timer — RFC-0044 typed member timer (`void Controller::callbackTimerControl()`),
+  // in its own callback group (RFC-0047) so the bringup's [tiers.control]
+  // binds it to a real-time scheduling context; the subscriptions below stay
+  // in the node's default context (see header note).
   {
     const auto period_ms = static_cast<uint64_t>(ctrl_period * 1000);
-    create_timer<Controller, &Controller::callbackTimerControl>(period_ms);
+    create_timer_in<Controller, &Controller::callbackTimerControl>(
+      create_callback_group("control"), period_ms);
   }
 
   // Subscribers — RFC-0044 typed member-callback subscriptions. The wire type +

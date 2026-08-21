@@ -34,6 +34,28 @@ default_launch = "system.launch.xml"
 pkg   = "controller_pkg"
 class = "controller_pkg::Controller"
 name  = "controller"
+# RFC-0047 (phase-4): the control timer's callback group rides the
+# real-time tier below; subscriptions stay in the node's default context,
+# so input deserialization (8.8 KiB trajectories) cannot stall the 30 ms
+# control period. Measured before tiers on freertos-posix: ~12.4 Hz with
+# 100-140 ms stalls against the 30 ms timer.
+group_tiers = { control = "control" }
+
+# The control tier. RAW per-platform priorities (nano-ros issue-0623 rule:
+# tier and transport priorities are different units — keep the tier above
+# the app-default task, and verify boot's report_tiers_above_transport).
+[tiers.control]
+class = "real_time"
+spin_period_us = 5000
+[tiers.control.freertos]
+# freertos-posix board: configMAX_PRIORITIES = 10; app task default sits
+# lower. RAW FreeRTOS priority.
+priority = 7
+[tiers.control.posix]
+priority = 80
+[tiers.control.zephyr]
+# RAW Zephyr preemptive priority (lower number = higher priority).
+priority = 5
 
 # FVP deploy target — ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr.
 # board cross-refs the `nros-board-fvp-aemv8r-smp` crate (Phase 215

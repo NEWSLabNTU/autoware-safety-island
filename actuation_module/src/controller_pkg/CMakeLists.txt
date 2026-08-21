@@ -85,6 +85,9 @@ nano_ros_add_node(controller
   SHAPE   rclcpp
   HEADER  controller_pkg/controller.hpp
   SOURCES ${_controller_sources}
+  # RFC-0047 — the control timer's group; bound to [tiers.control] by
+  # controller_bringup/system.toml group_tiers.
+  CALLBACK_GROUPS control
 )
 
 # --- Give the component lib the full Zephyr + nros-cpp + message context ----

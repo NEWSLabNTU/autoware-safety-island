@@ -112,6 +112,13 @@ private:
   bool has_accel_ = false;
   bool has_operation_mode_ = true;
 
+  // Phase 4 (RFC-0047) — the control timer runs in its OWN callback group so
+  // the deployment can bind it to a real-time tier ([tiers.control] +
+  // group_tiers in controller_bringup/system.toml); the subscriptions stay in
+  // the node's default context, so input deserialization cannot stall the
+  // control period. (The group is a name token created inline at the timer
+  // site — no member needed.)
+
   // Publishers — RFC-0044 value-typed `nros::Publisher<M>` members
   // (default-constructed; assigned from create_publisher<M>(topic) in the ctor).
   nros::Publisher<ControlMsg> control_cmd_pub_;

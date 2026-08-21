@@ -58,18 +58,28 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       OBSERVATION for the soak: ~6 Hz vs the FVP lane's ~19 Hz+ —
       profile the POSIX-port tick / poll-executor pacing before calling
       it a regression (legacy posix lane had no recorded rate baseline).
-- [ ] Rate profiling + soak. First measurement (2026-08-21, pin
-      `9f0a387b9`): island-native (domain 2) and bridged (domain 1) rates
-      are IDENTICAL at ~12.4 Hz — the bridge is exonerated; the island
-      publishes at ~12 Hz against the 30 ms timer (min interval 35 ms ≈
-      the period, with 100–140 ms stalls dragging the average). Shape
-      says executor-thread contention (single-threaded executor sharing
-      timer callback with input deserialization — 8.8 KiB trajectories at
-      10 Hz + kinematic state), not transport. Fix path: the nano-ros
-      RT/exec model (`[tiers]` in system.toml — pin the control timer
-      above the RX drain), then re-measure; yesterday's ~6 Hz sample was
-      measured from the loaded autoware container, today's from the
-      bridge container.
+- [x] Rate profiling round 1 + the `[tiers]` RT model (2026-08-21, pin
+      `9f0a387b9`). Measurement: island-native (domain 2) == bridged
+      (domain 1) at ~12.4 Hz — bridge exonerated; 100–140 ms stalls
+      against the 30 ms timer = single-threaded-executor contention
+      (timer sharing the thread with 8.8 KiB trajectory deserialization).
+      FIX IMPLEMENTED — RFC-0047 split: the control timer moved into its
+      own callback group (`create_timer_in` in the vendored controller's
+      nros seam, `CALLBACK_GROUPS control` on the Node pkg) bound by the
+      bringup to a real-time tier (`[tiers.control]`, group_tiers; RAW
+      per-platform priorities: freertos 7 of 10, zephyr 5, posix 80).
+      Result: **12.4 → 19.0 Hz**, stall ceiling 140 → 80 ms — parity
+      with the FVP lane's baseline. In the same pass the Zephyr entry
+      moved to the canonical LAUNCH+BRINGUP spelling (`nano_ros_entry`,
+      configure-time model resolution) and the committed
+      `config/system_model.yaml` was deleted (upstream rule: SystemModels
+      are build artifacts) — BOTH lanes now bake from the one authored
+      bringup including the tier model. Zephyr revalidated: full 5-phase
+      FVP CI green on the tiers + LAUNCH image.
+- [ ] Rate profiling round 2 + soak: residual gap to the 33 Hz ideal
+      (19 Hz, min interval 5 ms / max 80 ms — investigate tier
+      spin_period, timer service granularity, MPC compute in the
+      emergency-stop path) and the W3.c-style scenario re-run.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 
