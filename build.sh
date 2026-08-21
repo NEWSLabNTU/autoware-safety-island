@@ -31,6 +31,8 @@ BUILD_DIR_SET=0
 BUILD_PLATFORM="zephyr-fvp"
 BUILD_PLATFORM_SET=0
 NETWORK_PROFILE="default"
+TRACE_ENABLED=0
+TRACE_STATS_ENABLED=0
 DDS_NETWORK_INTERFACE=""
 CONTROL_CMD_OUTPUT_MODE=""
 RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2")
@@ -49,6 +51,10 @@ function usage() {
   echo -e "${GREEN}    -t                 ${NC}Zephyr target board: ${ZEPHYR_TARGET_LIST[*]}"
   echo -e "${GREEN}                         default: ${ZEPHYR_TARGET_LIST[0]}.${NC}"
   echo -e "${GREEN}    -d                 ${NC}Build directory. Default: ${BUILD_DIR}."
+  echo -e "${GREEN}    --trace-stats      ${NC}Thread runtime scheduling statistics only (no CTF)."
+  echo -e "${GREEN}    --trace            ${NC}Zephyr FVP only: build with CTF tracing + thread runtime"
+  echo -e "${GREEN}                         stats, streaming the trace to uart1. See"
+  echo -e "${GREEN}                         docs/design/rt_evaluation_zephyr.rst.${NC}"
   echo -e "${GREEN}    -c                 ${NC}Clean all builds and exit."
   echo -e "${GREEN}    -h                 ${NC}Display the usage and exit."
   echo ""
@@ -139,6 +145,14 @@ function parse_args() {
         ;;
       --dds-loopback-test)
         BUILD_TEST_FLAG=5
+        shift
+        ;;
+      --trace)
+        TRACE_ENABLED=1
+        shift
+        ;;
+      --trace-stats)
+        TRACE_STATS_ENABLED=1
         shift
         ;;
       -t)
@@ -362,6 +376,10 @@ function build_zephyr_actuation_module() {
   # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   local extra_conf_files=()
+  # EXTRA_DTC_OVERLAY_FILE is a single cmake variable, so every overlay the
+  # lane wants has to be collected and passed as one ';'-separated list —
+  # a second -D would silently drop the first.
+  local extra_dtc_overlays=()
 
   # Zephyr 3.7 hardware-model-v2 board identifiers: the HWMv1 short name
   # `fvp_baser_aemv8r_smp` is ambiguous (`fvp_baser_aemv8r` defines multiple
@@ -442,7 +460,7 @@ function build_zephyr_actuation_module() {
 
   # Add device tree overlay only for ARM board variant
   if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
-    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
+    extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay")
   fi
 
   local can_loopback_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.conf"
@@ -452,14 +470,52 @@ function build_zephyr_actuation_module() {
       extra_conf_files+=("${can_loopback_conf}")
     fi
     if [ -f "${can_loopback_overlay}" ]; then
-      build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${can_loopback_overlay}")
+      extra_dtc_overlays+=("${can_loopback_overlay}")
     fi
+  fi
+
+  # Real-time evaluation profile (docs/design/rt_evaluation_zephyr.rst): CTF
+  # task timeline + thread runtime stats, streamed to uart1 so the console on
+  # uart0 stays clean. The tracing buffer is irq_lock-protected only, which is
+  # safe solely because prj_actuation.conf pins CONFIG_SMP=n.
+  # Layer 1 on its own: scheduling statistics, no CTF. Cheap enough for CI,
+  # and separable so the two layers can be bisected independently.
+  if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
+    extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_stats.conf")
+  fi
+
+  if [ "${TRACE_ENABLED}" = "1" ]; then
+    local tracing_conf="${ROOT_DIR}/actuation_module/tracing.conf"
+    local tracing_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_tracing.overlay"
+    if [ ! -f "${tracing_overlay}" ]; then
+      echo -e "${RED}--trace has no uart overlay for ${conf_base}; supported on the FVP board only.${NC}" 1>&2
+      exit 1
+    fi
+    extra_conf_files+=("${tracing_conf}")
+    extra_dtc_overlays+=("${tracing_overlay}")
+    # -d may be given as either a relative or an absolute path, so resolve
+    # rather than prefixing ROOT_DIR blindly.
+    local trace_out="${TRACE_OUT_FILE:-$(realpath -m "${BUILD_DIR}")/trace.ctf}"
+    mkdir -p "$(dirname "${trace_out}")"
+    # board.cmake aims every FVP PL011 at stdout (out_file=-); send uart1 to a
+    # file instead so the CTF octet stream is not interleaved with the console.
+    # armfvp.cmake reads ARMFVP_EXTRA_FLAGS from the environment at CONFIGURE
+    # time and bakes it into the `run` target, so exporting it here is what
+    # makes a later `west build --target run` pick it up.
+    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.pl011_uart1.out_file=${trace_out}"
+    echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
   fi
 
   if [ "${#extra_conf_files[@]}" -gt 0 ]; then
     local extra_conf_file
     extra_conf_file=$(IFS=';'; echo "${extra_conf_files[*]}")
     build_args+=(-DEXTRA_CONF_FILE="${extra_conf_file}")
+  fi
+
+  if [ "${#extra_dtc_overlays[@]}" -gt 0 ]; then
+    local extra_dtc_overlay
+    extra_dtc_overlay=$(IFS=';'; echo "${extra_dtc_overlays[*]}")
+    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${extra_dtc_overlay}")
   fi
 
   west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
