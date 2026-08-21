@@ -58,8 +58,18 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       OBSERVATION for the soak: ~6 Hz vs the FVP lane's ~19 Hz+ —
       profile the POSIX-port tick / poll-executor pacing before calling
       it a regression (legacy posix lane had no recorded rate baseline).
-- [ ] Rate profiling + soak (the ~6 Hz observation above; W3.c-style
-      scenario re-run).
+- [ ] Rate profiling + soak. First measurement (2026-08-21, pin
+      `9f0a387b9`): island-native (domain 2) and bridged (domain 1) rates
+      are IDENTICAL at ~12.4 Hz — the bridge is exonerated; the island
+      publishes at ~12 Hz against the 30 ms timer (min interval 35 ms ≈
+      the period, with 100–140 ms stalls dragging the average). Shape
+      says executor-thread contention (single-threaded executor sharing
+      timer callback with input deserialization — 8.8 KiB trajectories at
+      10 Hz + kinematic state), not transport. Fix path: the nano-ros
+      RT/exec model (`[tiers]` in system.toml — pin the control timer
+      above the RX drain), then re-measure; yesterday's ~6 Hz sample was
+      measured from the loaded autoware container, today's from the
+      bridge container.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 
@@ -85,14 +95,11 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
    transport; DDS_AND_CAN keeps the mock CAN path exercised).
 8. Shim `usleep` needs explicit `<unistd.h>` on host (transitive on
    Zephyr).
-9. **Upstream friction candidate:** with the Unix Makefiles generator,
-   the entry TU's OBJECT_DEPENDS on nros-c's mirrored
-   `nros_config_generated.h` hits "No rule to make target" — Makefiles
-   can't see cross-directory custom-command OUTPUTs (Ninja can; upstream
-   fixtures likely never hit it because the mirror pre-exists in their
-   flow). Workaround: second build pass / pre-building
-   `nros_c_config_header`; consider `-G Ninja` or an upstream
-   add_dependencies fix.
+9. Filed as **nano-ros issue 0740** (Makefiles can't see the
+   cross-directory custom-command OUTPUT behind the entry TU's
+   OBJECT_DEPENDS on nros-c's mirrored `nros_config_generated.h`) —
+   FIXED upstream same day; the build.sh pre-build workaround is
+   retired at the `9f0a387b9` pin (clean-build verified without it).
 10. Component include dirs must be PUBLIC for the generated entry TU
     (zephyr lane hand-fed `app` instead).
 11. Self-provisioned CycloneDDS emits shared `libddsc` into
@@ -145,16 +152,20 @@ node starts, DDS participant created on domain 2. The phase-3 changes to
 shared headers (messages.hpp umbrella, clock, tests) did not disturb the
 legacy side. Smoke recipe: `docs/user_guide/freertos_posix.rst`.
 
-## W5.b — `freertos-s32z2` (after; hardware-gated)
+## W5.b — `freertos-s32z2` (STARTED 2026-08-21; hardware-gated)
 
-Blocked on: nano-ros phase-370 W4 (embedded Cyclone proving cell on QEMU
-MPS2 — ddsrt-lwip, multicast/IGMP, heap budget) proving the embedded lane,
-then an upstream S32Z FreeRTOS board bundle (Cortex-R52 toolchain file,
-NETC→lwIP netif from NXP RTD, RTU memory map — the 7 MiB CRAM lesson from
-the Zephyr side applies: Cyclone does not fit ~1 MiB).
+Upstream prerequisites moved: nano-ros phase-370 W4 LANDED (the embedded
+Cyclone×FreeRTOS cell on QEMU MPS2 builds, boots and creates
+writers/readers — five more seam defects fixed, incl. a ddsrt-lwIP
+per-thread netconn semaphore fix on the fork and the `.init_array`
+descriptor-registration pattern, issue 0733). The upstream half of W5.b
+is now **nano-ros phase-372** (filed 2026-08-21 from this side): Cortex-R52
+cross profile, `nros-board-s32z270-freertos` bundle, a strong-symbol
+netif seam so the NXP-licensed NETC glue stays in ASI, Cyclone/lwIP
+hardening on the QEMU cell before hardware.
 
-- [ ] Upstream: `nros-board-s32z270-freertos` bundle scoped and filed
-      (successor phase in nano-ros; not part of 370).
+- [x] Upstream: `nros-board-s32z270-freertos` bundle scoped and filed
+      (nano-ros phase-372, 2026-08-21).
 - [ ] ASI: replace `freertos_s32z2/scripts/build-cdds-target.sh` + the
       hand toolchain with the board-bundle consumption; NETC glue moves
       behind the board crate where generic, stays in ASI where
