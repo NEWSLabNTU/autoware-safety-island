@@ -8,8 +8,8 @@ project(autoware_msgs LANGUAGES C CXX)
 # Phase 3 W1 (nano-ros branch) — DUAL-MODE message codegen:
 #
 #   * Zephyr platforms load the nano-ros module, which defines
-#     `nros_generate_interfaces()` — messages are generated from the vendored
-#     ROS `.msg` sources under msg_ros/ (nros codegen, CPP bindings).
+#     `nros_generate_interfaces()` — messages are generated from `.msg`
+#     sources resolved via the AMENT environment (nros codegen, CPP bindings).
 #   * FreeRTOS platforms (freertos-posix / freertos-s32z2) build WITHOUT
 #     nano-ros — they keep upstream's CycloneDDS `idlc` path over msg/*.idl.
 #
@@ -17,50 +17,90 @@ project(autoware_msgs LANGUAGES C CXX)
 # future nano-ros FreeRTOS adoption (phase-3 W5) flips per-build without
 # touching this file.
 if(COMMAND nros_generate_interfaces)
-  set(_msg_ros_root ${CMAKE_CURRENT_SOURCE_DIR}/msg_ros)
+  # Phase 5 W1 — messages resolve from the AMENT environment, not a vendored
+  # copy. The explicit per-package file lists below are the SAME deliberate
+  # subset the retired msg_ros/ tree carried (footprint control: only what the
+  # controller consumes is generated); nros_generate_interfaces resolves each
+  # `msg/X.msg` relpath through AMENT_PREFIX_PATH/share/<pkg>/msg/X.msg.
+  # Requirements: a sourced ROS 2 Humble env for the core packages and an
+  # Autoware install for the autoware_* / tier4_* packages (the devcontainer
+  # base image carries both; on a bare host, source ROS + an Autoware env or
+  # extend AMENT_PREFIX_PATH — build.sh adds existence-gated defaults).
+  #
+  # ONE local override survives: Trajectory.msg bounds the point sequence at
+  # [<=250] where upstream is unbounded — the embedded FixedSequence capacity
+  # the controller is sized against. It lives under msg_overrides/ and is
+  # resolved LOCALLY (relpath under CMAKE_CURRENT_SOURCE_DIR wins over ament).
+  # A trajectory with more than 250 points fails deserialization, so keep the
+  # bound in sync with the subscription buffer sizing in build.sh.
 
   # All nros_generate_interfaces() calls live in THIS scope (not via
   # add_subdirectory) so the PARENT_SCOPE propagation of
-  # `${target}_GENERATED_RS_FILES` inside the function lands in our
-  # scope, where subsequent dep-walking calls can see it. With
-  # add_subdirectory each call's PARENT_SCOPE would only reach the
-  # per-pkg subdir scope, breaking the cross-package FFI include
-  # chain. (Per-pkg msg_ros/<pkg>/CMakeLists.txt stubs are kept on
-  # disk for documentation of dependency intent; they are no longer
-  # add_subdirectory'd.)
-  # Workspace lane (phase-4 W5.a, freertos-posix): the canonical
-  # nros_generate_interfaces() wires INSTALL(EXPORT <pkg>Targets), which an
-  # in-app aggregation never populates — pass SKIP_INSTALL there. The Zephyr
-  # module variant does not parse the flag (it would read it as a message
-  # path), so gate on the lane.
+  # `${target}_GENERATED_RS_FILES` lands here, where the later dep-walking
+  # calls can see it.
+  #
+  # Plain nano-ros macro calls, no ASI wrapper (phase-5 principle: ASI holds
+  # production logic; ROS infra lives in nano-ros). The ONE residue of lane
+  # divergence is `_nros_skip_install`: the canonical (workspace) variant
+  # wires INSTALL(EXPORT) that an in-app aggregation never populates, while
+  # the Zephyr module variant would misread the flag as a message path —
+  # upstream parity is filed as a phase-5 W6 friction item; this variable
+  # dies with it.
   if(TARGET zephyr_interface)
-      set(_asi_gen_extra "")
+      set(_nros_skip_install "")
   else()
-      set(_asi_gen_extra SKIP_INSTALL)
+      set(_nros_skip_install SKIP_INSTALL)
   endif()
-  function(_asi_gen pkg)
-      cmake_parse_arguments(_a "" "" "DEPENDENCIES" ${ARGN})
-      file(GLOB _msgs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-          "${_msg_ros_root}/${pkg}/msg/*.msg")
-      nros_generate_interfaces(${pkg} ${_msgs} LANGUAGE CPP
-          DEPENDENCIES ${_a_DEPENDENCIES} ${_asi_gen_extra})
-      set(${pkg}_GENERATED_RS_FILES "${${pkg}_GENERATED_RS_FILES}" PARENT_SCOPE)
-  endfunction()
 
   # NOTE: nros_generate_interfaces() does NOT walk DEPENDENCIES
   # transitively when building the FFI lib.rs include!() set. Every
   # ROS-package whose types appear in the generated code — even via
   # nested fields like Header -> Time — must be listed explicitly.
-  _asi_gen(builtin_interfaces)
-  _asi_gen(std_msgs                 DEPENDENCIES builtin_interfaces)
-  _asi_gen(geometry_msgs            DEPENDENCIES std_msgs builtin_interfaces)
-  _asi_gen(nav_msgs                 DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
-  _asi_gen(autoware_perception_msgs DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
-  _asi_gen(autoware_vehicle_msgs    DEPENDENCIES std_msgs builtin_interfaces geometry_msgs)
-  _asi_gen(autoware_planning_msgs   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces)
-  _asi_gen(autoware_control_msgs    DEPENDENCIES std_msgs builtin_interfaces)
-  _asi_gen(autoware_adapi_v1_msgs   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs)
-  _asi_gen(tier4_debug_msgs         DEPENDENCIES builtin_interfaces std_msgs)
+  nros_generate_interfaces(builtin_interfaces
+      msg/Duration.msg msg/Time.msg
+      LANGUAGE CPP ${_nros_skip_install})
+  nros_generate_interfaces(std_msgs
+      msg/Header.msg
+      LANGUAGE CPP DEPENDENCIES builtin_interfaces ${_nros_skip_install})
+  nros_generate_interfaces(geometry_msgs
+      msg/Accel.msg msg/AccelStamped.msg msg/AccelWithCovariance.msg
+      msg/AccelWithCovarianceStamped.msg msg/Point.msg msg/Pose.msg
+      msg/PoseArray.msg msg/PoseStamped.msg msg/PoseWithCovariance.msg
+      msg/PoseWithCovarianceStamped.msg msg/Quaternion.msg
+      msg/QuaternionStamped.msg msg/Transform.msg msg/TransformStamped.msg
+      msg/Twist.msg msg/TwistStamped.msg msg/TwistWithCovariance.msg
+      msg/TwistWithCovarianceStamped.msg msg/Vector3.msg msg/Vector3Stamped.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_skip_install})
+  nros_generate_interfaces(nav_msgs
+      msg/Odometry.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
+      ${_nros_skip_install})
+  nros_generate_interfaces(autoware_perception_msgs
+      msg/PredictedPath.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
+      ${_nros_skip_install})
+  nros_generate_interfaces(autoware_vehicle_msgs
+      msg/SteeringReport.msg msg/VelocityReport.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces geometry_msgs
+      ${_nros_skip_install})
+  nros_generate_interfaces(autoware_planning_msgs
+      msg/Path.msg msg/PathPoint.msg msg/TrajectoryPoint.msg
+      msg_overrides/autoware_planning_msgs/msg/Trajectory.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
+      ${_nros_skip_install})
+  nros_generate_interfaces(autoware_control_msgs
+      msg/Control.msg msg/ControlHorizon.msg msg/Lateral.msg msg/Longitudinal.msg
+      LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_skip_install})
+  nros_generate_interfaces(autoware_adapi_v1_msgs
+      msg/OperationModeState.msg
+      LANGUAGE CPP DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
+      ${_nros_skip_install})
+  nros_generate_interfaces(tier4_debug_msgs
+      msg/Float32MultiArrayStamped.msg msg/Float32Stamped.msg
+      msg/Float64MultiArrayStamped.msg msg/Float64Stamped.msg
+      msg/MultiArrayDimension.msg msg/MultiArrayLayout.msg
+      msg/ProcessingTimeNode.msg msg/ProcessingTimeTree.msg
+      LANGUAGE CPP DEPENDENCIES builtin_interfaces std_msgs ${_nros_skip_install})
 
   # INTERFACE target exposes ASI's hand-written
   # `<autoware/autoware_msgs/messages.hpp>` umbrella (Trajectory wrapper + cap).

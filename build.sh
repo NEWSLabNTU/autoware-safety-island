@@ -288,6 +288,41 @@ function require_nros_checkout() {
   fi
 }
 
+# Phase 5 W1 — messages resolve from the AMENT environment (the vendored
+# msg_ros/ copies are gone). A sourced ROS 2 + Autoware env wins; otherwise
+# compose existence-gated defaults (/opt/ros/humble + the newest
+# /opt/autoware/<ver>, which is the devcontainer layout too), then verify the
+# packages the codegen needs actually resolve so the failure is one clear
+# message here instead of a cmake FATAL_ERROR four levels down.
+function resolve_ament_env() {
+  if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
+    local rungs=()
+    [ -d /opt/ros/humble/share ] && rungs+=(/opt/ros/humble)
+    local d
+    for d in $(ls -d /opt/autoware/*/share 2>/dev/null | sort -Vr); do
+      rungs+=("$(dirname "${d}")")
+    done
+    if [ ${#rungs[@]} -gt 0 ]; then
+      AMENT_PREFIX_PATH=$(IFS=:; echo "${rungs[*]}")
+      export AMENT_PREFIX_PATH
+      echo -e "${GREEN}AMENT_PREFIX_PATH not set — using: ${AMENT_PREFIX_PATH}${NC}"
+    fi
+  fi
+  local probe="" prefix
+  local IFS=:
+  for prefix in ${AMENT_PREFIX_PATH:-}; do
+    if [ -f "${prefix}/share/autoware_planning_msgs/msg/TrajectoryPoint.msg" ] ; then
+      probe=1
+    fi
+  done
+  if [ -z "${probe}" ]; then
+    echo -e "${RED}autoware_planning_msgs not found in AMENT_PREFIX_PATH.${NC}" 1>&2
+    echo -e "${YELLOW}Source a ROS 2 Humble + Autoware environment (or set AMENT_PREFIX_PATH)"\
+" — message .msg sources resolve from it since phase-5 W1.${NC}" 1>&2
+    exit 1
+  fi
+}
+
 function build_zephyr_actuation_module() {
   echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
   # Phase 3 W1 (nano-ros branch) — the Zephyr platforms run on nano-ros:
@@ -310,8 +345,18 @@ function build_zephyr_actuation_module() {
     echo -e "${GREEN}Building host nros CLI...${NC}"
     cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
   fi
+  # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
+  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
+  # resolution (phase-5 W1) and resolved/validated here.
   export CMAKE_PREFIX_PATH=""
-  export AMENT_PREFIX_PATH=""
+  resolve_ament_env
+  # The nros CLI must be on PATH for the module's SDK-store lookups
+  # (`find_program(nros)` feeds `nros sdk-path cyclonedds` → host idlc hints;
+  # a fresh configure without it dies "host Cyclone idlc not found" even with
+  # a fully provisioned store). The posix lane has always done this; the
+  # zephyr lane coasted on stale CMake caches until the phase-5 W1 clean
+  # reconfigure exposed it.
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
   # Board-facts lane (nano-ros phase-351 W5): `nros ws board-facts` resolves
   # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
   # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
@@ -438,8 +483,11 @@ function build_freertos_posix() {
     echo -e "${GREEN}Building host nros CLI...${NC}"
     cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
   fi
+  # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
+  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
+  # resolution (phase-5 W1) and resolved/validated here.
   export CMAKE_PREFIX_PATH=""
-  export AMENT_PREFIX_PATH=""
+  resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   # `nros sync` spawns its own cmake probes that resolve the codegen tool
   # from PATH/~/.nros/bin — our -D_NANO_ROS_CODEGEN_TOOL doesn't reach them.
