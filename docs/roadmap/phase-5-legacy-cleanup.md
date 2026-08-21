@@ -47,10 +47,17 @@ FixedSequence capacity). Landed:
 ## W3 — legacy freertos-s32z2 lane  [~]
 
 `actuation_module/freertos_s32z2/` (freertos_main.cpp, lwIP bringup, ethif
-shim, cdds-target build, edge_ecu_peer) + `build.sh` `freertos-s32z2` target
+shim, cdds-target build, edge_ecu_peer) + `build.sh` legacy target
 + `build_cyclonedds_host()` + `demo/cyclonedds-s32z2.xml` +
 `autoware_msgs/msg/*.idl` (44 files) + the idlc `else`-branch in
 `autoware_msgs/CMakeLists.txt`.
+
+2026-08-22: the `freertos-s32z2` build.sh key now names the NROS lane
+(phase-4 W5.b items 2-4, link-complete); the legacy lane moved to
+`--platform freertos-s32z2-legacy`. Note `lwip_bringup.c`/`ethif_shim.c`
+gained a second consumer: `src/s32z2_board_glue/` delegates its strong
+netif overrides to them — retirement (this W3) subsumes moving what the
+glue keeps into that package.
 
 KEPT until phase-4 W5.b (nros freertos S32Z2 lane: nano-ros phase-372 board
 bundle + hardware) reaches boot parity — it is the only S32Z2 build this

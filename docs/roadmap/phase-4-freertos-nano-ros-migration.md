@@ -305,20 +305,38 @@ ASI-side work breakdown (ordered; 1-3 can start before hardware):
        (builds, boots, SPDP multicast egress on QEMU). The W4 multicast
        worry was stale: LWIP_IGMP has been on family-wide; RX-side
        interop + heap-under-graph tests are hardware/tap-gated in W5.
-2. [ ] `system.toml`: add `[deploy.s32z2]` (kind embedded, board
-       `s32z270-freertos` once the bundle lands); tier table already
-       carries per-platform `[tiers.control.freertos]` priorities.
-3. [ ] build.sh: rewrite `freertos-s32z2` as a workspace lane mirroring
-       `build_freertos_posix()` (nros sync + `nano_ros_workspace` +
-       cross toolchain from the bundle; NXP env rungs `S32_RTD_PATH`,
-       `FREERTOS_PATH`, `LWIP_PATH`, `S32CT_GENERATED_DIR` stay).
-       Provisioning script applies `vendor_patched/port.c.patch` +
-       `eth_port.c.patch` to the NXP distro copies.
-4. [ ] Licensed glue re-homed, not rewritten: `ethif_shim.c` →
-       `nros_board_register_netif` strong override; `board_init.c` +
-       `cp15_arm.S` + PBcfg (s32ct_config) compile into the entry via
-       the bundle's consumer hooks; `newlib_stubs.c`/`operator_new.cpp`
-       audit against what the bundle already provides.
+2. [x] `system.toml`: `[deploy.s32z2]` added (kind embedded, board
+       `s32z270-freertos`); entry leaf
+       `src/freertos_s32z2_entry/` (`nano_ros_add_executable`, TYPED,
+       DEPLOY `s32z270-freertos`). (2026-08-22)
+3. [x] build.sh: `freertos-s32z2` IS the nros workspace lane (legacy
+       vendored-CycloneDDS lane renamed `freertos-s32z2-legacy`).
+       Mirrors `build_freertos_posix()`: nros sync + workspace cmake
+       with the upstream `arm-freertos-armcr52` toolchain; kernel is
+       env-provisioned (`FREERTOS_DIR`/`FREERTOS_PORT`, default =
+       nros-pinned kernel + `GCC/ARM_CRx_No_GIC` for the link-complete
+       image; `scripts/provision-nxp-freertos.sh` stages the patched
+       NXP `GCC/ARM_CR52_GIC` copy — port.c.patch applied — and prints
+       the overrides). SDK-provisioned arm-none-eabi-gcc 13.2 preferred
+       over system 10.3 (10.3 rejects the entry codegen's C++
+       designated initializers). (2026-08-22)
+4. [x] Licensed glue seam authored (pre-hardware half): new pkg
+       `src/s32z2_board_glue/` carries the STRONG
+       `nros_board_register_netif`/`_poll_netif` overrides delegating
+       to the proven legacy `lwip_bringup.c`; env-gated on
+       `S32_RTD_PATH` — unset ⇒ pkg contributes nothing and the image
+       link-completes on the bundle's weak fail-loud stubs (verified).
+       Cross-only remedies carried into the workspace: Eigen psincos
+       ILP32 configure-time patch, FreeRTOS-backed pthread shim
+       (staged ALONE so the legacy FreeRTOSConfig.h cannot shadow the
+       bundle's; newlib-13.2 `_POSIX_THREADS` typedef fallback; task
+       creators keyed `ASI_S32Z2_NXP_PORT` ⇔ `xTaskCreate*Fpu`, static
+       path gated on `configSUPPORT_STATIC_ALLOCATION`). RTD source
+       wiring into the glue target = first task of the hardware
+       session (item 5). ACCEPTANCE MET 2026-08-22:
+       `./build.sh --platform freertos-s32z2` links
+       `actuation_s32z2_entry` from clean checkout, Tag_CPU_arch v8-R,
+       code at 0x31800000, `.bss` NOLOAD segment (loader-fix layout).
 5. [ ] Hardware smoke (gated on board access): boot-parity with the
        legacy lane's proven baseline (scheduler + NETC RX/TX + Cyclone
        domain-2 participant + controller live), then the 30 ms tier +

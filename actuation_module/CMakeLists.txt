@@ -13,6 +13,24 @@ cmake_minimum_required(VERSION 3.22.1)
 # phase-370). The Zephyr app below is untouched by this branch.
 # ---------------------------------------------------------------------------
 if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
+  # Phase 4 W5.b — one workspace, one board per configure (the nano-ros
+  # example-workspace contract). A cross board needs its CMAKE_TOOLCHAIN_FILE
+  # set BEFORE project() (the first compiler probe); host-sim boards
+  # (freertos-posix) need none.
+  if(NOT DEFINED NANO_ROS_BOARD)
+    set(NANO_ROS_BOARD freertos-posix)
+  endif()
+  if(NOT CMAKE_TOOLCHAIN_FILE AND NANO_ROS_BOARD STREQUAL "s32z270-freertos")
+    if(DEFINED ENV{NROS_REPO_DIR})
+      set(_asi_nros_root "$ENV{NROS_REPO_DIR}")
+    else()
+      get_filename_component(_asi_nros_root
+          "${CMAKE_CURRENT_SOURCE_DIR}/../modules/nros" ABSOLUTE)
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE
+        "${_asi_nros_root}/cmake/toolchain/arm-freertos-armcr52.cmake")
+  endif()
+
   project(actuation_module_freertos LANGUAGES C CXX)
   find_package(Eigen3 REQUIRED)
   find_package(nano_ros REQUIRED COMPONENTS workspace)
@@ -20,9 +38,73 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     set(NROS_RMW cyclonedds)
   endif()
   add_compile_definitions(ASI_USE_NANO_ROS=1)
-  # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
-  # bake the run path so the entry runs without LD_LIBRARY_PATH.
-  set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
+
+  set(_asi_freertos_subdirs
+      src/autoware/autoware_msgs
+      src/controller_pkg)
+  if(NANO_ROS_BOARD STREQUAL "s32z270-freertos")
+    # Cross target: no host rpath; the NXP-licensed board glue (RTD NETC
+    # netif override etc.) joins only when its SDK env is provisioned —
+    # the pkg's own CMakeLists gates and reports.
+    list(APPEND _asi_freertos_subdirs
+        src/s32z2_board_glue
+        src/freertos_s32z2_entry)
+
+    # Two hardware-proven remedies carried over from the legacy lane
+    # (freertos_s32z2/CMakeLists.txt), both cross-only:
+    #
+    # (1) Eigen 3.4 psincos on arm-none-eabi ILP32: newlib types int32_t as
+    #     `long`, so Eigen's NEON integer-packet specialisations (keyed on
+    #     int32_t) never match psincos_float's plain-`int` scratch buffer —
+    #     generic fallback fails to compile. Patch a COPY of the host Eigen
+    #     at configure time (vendor_patched/eigen-psincos-int32.patch) and
+    #     put it BEFORE the system tree.
+    find_package(Patch REQUIRED)
+    set(_eigen_patched_dir ${CMAKE_BINARY_DIR}/eigen-patched)
+    set(_eigen_patch
+        ${CMAKE_CURRENT_SOURCE_DIR}/freertos_s32z2/vendor_patched/eigen-psincos-int32.patch)
+    if(NOT EXISTS ${_eigen_patched_dir}/.patched)
+      file(REMOVE_RECURSE ${_eigen_patched_dir})
+      file(COPY ${EIGEN3_INCLUDE_DIR}/Eigen DESTINATION ${_eigen_patched_dir})
+      execute_process(
+        COMMAND ${Patch_EXECUTABLE} -p1 -d ${_eigen_patched_dir}
+        INPUT_FILE ${_eigen_patch}
+        RESULT_VARIABLE _eigen_patch_rc)
+      if(NOT _eigen_patch_rc EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to apply ${_eigen_patch} to Eigen at ${_eigen_patched_dir}")
+      endif()
+      file(WRITE ${_eigen_patched_dir}/.patched "")
+    endif()
+    include_directories(BEFORE ${_eigen_patched_dir})
+
+    # (2) newlib's <pthread.h> declares types but implements nothing on
+    #     arm-none-eabi; common/logger needs mutexes. The legacy lane's
+    #     FreeRTOS-backed pthread shim (Apache, ASI-authored) shadows it.
+    #     ONLY pthread.h — the legacy dir also carries a FreeRTOSConfig.h
+    #     that must NOT shadow the board bundle's (it lacks the CRx port's
+    #     tick/EOI seam), so the shim is staged alone.
+    set(_asi_pthread_shim_dir ${CMAKE_BINARY_DIR}/s32z2-pthread-shim)
+    file(MAKE_DIRECTORY ${_asi_pthread_shim_dir})
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/s32z2/pthread.h
+        ${_asi_pthread_shim_dir}/pthread.h COPYONLY)
+    include_directories(BEFORE ${_asi_pthread_shim_dir})
+
+    # The shim's task-create switch: NXP's GCC/ARM_CR52_GIC port needs its
+    # xTaskCreate*Fpu variants (lazy FPEXC re-enable finds the FP save area
+    # via TLS[0]); the upstream GCC/ARM_CRx_No_GIC port has only the plain
+    # creators. Key the shim on the provisioned port.
+    if("${FREERTOS_PORT}$ENV{FREERTOS_PORT}" MATCHES "ARM_CR52_GIC")
+      add_compile_definitions(ASI_S32Z2_NXP_PORT=1)
+    endif()
+  else()
+    # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
+    # bake the run path so the entry runs without LD_LIBRARY_PATH.
+    set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
+    list(APPEND _asi_freertos_subdirs src/freertos_posix_entry)
+  endif()
+
   nano_ros_workspace(
     ORDER_FROM_DEPENDS
     # SYSTEM resolves the bringup's capability axes ([system].features —
@@ -31,10 +113,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     SYSTEM   controller_bringup
     BACKEND  ${NROS_RMW}
     PLATFORM "${NANO_ROS_PLATFORM}"
-    SUBDIRS
-      src/autoware/autoware_msgs
-      src/controller_pkg
-      src/freertos_posix_entry)
+    SUBDIRS  ${_asi_freertos_subdirs})
   return()
 endif()
 

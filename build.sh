@@ -35,7 +35,7 @@ TRACE_ENABLED=0
 TRACE_STATS_ENABLED=0
 DDS_NETWORK_INTERFACE=""
 CONTROL_CMD_OUTPUT_MODE=""
-RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2")
+RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-s32z2-legacy")
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -69,7 +69,9 @@ function usage() {
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
   echo -e "    zephyr-s32z      Zephyr on S32Z hardware."
   echo -e "    freertos-posix   FreeRTOS POSIX runtime for local validation."
-  echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware."
+  echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware (nano-ros lane, phase-4 W5.b)."
+  echo -e "    freertos-s32z2-legacy  Retired-path FreeRTOS S32Z2 (vendored CycloneDDS);"
+  echo -e "                     kept until the nano-ros lane reaches hardware parity (phase-5 W3)."
   echo ""
   echo -e "${GREEN}    Examples:${NC}"
   echo -e "    $0 --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap"
@@ -229,6 +231,15 @@ function normalize_platform() {
         BUILD_DIR="build/freertos-s32z2"
       fi
       ;;
+    freertos-s32z2-legacy)
+      if [ "${ZEPHYR_TARGET_SET}" = "1" ]; then
+        echo -e "${RED}-t is only valid for Zephyr platforms${NC}" 1>&2
+        exit 1
+      fi
+      if [ "${BUILD_DIR_SET}" = "0" ]; then
+        BUILD_DIR="build/freertos-s32z2-legacy"
+      fi
+      ;;
     *)
       echo -e "${RED}Invalid platform: ${BUILD_PLATFORM}${NC}" 1>&2
       echo -e "${YELLOW}Valid platforms: ${RUNTIME_TARGET_LIST[*]}${NC}" 1>&2
@@ -247,12 +258,12 @@ function normalize_platform() {
     exit 1
   fi
 
-  if [ -n "${DDS_NETWORK_INTERFACE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ]; then
+  if [ -n "${DDS_NETWORK_INTERFACE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2-legacy" ]; then
     echo -e "${RED}--dds-interface is only valid for FreeRTOS platforms${NC}" 1>&2
     exit 1
   fi
 
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ]; then
+  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2-legacy" ]; then
     echo -e "${RED}--control-output is only valid for FreeRTOS platforms${NC}" 1>&2
     exit 1
   fi
@@ -579,8 +590,79 @@ function build_freertos_posix() {
   cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
 }
 
+function build_freertos_s32z2_nros() {
+  # Phase 4 W5.b — the nano-ros S32Z2 lane: same workspace as freertos-posix,
+  # cross-compiled for Cortex-R52 via the nros-board-s32z270-freertos bundle
+  # (nano-ros phase-372). Without the NXP SDK the image LINK-COMPLETES
+  # against the bundle's in-tree GCC/ARM_CRx_No_GIC port and weak netif
+  # stubs; hardware provisioning (scripts/provision-nxp-freertos.sh) points
+  # FREERTOS_DIR/FREERTOS_PORT at the patched NXP GCC/ARM_CR52_GIC port and
+  # enables src/s32z2_board_glue via S32_RTD_PATH.
+  echo -e "${GREEN}Building FreeRTOS S32Z2 runtime (nano-ros lane)...${NC}"
+  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only; this lane builds the controller image${NC}" 1>&2
+    exit 1
+  fi
+
+  require_nros_checkout
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  if [ ! -x "${nros_cli_bin}" ]; then
+    echo -e "${GREEN}Building host nros CLI...${NC}"
+    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  fi
+  export CMAKE_PREFIX_PATH=""
+  resolve_ament_env
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
+
+  # Cross toolchain: prefer the SDK-provisioned arm-none-eabi-gcc (13.2 —
+  # what nano-ros builds and tests the s32z270 bundle with). The system
+  # 10.3 rejects the entry codegen's C++ designated initializers. Newest
+  # version first, matching nano-ros activate.sh; a system cross-gcc still
+  # resolves when the store has none. Provision with:
+  #   (cd modules/nros && nros setup --tool arm-none-eabi-gcc)
+  local sdk_gcc_bin
+  sdk_gcc_bin=$(find "${NROS_HOME:-$HOME/.nros}/sdk/arm-none-eabi-gcc" \
+      -maxdepth 2 -type d -name bin 2>/dev/null | sort -Vr | head -1)
+  if [ -n "${sdk_gcc_bin}" ] && [ -x "${sdk_gcc_bin}/arm-none-eabi-gcc" ]; then
+    export PATH="${sdk_gcc_bin}:${PATH}"
+  fi
+
+  # Kernel: nros-pinned checkout by default (link-complete CRx_No_GIC port);
+  # the NXP provisioning script overrides FREERTOS_DIR + FREERTOS_PORT.
+  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  export FREERTOS_PORT="${FREERTOS_PORT:-GCC/ARM_CRx_No_GIC}"
+  if [ ! -d "${FREERTOS_DIR}/portable/${FREERTOS_PORT}" ]; then
+    echo -e "${RED}FreeRTOS port missing at ${FREERTOS_DIR}/portable/${FREERTOS_PORT}.${NC}" 1>&2
+    echo -e "${YELLOW}Default kernel: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
+    echo -e "${YELLOW}NXP port: scripts/provision-nxp-freertos.sh${NC}" 1>&2
+    exit 1
+  fi
+
+  # Same sizing knobs as the other nros lanes (environment wins).
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+
+  local app_build_dir
+  app_build_dir=$(realpath -m "${BUILD_DIR}")
+
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
+
+  cmake -S actuation_module -B "${app_build_dir}" \
+    -DNANO_ROS_PLATFORM=freertos \
+    -DNANO_ROS_BOARD=s32z270-freertos \
+    -DNROS_RMW=cyclonedds \
+    -DFREERTOS_PORT="${FREERTOS_PORT}" \
+    -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
+    -DNROS_CLI_BIN="${nros_cli_bin}" \
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
+  cmake --build "${app_build_dir}" --target actuation_s32z2_entry -j"$(nproc)"
+}
+
 function build_freertos_s32z2() {
-  echo -e "${GREEN}Building FreeRTOS S32Z2 target...${NC}"
+  echo -e "${GREEN}Building FreeRTOS S32Z2 target (LEGACY vendored-CycloneDDS lane)...${NC}"
   echo -e "${YELLOW}This target requires NXP S32Z2 RTD, FreeRTOS, lwIP, and S32 Config Tools output.${NC}"
 
   local app_build_dir
@@ -631,6 +713,9 @@ case "${BUILD_PLATFORM}" in
     build_freertos_posix
     ;;
   freertos-s32z2)
+    build_freertos_s32z2_nros
+    ;;
+  freertos-s32z2-legacy)
     build_freertos_s32z2
     ;;
 esac

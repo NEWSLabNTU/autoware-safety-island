@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>freertos_s32z2_entry</name>
+  <version>0.1.0</version>
+  <description>Entry package for the S32Z270 RTU FreeRTOS lane (nano-ros)</description>
+  <maintainer email="dev@newslabntu.org">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+  <depend>controller_pkg</depend>
+</package>

@@ -79,3 +79,11 @@ launch = "system.launch.xml"
 [deploy.freertos-posix]
 kind  = "embedded"
 board = "freertos-posix"
+
+# Phase 4 W5.b — NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
+# phase-372 board bundle. Cross target: link-complete with the in-tree
+# GCC/ARM_CRx_No_GIC port; hardware runs the NXP-provisioned GCC/ARM_CR52_GIC
+# port + the RTD NETC glue (src/s32z2_board_glue, env-gated on the NXP SDK).
+[deploy.s32z2]
+kind  = "embedded"
+board = "s32z270-freertos"
