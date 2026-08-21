@@ -114,10 +114,12 @@ the others):
       is Zephyr board-net bringup (static IP + VLAN tagging + 2-iface +
       DHCP lease wait) delivered as the strong `nros_board_network_wait()`
       override — ASI-board-specific, beyond nano-ros scope. No action.
-- [ ] SNTP epoch (`platform_init_clock_via_sntp` + `scripts/sntp-server.py`)
-      — works, but epoch belongs in nano-ros (`ExecutorConfig::epoch_us` /
-      RFC-0052 age monitors need it too). Candidate upstream contribution:
-      a platform SNTP epoch source; ASI then deletes its copy.
+- [~] SNTP epoch (`platform_init_clock_via_sntp` + `scripts/sntp-server.py`)
+      — works, but epoch belongs in nano-ros (RFC-0052 age monitors need
+      it too). FILED upstream as nano-ros issue 0758 (2026-08-22):
+      optional `epoch_us`/`acquire_epoch` platform-vtable slot, SNTP as
+      first provider, server address as a deploy fact. ASI deletes its
+      copy when it lands.
 - [x] `actuation_module/src/main.cpp` boot banner/init — AUDITED
       2026-08-22: already out of every nros lane (Zephyr + posix + s32z2
       boot through generated entries; the network prologue is the
