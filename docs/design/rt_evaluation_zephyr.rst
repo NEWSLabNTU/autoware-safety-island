@@ -505,37 +505,46 @@ Keep the FVP plugin route in reserve as the tie-breaker if the on-target
 tracer's own overhead becomes the suspect.
 
 
-Applying this to nano-ros 0746
-==============================
+What this is for
+================
 
-Issue 0746 — "30 ms timer runs at ~50 Hz under real traffic, exact
-standalone" — is the natural first target, and it is precisely the shape of
-question a timeline answers and a printk cannot.
+The original motivation for this study was **nano-ros issue 0746** ("30 ms
+timer runs at ~50 Hz under real traffic, exact standalone"). That issue was
+**closed wontfix on 2026-08-21**, before this tooling could be pointed at it,
+and the resolution is worth recording because it shapes what the tooling is
+actually good for.
 
-The competing explanations are distinguishable in a CTF trace:
+There was no scheduling defect. The ~50 Hz was ``ros2 topic hz`` aggregating
+**three stale duplicate island processes** publishing on the same domain;
+min≈0 bursts with max≈period is the multi-publisher signature. Instrumented
+upstream accounting showed per-spin credit matching the tick clock to the
+microsecond, and single-process measurement under the full planner graph gave
+31.669 Hz on the wire (min 31 / max 32 ms, σ 0.06 ms). The upstream rule that
+came out of it: **prove the publisher count first**
+(``pgrep -a actuation_posix_entry`` / ``ros2 topic info -v``).
 
-* **Tick quantisation / re-arm short.** The lane runs a 1 ms tick against a
-  30 ms period -- 30 ticks -- so quantisation alone is a weak explanation.
-  (An earlier revision of this document claimed a 10 ms tick and built a
-  "50 Hz is exactly two ticks" argument on it. That was wrong: the tick comes
-  from the nano-ros bundle at 1000 Hz, not the board defconfig's 100 Hz.)
-  The ``timer_start`` events still settle it directly, because each carries
-  the REQUESTED ``duration`` and ``period`` in ticks alongside the arm time.
+That is a useful lesson for this document rather than a defeat of it. A whole
+round of rate analysis was spent on an artifact that no amount of on-target
+tracing would have explained, because the fault was on the *host* side of the
+measurement. Reach for the target-side timeline once the measurement itself is
+trusted — not before.
 
-* **Executor over-crediting.** If ``timer_start`` stays at 30 ms but the
-  control tier is dispatched twice per period, the executor is crediting
-  elapsed-but-unserviced ticks — the ``thread_ready`` → ``thread_switched_in``
-  pairs for the tier thread show the dispatch count against the timer arms.
-* **Preemption by the network path.** ``socket_recvfrom_*`` and ``isr_enter``
-  events bracketing the control tier's slice show whether "under real
-  traffic" means the tier is being displaced rather than mis-scheduled.
+Where the two layers still earn their keep:
 
-The ``longest`` / ``num_windows`` fields from Layer 1 give a cheap first
-discriminator before any trace is captured: if ``num_windows`` for the control
-tier is ~2× the expected 33 Hz dispatch count over the run, that is the
-over-crediting arm without needing a timeline at all.
+* **Layer 1 in CI.** ``longest`` (worst contiguous slice) and ``num_windows``
+  (dispatch count) per thread, printed into the existing FVP log artifacts,
+  turn the ``require_marker`` phases into regression detectors for scheduling
+  behaviour rather than liveness alone. Neither number can be faked by a
+  host-side measurement artifact.
+* **Layer 2 for displacement questions.** When something *is* late on target,
+  the ``thread_ready`` → ``thread_switched_in`` gap separates "released late"
+  from "released on time and preempted", and the ``isr_enter``/``isr_exit``
+  lanes show what displaced it. ``timer_start`` carries the requested
+  ``duration`` and ``period`` in ticks alongside the arm time, so a wrong
+  requested period is distinguishable from a wrong delivered interval without
+  inferring either.
 
-Worth settling the tick-rate question first, independently: the nano-ros board
-bundle asks for a 1 ms tick and the ASI lane silently does not apply it. That
-divergence should be a deliberate choice, not an artifact of which conf
-fragments ``build.sh`` happens to pass.
+Before either is useful for latency work, the uncalibrated-clock problem in
+`Findings from actually running it`_ has to be resolved: today the capture is
+sound for counts, ordering and structure, but its absolute times are not
+trustworthy.
