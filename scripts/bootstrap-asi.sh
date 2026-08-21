@@ -48,6 +48,65 @@ if ((${#missing_apt[@]})); then
 fi
 say "system packages present."
 
+# ---- 1b. foreign-owned paths (DETECT + INSTRUCT, never sudo) ----
+# A devcontainer run from a pre-fixuid image (Dockerfile without `USER
+# dev:dev`, launcher without `--user $(id -u):$(id -g)` — i.e. anything before
+# commit 86a1787) executed as root, so every file it created in the bind mount
+# came out root-owned. The wreckage outlives the fix: `west update` then dies
+# with a bare `cannot lock ref ... Permission denied` deep inside a project,
+# which reads like a git bug rather than an ownership problem. Detect it here
+# and print the exact chown instead.
+#
+# Only the SUBTREE ROOTS are reported — one chown -R per root covers
+# everything beneath, and listing 28k individual paths helps nobody.
+say "checking for foreign-owned paths (pre-fixuid devcontainer leftovers)…"
+mapfile -t foreign_roots < <(
+  python3 - "${ROOT}" <<'PY'
+import os, sys
+root = sys.argv[1]
+me = os.getuid()
+skip = {".git"}
+
+
+def owner(path):
+    try:
+        return os.lstat(path).st_uid
+    except OSError:
+        return None
+
+
+out = []
+for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+    dirnames[:] = [d for d in dirnames if d not in skip]
+    if owner(dirpath) != me:
+        out.append(dirpath)
+        dirnames[:] = []          # whole subtree is foreign; one chown covers it
+        continue
+    for name in filenames:
+        path = os.path.join(dirpath, name)
+        if owner(path) != me:
+            out.append(path)
+print("\n".join(out))
+PY
+)
+# Drop the empty line python emits when there is nothing to report.
+foreign_roots=("${foreign_roots[@]/#/}")
+if ((${#foreign_roots[@]})) && [[ -n "${foreign_roots[0]}" ]]; then
+  warn "Paths in this checkout are not owned by $(id -un) ($(id -u)):"
+  for p in "${foreign_roots[@]}"; do
+    warn "    $(stat -c '%U:%G' "$p") ${p}"
+  done
+  warn ""
+  warn "These are almost certainly left by a devcontainer run that predates"
+  warn "the fixuid adoption (86a1787). git and west cannot write into them."
+  warn "Hand them back with:"
+  warn "  sudo chown -R $(id -un):$(id -gn) ${foreign_roots[*]}"
+  warn ""
+  warn "Any __pycache__ among them may simply be deleted instead."
+  die  "foreign-owned paths present — see the chown line above."
+fi
+say "ownership clean."
+
 # ---- 2. Rust (rustup, user install — no root) ----
 if ! command -v cargo >/dev/null 2>&1; then
   say "installing rustup (stable, minimal)…"
