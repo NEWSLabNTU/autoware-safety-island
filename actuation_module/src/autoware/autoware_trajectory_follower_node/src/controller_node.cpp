@@ -115,7 +115,16 @@ Controller::Controller(nros::NodeHandle handle)
   create_subscription<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
     topics::SUB_OPERATION_MODE_STATE, latest_only);
 
-  output_mode_ = common::can::configured_control_command_output_mode();
+  // Phase 4 (0745 follow-up) — the deployment owns the output mode: read the
+  // launch-seeded `control_output` param (declared in system.launch.xml),
+  // falling back to the compile-time configuration when unseeded/unknown.
+  {
+    const std::string mode_str = declare_parameter<std::string>(
+      "control_output", common::can::output_mode_name(
+                          common::can::configured_control_command_output_mode()));
+    output_mode_ = common::can::output_mode_from_name(
+      mode_str.c_str(), common::can::configured_control_command_output_mode());
+  }
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
 
   // Publishers

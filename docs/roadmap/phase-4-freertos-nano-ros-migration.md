@@ -96,13 +96,18 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       max 32.5, n=1265). Both lanes revalidated (freertos-posix build +
       boot; full 5-phase FVP CI green — the FVP controller also runs at
       the true 30 ms for the first time).
-- [ ] Follow-up (tracked in 0745's left-open list): load-time timer
-      over-credit — with real subscription traffic the 30 ms timer
-      publishes at ~50 Hz (bursts; max interval == period). Soak
-      (W3.c-style scenario re-run) after that lands; also no bool getter
-      for seed adoption, and `control_output` is still read from the
-      compile-time CONFIG rather than the seeded param (ASI wart, next
-      cleanup).
+- [x] 0745 follow-ups (2026-08-21, pin `6fb8579dd`): bool launch params
+      now ctor-adoptable (upstream `nros_cpp_get_param_bool` + the
+      adoption's bool arm); `control_output` now READ FROM THE SEEDED
+      PARAM (`output_mode_from_name` with compile-time fallback —
+      verified: the bringup's DDS_ONLY drives the node where the
+      compiled DDS_AND_CAN used to); the freertos CI marker now asserts
+      the seeded mode end-to-end (CAN stays covered by the Zephyr
+      can-output-test phase).
+- [ ] Timer over-credit under load — filed as **nano-ros issue 0746**
+      (30 ms timer at ~50 Hz under real traffic, exact standalone;
+      minimal upstream repro shape named). Soak (W3.c-style scenario
+      re-run) gates on it.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

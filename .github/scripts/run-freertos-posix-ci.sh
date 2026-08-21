@@ -46,7 +46,10 @@ fi
 require_marker "${log}" "Starting Controller Node"
 require_marker "${log}" "Controller Node Started"
 require_marker "${log}" "Actuation Safety Island is Live"
-require_marker "${log}" "FreeRTOS CAN mock initialized"
+# Phase 4 (0745) — the bringup's seeded control_output (DDS_ONLY) drives the
+# node; this marker asserts launch-param seeding works end-to-end. The CAN
+# path is exercised by the Zephyr lane's can-output-test phase.
+require_marker "${log}" "Control command output mode: DDS_ONLY"
 require_marker "${log}" "Control is skipped since input data is not ready"
 echo "Controller smoke OK: boot markers + control-loop spin observed"
 
