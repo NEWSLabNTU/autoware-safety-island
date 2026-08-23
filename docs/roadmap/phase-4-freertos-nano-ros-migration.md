@@ -182,6 +182,52 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       trajectory streams — blind seeds were silently lost on cold
       containers), and `scripts/run-posix-demo.sh` is the new
       one-command posix campaign (stale-island guard built in).
+- [x] **Driving re-baseline at pin `14e484fe0` (2026-08-24)** — after
+      the 0756 unpin (256 param slots: MPC weights past the 32nd now
+      real) and the #736 tier-timer chain:
+      * Control-cmd rate, post-bridge: **~9.7 Hz during MPC driving**
+        (was ~4.7 Hz on 2026-08-22 — ≈2x; max inter-cmd gap 0.29 s
+        around state transitions) and 29–38 Hz on the stopped/e-stop
+        fast path (was ~19 Hz+). Single-publisher verified before
+        every rate read (the 0746 rule).
+      * Autonomous mission re-demonstrated: 12.5 m drive, clean stop.
+        Island parks when the planner's approach-creep target
+        (~0.4 m/s) drops below its departure threshold — stopped
+        5.5 m short of goal; controller conservatism, not a fault.
+      * Seeding facts, learned the hard way: the runbook seed pair in
+        `run-tap-demo.sh` produces the E-STOP loop only (its goal
+        snaps to a crossing lane → the planner emits a goal-anchored
+        11-point zero-velocity sliver; the island correctly refuses —
+        "too large position error"). A DRIVING pair must be
+        lane-consistent: spawn on a lane point with the LANE's
+        heading, goal probed along the lane via ADAPI
+        `set_route_points` until it accepts (works: spawn
+        x 3714.44 y 73753.15 ori z 0.25 w 0.968 → goal x 3730.2
+        y 73761.8). Bare `/planning/mission_planning/goal` publishes
+        leave ADAPI route_state UNSET, which reds
+        `component_state_diagnostics: route_state` and blocks
+        autonomous — route via ADAPI, not the bare topic.
+      * **NEW SAFETY DEFECT (open, pre-hardware blocker): NaN runaway
+        on degenerate trajectory.** Mission 2 (10 m goal) reached the
+        goal area still moving; the planner's arrival-hold trajectory
+        carries duplicate points; the island's
+        `calcLongitudinalOffsetToSegment` returns NaN (throttled spam
+        in the log) and the longitudinal path drove the sim vehicle to
+        its 50 m/s clamp, ~1 km past the goal, until a host-side
+        change_to_stop braked it. Mission 1 escaped only because the
+        island latched Keep-STOPPED before the trajectory degenerated.
+        Fix needed in the island (not upstream): NaN guard at the
+        MPC/PID trajectory ingest + a sane output clamp — a hardware
+        island MUST fail to e-stop here, never to +accel. Second,
+        smaller finding: the island keeps re-processing the last
+        trajectory forever after the route is cleared (NaN spam
+        persists until reboot) — input invalidation on route clear
+        belongs in the same fix.
+      * Hygiene reconfirmed (the item-5 lesson): a 3-day-old
+        `asi-rviz` container tripped duplicated_node_checker and
+        blocked autonomous until stopped; `service_log_checker` then
+        stays latched red with the failure history (cosmetic, but
+        confusing — it records every refused mode change).
 
 ### W5.a wall ledger (all consumer-side unless noted)
 

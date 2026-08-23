@@ -33,6 +33,17 @@ AUTOWARE_CTR="demo-safety-island-autoware-1"
 BOOT_MARKER="Actuation Safety Island is Live"
 BOOT_TIMEOUT_S=120
 # W3 runbook seed (sample-map-planning): ego spawn + goal ~30 m along heading.
+# NOTE (2026-08-24): this pair verifies the E-STOP closed loop only — the
+# goal snaps to a crossing lane, the planner emits a goal-anchored
+# zero-velocity sliver, and the island correctly refuses to track it. For a
+# DRIVING run, seed a lane-consistent pair and route via ADAPI (bare goal
+# publishes leave route_state UNSET, which blocks autonomous):
+#   /initialpose  x 3714.44 y 73753.15  ori z 0.25 w 0.968   (on-lane, lane heading)
+#   ros2 service call /api/routing/set_route_points ... goal x 3730.2 y 73761.8
+#   ros2 service call /api/operation_mode/change_to_autonomous ...
+# Keep missions >= ~15 m: a goal reached while still moving hands the island
+# a duplicate-point arrival trajectory (NaN runaway — phase-4 driving
+# re-baseline note, open defect).
 INITIALPOSE='{header: {frame_id: map}, pose: {pose: {position: {x: 3722.16, y: 73723.1, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}}'
 GOALPOSE='{header: {frame_id: map}, pose: {position: {x: 3715.9, y: 73752.5, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}'
 
