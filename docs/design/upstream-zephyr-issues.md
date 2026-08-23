@@ -5,10 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 
 # Upstream Zephyr issue drafts
 
-Two defects found while bringing up CTF tracing on the FVP lane
-(`docs/design/rt_evaluation_zephyr.rst`). Both are in Zephyr itself, neither
-is ASI-specific, and both reproduce on any board with the same properties.
-Drafted here for filing at <https://github.com/zephyrproject-rtos/zephyr>.
+Three defects found while bringing up CTF tracing and thread statistics on the
+FVP lane (`docs/design/rt_evaluation_zephyr.rst`). All three are in Zephyr
+itself, none is ASI-specific, and each reproduces on any board with the same
+properties.
+
+**All three are still present in mainline** (checked 2026-08-24 against
+`zephyrproject-rtos/zephyr@main`), and a search of the issue tracker found no
+existing report for any of them. `scripts/file-upstream-issues.sh` generates
+the issue bodies from this file and files them with `gh`.
 
 Environment for both: Zephyr **v3.7.0** (`36940db938a`), board
 `fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp`, Zephyr SDK 0.16.3, Arm FVP
@@ -194,3 +199,99 @@ a failed call's output arguments are meaningless even when non-NULL.
 `CONFIG_TRACING_NETWORKING=n`, at the cost of losing socket events — which
 are otherwise valuable for correlating a middleware's RX/TX against
 scheduling.
+
+
+---
+
+## Issue 3 — `CONFIG_THREAD_ANALYZER_AUTO` prints before its first sleep, so the first dump always lands during boot
+
+**Severity:** breaks applications with time-sensitive initialisation. There is
+no way to configure around it.
+
+### What happens
+
+Enabling the thread analyzer's automatic mode on an application that does
+network setup during init makes that init fail. In our case a DDS round-trip
+test reports:
+
+```
+[00:00:00.159] | Waiting for DHCP to get IP address...
+[00:00:10.176] | dds_loopback_test -> nros::init failed: -100. Exiting.
+```
+
+The identical image without `CONFIG_THREAD_ANALYZER` completes the same test
+in 12.187 s. Measured against a control, the statistics options alone
+(`CONFIG_THREAD_RUNTIME_STATS`, `CONFIG_SCHED_THREAD_USAGE`,
+`CONFIG_SCHED_THREAD_USAGE_ANALYSIS`) are harmless — the test passes in
+12.187 s with them enabled, identical to the control. Only the analyzer
+breaks it.
+
+### Why
+
+`CONFIG_THREAD_ANALYZER_AUTO_INTERVAL` is documented as "the time in seconds
+to call thread analyzer periodic printing function", which reads as though the
+first dump happens after one interval. It does not:
+
+```c
+/* subsys/debug/thread_analyzer/thread_analyzer.c */
+void thread_analyzer_auto(void)
+{
+	for (;;) {
+		thread_analyzer_print(cpu);
+		k_sleep(K_SECONDS(CONFIG_THREAD_ANALYZER_AUTO_INTERVAL));
+	}
+}
+
+K_THREAD_DEFINE(thread_analyzer,
+		CONFIG_THREAD_ANALYZER_AUTO_STACK_SIZE,
+		thread_analyzer_auto,
+		NULL, NULL, NULL,
+		AUTO_THREAD_PRIO,
+		0, 0);          /* <- zero start delay */
+```
+
+The print happens *before* the first sleep, and the thread starts with zero
+delay, so the first dump always runs during boot. It walks every thread with
+`k_thread_foreach` and printks a multi-line block per thread, which is long
+enough to push network initialisation past an internal timeout.
+
+Raising the interval does not help, and that is the diagnostic signature:
+`CONFIG_THREAD_ANALYZER_AUTO_INTERVAL=5` and `=20` fail **identically**,
+because neither affects when the first dump runs.
+
+### Suggested fix
+
+Either sleep before the first print:
+
+```c
+	for (;;) {
+		k_sleep(K_SECONDS(CONFIG_THREAD_ANALYZER_AUTO_INTERVAL));
+		thread_analyzer_print(cpu);
+	}
+```
+
+or add a `CONFIG_THREAD_ANALYZER_AUTO_START_DELAY` and pass it as the
+`K_THREAD_DEFINE` delay argument. The second is preferable: it keeps the
+existing behaviour available for anyone relying on an early dump, while
+letting applications with time-sensitive init defer it.
+
+Updating the `CONFIG_THREAD_ANALYZER_AUTO_INTERVAL` help text to say the first
+dump is immediate would be worth doing regardless.
+
+### Workaround
+
+None within the analyzer. The options are to drop `CONFIG_THREAD_ANALYZER_AUTO`
+and call `thread_analyzer_print()` from the application after init, or to drop
+the analyzer entirely — which is what we did, keeping only the statistics
+options and losing automatic emission.
+
+### Related
+
+Two closed issues touch the same code path and are useful context, though
+neither is this defect:
+
+- [#55428](https://github.com/zephyrproject-rtos/zephyr/issues/55428) —
+  `CONFIG_THREAD_ANALYZER_AUTO` crash in native_posix (2023).
+- [#76541](https://github.com/zephyrproject-rtos/zephyr/issues/76541) —
+  thread_analyzer BUS FAULT with `CONFIG_THREAD_ANALYZER=y` after a 3.6 → 3.7
+  upgrade (2024).
