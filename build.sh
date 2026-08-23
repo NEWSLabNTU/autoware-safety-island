@@ -365,11 +365,13 @@ function build_zephyr_actuation_module() {
     echo -e "${RED}nano-ros CLI manifest missing (${nros_cli_manifest}) — bump the west.yml nano-ros revision.${NC}" 1>&2
     exit 1
   fi
-  if [ ! -x "${nros_cli_bin}" ] || [ "${nros_cli_manifest}" -nt "${nros_cli_bin}" ] \
-     || find "${ROOT_DIR}/modules/nros/packages/cli" -name '*.rs' -newer "${nros_cli_bin}" -print -quit 2>/dev/null | grep -q .; then
-    echo -e "${GREEN}Building host nros CLI...${NC}"
-    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
-  fi
+  # Always run cargo: a fresh CLI is a ~0.1 s no-op, and any partial check
+  # misses part of the CLI's real input closure (its own source stamp hashes
+  # the cli-source-dirs.txt dirs OUTSIDE packages/cli too — an mtime probe on
+  # packages/cli alone let a pin bump through to a "CLI is STALE" codegen
+  # failure, 2026-08-23).
+  echo -e "${GREEN}Building host nros CLI...${NC}"
+  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
   # resolution (phase-5 W1) and resolved/validated here.
@@ -543,10 +545,9 @@ function build_freertos_posix() {
   require_nros_checkout
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
   local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-  if [ ! -x "${nros_cli_bin}" ]; then
-    echo -e "${GREEN}Building host nros CLI...${NC}"
-    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
-  fi
+  # Always run cargo (no-op when fresh; see the zephyr lane note).
+  echo -e "${GREEN}Building host nros CLI...${NC}"
+  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
   # resolution (phase-5 W1) and resolved/validated here.
@@ -604,10 +605,9 @@ function build_freertos_s32z2_nros() {
   require_nros_checkout
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
   local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-  if [ ! -x "${nros_cli_bin}" ]; then
-    echo -e "${GREEN}Building host nros CLI...${NC}"
-    cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
-  fi
+  # Always run cargo (no-op when fresh; see the zephyr lane note).
+  echo -e "${GREEN}Building host nros CLI...${NC}"
+  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
