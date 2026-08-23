@@ -382,21 +382,62 @@ The cost of sync is real: the backend write happens in the traced context, so
 the tracer perturbs the timing it is measuring more than async would. That is
 the trade this platform offers -- async does not work at all.
 
-**Absolute timestamps do not calibrate on this board.**
-A capture whose console clock showed 12.214 s of run time reconstructs as
-~18300 s of trace span -- a factor of ~1330. This is *not* 32-bit wrap
-handling: summing only the forward deltas and ignoring every backward step
-still yields ~16200 s. Framing is confirmed sound (clean 5-byte
-``idle``/``isr_enter``/``isr_exit`` records, 1,007,306 events decoded with
-**0 bytes skipped and 0 trailing**), and ``CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC``
-is 100 MHz as expected, so the discrepancy is in how the CTF timestamp relates
-to the clock the console uses -- unresolved.
+**The counter runs during WFI, so there is no wall-clock span.**
+An earlier revision of this document said absolute timestamps were
+"uncalibrated, off by ~1330x". That framing was wrong, and the real behaviour
+is both narrower and more useful to know.
 
-Consequence: **use this trace for event counts, ordering, and thread
-structure; do not quote latencies from it** until the scale is understood.
-``scripts/parse-zephyr-ctf.py`` prints a warning to that effect. Every
-backward step in the capture was an ``idle`` event followed by ``isr_enter``,
-which is where the investigation should resume.
+Two captures of the same image, checked against the target's own console
+clock:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 12 22 22 18
+
+   * - capture
+     - events
+     - backsteps as wraps
+     - excluding idle gaps
+     - console
+   * - controller (sparse)
+     - 6403
+     - **10.051 s**
+     - 0.060 s
+     - 10.204 s
+   * - DDS loopback (dense)
+     - 176865
+     - 2654 s
+     - 2.456 s
+     - 12.214 s
+
+The sparse capture reconstructs correctly -- two 32-bit rollovers plus a
+1.461 s residue gives 10.051 s against a console reading of 10.204 s, inside
+1.5 %. The dense one does not, and the reason is not wrap handling: **every**
+backward step in it is an ``idle`` event followed by ``isr_enter``, all of
+them rollover-shaped, with a near-constant wrap-adjusted delta of 500.679 ms.
+Their count tracks the event count (618 of 176865, 4260 of 1007306 -- both
+~0.4 %), not elapsed time.
+
+Following that through: the FVP keeps CNTVCT advancing while the core sits in
+WFI, at a rate unrelated to the tick clock that Zephyr's console timestamps
+come from. It is not confined to the boundary either -- idle *slices*
+themselves average ~338 ms, so a 12.214 s run accumulates ~2350 s of counter
+time, essentially all of it inside idle.
+
+Consequences, and they are workable:
+
+* **Non-idle accounting is sound.** Those slices are bounded by real
+  execution and agree across runs. The loopback capture gives 1986.8 ms of
+  non-idle execution — about 16 % of the 12.214 s run, which is what a 1 Hz
+  report loop over a network stack should look like.
+* **The idle thread's figures, any total-elapsed, and any CPU-percent derived
+  from them are meaningless here.** ``scripts/parse-zephyr-ctf.py`` therefore
+  reports no wall-clock span, bases nothing on idle, and labels the idle rows.
+* **Event counts, ordering and thread structure were never affected.**
+
+For absolute latency work, prefer a short capture (under the 4.295 s rollover
+period) with little idle in it, where the reconstruction is directly
+checkable against the console.
 
 **Socket tracing must stay off.** ``CONFIG_TRACING_NETWORKING`` defaults on,
 and the CTF socket hooks dereference their arguments unchecked --
@@ -544,7 +585,6 @@ Where the two layers still earn their keep:
   requested period is distinguishable from a wrong delivered interval without
   inferring either.
 
-Before either is useful for latency work, the uncalibrated-clock problem in
-`Findings from actually running it`_ has to be resolved: today the capture is
-sound for counts, ordering and structure, but its absolute times are not
-trustworthy.
+Non-idle execution times, dispatch counts and orderings are all usable today.
+What the model does not give is a wall-clock span or a CPU percentage — see
+the WFI counter behaviour in `Findings from actually running it`_.

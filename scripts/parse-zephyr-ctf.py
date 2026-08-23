@@ -52,14 +52,19 @@ WRAP_THRESHOLD_NS = 1 << 31
 
 
 class Event:
-    """One decoded event: name, unwrapped timestamp (ns), and its fields."""
+    """One decoded event: name, unwrapped timestamp (ns), and its fields.
 
-    __slots__ = ("name", "ts", "fields")
+    `disc` marks an event whose timestamp is NOT comparable with the previous
+    one: the counter jumped across a WFI/idle boundary (see decode()).
+    """
 
-    def __init__(self, name, ts, fields):
+    __slots__ = ("name", "ts", "fields", "disc")
+
+    def __init__(self, name, ts, fields, disc=False):
         self.name = name
         self.ts = ts
         self.fields = fields
+        self.disc = disc
 
     def __repr__(self):
         args = " ".join(f"{k}={v}" for k, v in self.fields.items())
@@ -121,6 +126,7 @@ def decode(blob, events):
     # 32-bit nanosecond timestamps wrap every ~4.29 s; carry the high bits.
     epoch = 0
     last_raw = None
+    last_name = None
 
     while pos + HEADER_SIZE <= n:
         raw_ts, ev_id = HEADER.unpack_from(blob, pos)
@@ -162,11 +168,21 @@ def decode(blob, events):
             last_raw = None
             continue
 
+        disc = False
         if last_raw is not None and (last_raw - raw_ts) > WRAP_THRESHOLD_NS:
             epoch += 1 << 32
+            # On fvp_baser_aemv8r every one of these is an `idle` followed by
+            # `isr_enter`: the model advances CNTVCT across WFI by an amount
+            # unrelated to guest-observable time (the tick clock the console
+            # prints does not see it). Summing them as ordinary elapsed time
+            # overshoots wildly -- a 12.214 s loopback run reconstructs as
+            # 2654 s. Mark the boundary so callers can exclude the gap; the
+            # execution time either side of it is sound.
+            disc = last_name == "idle"
         last_raw = raw_ts
+        last_name = name
 
-        out.append(Event(name, epoch + raw_ts, values))
+        out.append(Event(name, epoch + raw_ts, values, disc))
         pos = cursor
 
     return out, {"skipped_bytes": skipped, "trailing_bytes": n - pos}
@@ -189,45 +205,56 @@ def report_stats(evs):
 
     current = None
     since = None
+    spanned = False        # did a WFI discontinuity fall inside this slice?
+    dropped = 0
     for ev in evs:
         counts[ev.name] += 1
+        if ev.disc:
+            spanned = True
         if ev.name == "thread_switched_in":
-            current, since = thread_label(ev), ev.ts
+            current, since, spanned = thread_label(ev), ev.ts, False
             windows[current] += 1
         elif ev.name == "thread_switched_out" and current is not None:
             slice_ns = ev.ts - since
-            if slice_ns >= 0:
+            if spanned:
+                dropped += 1          # gap is unmeasurable, not zero
+            elif slice_ns >= 0:
                 running[current] += slice_ns
                 longest[current] = max(longest[current], slice_ns)
-            current, since = None, None
+            current, since, spanned = None, None, False
 
-    span = (evs[-1].ts - evs[0].ts) if len(evs) > 1 else 0
+    # There is no trustworthy wall-clock span on this model: CNTVCT keeps
+    # advancing while the core is in WFI, at a rate unrelated to the tick clock
+    # the console prints. A 12.214 s loopback run accumulates ~2350 s of
+    # counter time, essentially all of it inside idle slices (mean ~338 ms
+    # each). So the idle thread's figures and any total-elapsed or CPU-percent
+    # derived from them are meaningless here.
+    #
+    # What IS consistent is the non-idle accounting: those slices are bounded
+    # by real execution, and their durations agree across runs. Use the sum of
+    # non-idle execution as the base and report no CPU percentage.
+    busy = sum(v for k, v in running.items() if not k.startswith("idle"))
 
-    # UNCALIBRATED CLOCK WARNING. On fvp_baser_aemv8r the reconstructed span
-    # does not agree with the target's own console clock -- a DDS-loopback
-    # capture whose console ran 12.214 s reconstructs as ~18300 s, a factor of
-    # ~1330, and the discrepancy is NOT 32-bit wrap handling (summing only
-    # forward deltas still gives ~16200 s). Until that is resolved, treat the
-    # absolute microsecond/millisecond figures below as UNCALIBRATED: event
-    # counts, orderings and per-thread structure are trustworthy, the times are
-    # not. See docs/design/rt_evaluation_zephyr.rst.
-    print("\n!! absolute times are UNCALIBRATED on fvp_baser_aemv8r "
-          "(see rt_evaluation_zephyr.rst) -- counts and ordering are sound")
+    print(f"\n[time base] {sum(1 for e in evs if e.disc)} WFI counter jumps seen, "
+          f"{dropped} slices dropped for spanning one. No wall-clock span is "
+          f"reported -- see rt_evaluation_zephyr.rst.")
 
     print("\n=== event counts " + "=" * 47)
     for name, c in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f"  {name:<34} {c:>8}")
 
     print("\n=== per-thread scheduling " + "=" * 38)
-    print(f"  trace span: {span / 1e6:.3f} ms   events: {len(evs)}")
-    print(f"  {'thread':<30} {'cpu %':>7} {'total ms':>10} "
+    print(f"  non-idle execution: {busy / 1e6:.3f} ms over {len(evs)} events")
+    print("  idle rows are shown for completeness but their times are NOT")
+    print("  meaningful on this model (CNTVCT advances during WFI).")
+    print(f"  {'thread':<30} {'total ms':>10} "
           f"{'dispatches':>11} {'longest ms':>11} {'mean ms':>9}")
     for label, total in sorted(running.items(), key=lambda kv: -kv[1]):
-        pct = (100.0 * total / span) if span else 0.0
         w = windows[label]
         mean = (total / w / 1e6) if w else 0.0
-        print(f"  {label:<30} {pct:>6.2f}% {total / 1e6:>10.3f} "
-              f"{w:>11} {longest[label] / 1e6:>11.3f} {mean:>9.4f}")
+        note = "  <- idle, times not meaningful" if label.startswith("idle") else ""
+        print(f"  {label:<30} {total / 1e6:>10.3f} "
+              f"{w:>11} {longest[label] / 1e6:>11.3f} {mean:>9.4f}{note}")
 
     # Timers: `timer_start` carries the REQUESTED duration/period in ticks
     # alongside the arm time, so the requested period and the delivered
