@@ -412,17 +412,14 @@ function build_zephyr_actuation_module() {
   # pool sized at Rust build time (nros-params build.rs, default 32 ->
   # declare_parameter fails with ErrorCode::Full = -5 at boot).
   #
-  # ZEPHYR LANE CAVEAT (nano-ros issue 0749 follow-up): these knobs reach
-  # the Zephyr Rust lane only since nano-ros d1c5b3b3b — before that the
-  # curated cargo env dropped them and every Zephyr image silently built the
-  # crate defaults (1024-byte subscription buffers: real trajectories were
-  # ACKed and discarded with no diagnostics). NROS_MAX_PARAMETERS is pinned
-  # to the old effective value 32 here because 256 HANGS Zephyr boot right
-  # after dds_create_participant (bisected 2026-08-22; suspected large-store
-  # stack temp upstream). Params past the 32nd fall back to compiled
-  # defaults — the behavior every Zephyr image has always had. Raise after
-  # the upstream hang is fixed.
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-32}"
+  # ZEPHYR LANE NOTE (nano-ros issues 0749/0756): these knobs reach the
+  # Zephyr Rust lane only since nano-ros d1c5b3b3b (before that the curated
+  # cargo env dropped them and every Zephyr image silently built the crate
+  # defaults). 256 used to HANG boot right after dds_create_participant —
+  # the param store was constructed on a task stack (~8.5 KiB/slot, issue
+  # 0756) — fixed upstream at pin ba9dba805; unpinned back to 256 so all
+  # ~150 controller parameters get declared slots.
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
   # Executor sizing (nros-node build.rs): the controller registers 5
   # subscriptions + timers + publishers (default MAX_CBS=4 → creation fails
   # with TransportError at boot), and /planning trajectories run 9-14 KiB
