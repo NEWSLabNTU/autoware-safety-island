@@ -203,95 +203,76 @@ scheduling.
 
 ---
 
-## Issue 3 — `CONFIG_THREAD_ANALYZER_AUTO` prints before its first sleep, so the first dump always lands during boot
+## Issue 3 — `CONFIG_THREAD_ANALYZER_AUTO_STACK_SIZE` default of 4096 is far too small; the analyzer overflows its own stack and faults
 
-**Severity:** breaks applications with time-sensitive initialisation. There is
-no way to configure around it.
+**Severity:** CPU exception, system halted. Hits the default configuration —
+enabling `CONFIG_THREAD_ANALYZER_AUTO` with no other tuning is enough.
 
 ### What happens
 
-Enabling the thread analyzer's automatic mode on an application that does
-network setup during init makes that init fail. In our case a DDS round-trip
-test reports:
+With `CONFIG_THREAD_ANALYZER=y` and `CONFIG_THREAD_ANALYZER_AUTO=y`, the
+analyzer prints a few threads and then dies:
 
 ```
-[00:00:00.159] | Waiting for DHCP to get IP address...
-[00:00:10.176] | dds_loopback_test -> nros::init failed: -100. Exiting.
+Thread analyze:
+ idle 03             : STACK: unused 14112 usage 2272 / 16384 (13 %); CPU: 0 %
+ idle 02             : STACK: unused 14112 usage 2272 / 16384 (13 %); CPU: 0 %
+ idle 01             : STACK: unused 13776 usage 2608 / 16384 (15 %); CPU: 0 %
+ thread_analyzer     : STACK: unused 176 usage 3920 / 4096 (95 %); CPU: 2 %
+ ...
+<err> os: >>> ZEPHYR FATAL ERROR 0: CPU exception on CPU 3
+<err> os: Current thread: 0x1bf980 (thread_analyzer)
+<err> os: Halting system
 ```
 
-The identical image without `CONFIG_THREAD_ANALYZER` completes the same test
-in 12.187 s. Measured against a control, the statistics options alone
-(`CONFIG_THREAD_RUNTIME_STATS`, `CONFIG_SCHED_THREAD_USAGE`,
-`CONFIG_SCHED_THREAD_USAGE_ANALYSIS`) are harmless — the test passes in
-12.187 s with them enabled, identical to the control. Only the analyzer
-breaks it.
+The analyzer's report on *itself* is the diagnosis: **3920 of 4096 bytes used,
+95 %**, and it still has threads left to walk.
 
-### Why
+### Measurement
 
-`CONFIG_THREAD_ANALYZER_AUTO_INTERVAL` is documented as "the time in seconds
-to call thread analyzer periodic printing function", which reads as though the
-first dump happens after one interval. It does not:
+Running the same walk from an application thread with a 16384-byte stack, the
+analyzer's high-water mark is:
 
-```c
-/* subsys/debug/thread_analyzer/thread_analyzer.c */
-void thread_analyzer_auto(void)
-{
-	for (;;) {
-		thread_analyzer_print(cpu);
-		k_sleep(K_SECONDS(CONFIG_THREAD_ANALYZER_AUTO_INTERVAL));
-	}
-}
-
-K_THREAD_DEFINE(thread_analyzer,
-		CONFIG_THREAD_ANALYZER_AUTO_STACK_SIZE,
-		thread_analyzer_auto,
-		NULL, NULL, NULL,
-		AUTO_THREAD_PRIO,
-		0, 0);          /* <- zero start delay */
+```
+ asi_thread_stats    : STACK: unused 7344 usage 9040 / 16384 (55 %); CPU: 0 %
 ```
 
-The print happens *before* the first sleep, and the thread starts with zero
-delay, so the first dump always runs during boot. It walks every thread with
-`k_thread_foreach` and printks a multi-line block per thread, which is long
-enough to push network initialisation past an internal timeout.
+**9040 bytes** — more than twice `CONFIG_THREAD_ANALYZER_AUTO_STACK_SIZE`'s
+default of 4096. With the larger stack the walk completes and repeats
+indefinitely with no fault.
 
-Raising the interval does not help, and that is the diagnostic signature:
-`CONFIG_THREAD_ANALYZER_AUTO_INTERVAL=5` and `=20` fail **identically**,
-because neither affects when the first dump runs.
+Cost scales with the number of threads and with the format string, since
+`thread_print_cb()` emits three `printk` lines per thread when
+`CONFIG_THREAD_RUNTIME_STATS` and `CONFIG_SCHED_THREAD_USAGE_ANALYSIS` are on.
+A configuration with more threads, or with `CONFIG_THREAD_ANALYZER_ISR_STACK_USAGE`
+also enabled, needs correspondingly more.
 
 ### Suggested fix
 
-Either sleep before the first print:
+Raise the default substantially — 8192 would still be marginal on the
+configuration above — and note in the help text that the requirement grows with
+thread count and with the runtime-statistics options, since those add two extra
+`printk` lines per thread.
 
-```c
-	for (;;) {
-		k_sleep(K_SECONDS(CONFIG_THREAD_ANALYZER_AUTO_INTERVAL));
-		thread_analyzer_print(cpu);
-	}
-```
-
-or add a `CONFIG_THREAD_ANALYZER_AUTO_START_DELAY` and pass it as the
-`K_THREAD_DEFINE` delay argument. The second is preferable: it keeps the
-existing behaviour available for anyone relying on an early dump, while
-letting applications with time-sensitive init defer it.
-
-Updating the `CONFIG_THREAD_ANALYZER_AUTO_INTERVAL` help text to say the first
-dump is immediate would be worth doing regardless.
-
-### Workaround
-
-None within the analyzer. The options are to drop `CONFIG_THREAD_ANALYZER_AUTO`
-and call `thread_analyzer_print()` from the application after init, or to drop
-the analyzer entirely — which is what we did, keeping only the statistics
-options and losing automatic emission.
+It is worth considering whether the analyzer should measure its own headroom
+and print a warning rather than faulting, given that its entire purpose is
+detecting stack problems.
 
 ### Related
 
-Two closed issues touch the same code path and are useful context, though
-neither is this defect:
-
-- [#55428](https://github.com/zephyrproject-rtos/zephyr/issues/55428) —
-  `CONFIG_THREAD_ANALYZER_AUTO` crash in native_posix (2023).
 - [#76541](https://github.com/zephyrproject-rtos/zephyr/issues/76541) —
-  thread_analyzer BUS FAULT with `CONFIG_THREAD_ANALYZER=y` after a 3.6 → 3.7
-  upgrade (2024).
+  thread_analyzer BUS FAULT with `CONFIG_THREAD_ANALYZER=y` (2024, closed).
+  Same symptom class; worth checking whether that report was the same
+  underlying cause.
+- [#55428](https://github.com/zephyrproject-rtos/zephyr/issues/55428) —
+  `CONFIG_THREAD_ANALYZER_AUTO` crash in native_posix (2023, closed).
+
+### Note on how this was found
+
+An earlier reading of this failure attributed it to the analyzer's *timing* —
+`thread_analyzer_auto()` does print before its first `k_sleep()`, behind a
+`K_THREAD_DEFINE` with a zero start delay, so the first dump always lands
+during boot. That is true, and arguably still worth a start-delay option, but
+it is not the defect: moving the print to a delayed application thread
+reproduced the fault exactly, at the delay instead of at boot. Only the stack
+size mattered.

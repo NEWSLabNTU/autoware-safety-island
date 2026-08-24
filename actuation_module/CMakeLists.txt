@@ -227,6 +227,13 @@ else()
     src/board_network_hook.cpp)
 endif()
 
+# Real-time evaluation Layer 1: the periodic statistics reporter. Self-
+# registering via K_THREAD_DEFINE, so no entry point needs to call it and every
+# image (controller and tests alike) reports identically.
+if(CONFIG_ASI_THREAD_STATS_REPORT)
+  target_sources(app PRIVATE src/common/diag/thread_stats_report.c)
+endif()
+
 message("=== Build Summary ===")
 message("App sources: ${APP_SOURCES}")
 message("App headers: ${APP_INCLUDE_DIRS}")

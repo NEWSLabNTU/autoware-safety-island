@@ -145,5 +145,58 @@ config NET_IFACE2_VLAN
 	  Use 0 here if uncertain.
 
 
+# --- Real-time evaluation: Layer 1 reporting -------------------------------
+# See docs/design/rt_evaluation_zephyr.rst. Enabled by ./build.sh --trace-stats
+# and --trace via actuation_module/tracing_stats.conf.
+
+config ASI_THREAD_STATS_REPORT
+	bool "Periodic thread statistics report"
+	depends on THREAD_ANALYZER
+	help
+	  Print the thread analyzer block periodically from an application
+	  thread that starts AFTER initialisation.
+
+	  Zephyr's own CONFIG_THREAD_ANALYZER_AUTO cannot be used here: its
+	  worker prints before its first sleep, behind a K_THREAD_DEFINE with a
+	  zero start delay, so the first dump always lands during boot and
+	  pushes network init past a timeout inside nros. Raising
+	  THREAD_ANALYZER_AUTO_INTERVAL does not help, because the interval is
+	  not what decides when the first dump runs.
+
+	  Leave CONFIG_THREAD_ANALYZER_AUTO disabled when using this.
+
+config ASI_THREAD_STATS_START_DELAY
+	int "Seconds to wait before the first report"
+	default 20
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Must comfortably exceed the application's initialisation, including
+	  DHCP. The FVP lane settles by ~12 s.
+
+config ASI_THREAD_STATS_INTERVAL
+	int "Seconds between reports"
+	default 10
+	depends on ASI_THREAD_STATS_REPORT
+
+config ASI_THREAD_STATS_MAX_REPORTS
+	int "Stop after this many reports (0 = unlimited)"
+	default 3
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Bounds the log. Under the FVP the model fast-forwards through WFI, so
+	  once the workload finishes and the system idles, guest time races
+	  ahead of host time and an uncapped reporter floods the log.
+
+config ASI_THREAD_STATS_STACK_SIZE
+	int "Stack size for the reporting thread"
+	default 16384
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Must be generous. Zephyr's own THREAD_ANALYZER_AUTO_STACK_SIZE
+	  defaults to 4096 and the analyzer overflows it while walking the
+	  thread list on this target -- it reports itself at 95 % (3920/4096)
+	  a few threads in, then takes a CPU exception. Formatting each
+	  thread's block is what costs; the walk itself is cheap.
+
 
 source "Kconfig.zephyr"
