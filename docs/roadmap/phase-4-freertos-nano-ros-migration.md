@@ -536,15 +536,23 @@ the legacy-retirement detail; this is the whole open set.
   `ASI_USE_NANO_ROS` gates in the 8 remaining dual-mode files and delete
   `include/common/dds/`.
 
-**Island clock (new, from the MRM investigation):**
-- [ ] Periodic SNTP re-sync / slew instead of the one-shot boot epoch. On
-      real silicon the drift is ppm-level and this is cosmetic; on FVP it
-      is ~10× real while idle, which is what fed the MRM seed. A bounded
-      re-sync interval also bounds the stamp error every downstream
-      consumer sees.
-- [ ] Add the same requirement to nano-ros issue 0758 (platform epoch
-      source): the epoch hook must support re-acquisition, not just a
-      one-shot at boot.
+**Island clock (from the MRM investigation):**
+- [x] Periodic SNTP re-sync instead of the one-shot boot epoch — LANDED
+      2026-08-25. `src/common/clock/clock_resync.cpp` runs a dedicated
+      lowest-priority thread (never a timer callback or a work item:
+      `sntp_simple()` blocks, and must not do so on the executor thread
+      that carries the control tier), interval
+      `CONFIG_ASI_SNTP_RESYNC_INTERVAL_S` (default 10 s, 0 restores the
+      old behaviour). It sleeps in KERNEL time on purpose, so a racing
+      guest clock re-syncs more often in real time. Corrections ≥ 0.25 s
+      are logged, so drift is visible instead of silent.
+      MEASURED on the tap demo: the thread steps the clock by −9.08 s
+      every cycle and the island-vs-host offset now oscillates 3–8 s,
+      against 3694 s and growing before. Bounded, which is the whole
+      claim — it does not make the peer's unclamped `now − stamp` safe.
+- [x] Same requirement filed upstream on nano-ros issue 0758: the epoch
+      hook must be RE-callable with a deploy-fact interval, not a
+      one-shot (amended 2026-08-24, commit `bdbbe3cfd`).
 
 **Upstream (nano-ros) — filed, waiting:**
 - 0754 idlc rung ignores the handed codegen tool; 0755 board-facts DEPLOY
@@ -565,9 +573,11 @@ the legacy-retirement detail; this is the whole open set.
 - (poll shim, network_config, main.cpp, SNTP epoch: closed or filed above.)
 
 **Demo / tooling:**
-- [ ] Lanes are unverified at pin `957c2b3ed` — a parallel session advanced
-      the pin after my last full CI sweep at `14e484fe0`; the submodule is
-      synced forward but zephyr/posix/s32z2 have not been re-run there.
+- [x] Lanes verified at pin `957c2b3ed` (2026-08-25): zephyr FVP 5-phase
+      CI, freertos-posix CI and the freertos-s32z2 link are all green on
+      the unmodified tree. NOTE upstream main has since moved ~40 commits
+      past that pin; bumping is a separate decision (the parallel session
+      that set it owns the sweep for the next one).
 - [ ] `--drive` goal list is hand-derived from probing. Deriving on-lane
       goals from the lanelet map (projector-aware) would make the mission
       reproducible on other maps.

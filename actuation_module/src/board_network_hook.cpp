@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "common/clock/clock.hpp"
+#include "common/clock/clock_resync.hpp"
 #include "common/logger/logger.hpp"
 #include "common/net/network_config.hpp"
 using namespace common::logger;
@@ -39,5 +40,9 @@ extern "C" void nros_board_network_wait(void)
         log_error("Failed to set time using SNTP\n");
         std::exit(1);
     }
+    // The boot epoch alone is not enough: whatever advances it afterwards is
+    // never exactly real time (on FVP, ~10.5x while idle), and every command we
+    // stamp inherits that error. Keep it bounded — see common/clock/clock_resync.hpp.
+    asi_start_clock_resync();
 #endif
 }

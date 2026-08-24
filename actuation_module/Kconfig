@@ -19,6 +19,20 @@ config SNTP_SERVER_ADDRESS
 	  island stamps commands from 1970 and Autoware's vehicle_cmd_gate
 	  rejects them as stale, so autonomous mode never actuates.
 
+config ASI_SNTP_RESYNC_INTERVAL_S
+	int "Seconds between SNTP re-syncs (0 disables)"
+	depends on ENABLE_SNTP
+	default 10
+	help
+	  A one-shot boot epoch is unbounded-error: whatever advances the
+	  clock afterwards is never exactly real time, and every control
+	  command the island stamps inherits the error. On the FVP the model
+	  fast-forwards an idle guest, measured at ~10.5x real, so the offset
+	  grows without limit; on silicon this is ppm-level and the interval
+	  barely matters. The re-sync thread sleeps in KERNEL time, so a
+	  racing guest clock re-syncs more often in real time. Set 0 to keep
+	  the old one-shot behaviour.
+
 config DDS_DOMAIN_ID
 	int "Domain ID for CycloneDDS"
 	default 2

@@ -224,6 +224,7 @@ else()
   # lives in network_config.cpp (compiled into app).
   target_sources(app PRIVATE
     src/common/net/network_config.cpp
+    src/common/clock/clock_resync.cpp
     src/board_network_hook.cpp)
 endif()
 
