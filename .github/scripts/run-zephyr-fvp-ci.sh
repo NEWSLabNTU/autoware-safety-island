@@ -95,17 +95,24 @@ run_fvp_variant()
   echo "FVP ${name} finished"
 }
 
+# Every runtime phase asserts the absence of a fatal error as well as the
+# presence of its markers. The images are long-lived and killed by timeout, so
+# a crash does not change the exit code: a require_marker-only phase stays
+# green straight through one, provided the marker printed first. That is
+# exactly how a net_socket_service stack overflow went unnoticed here.
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
 run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}"
 require_marker "${LOG_DIR}/controller.log" "Starting Controller Node"
 require_marker "${LOG_DIR}/controller.log" "Controller Node Started"
 require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
+forbid_marker "${LOG_DIR}/controller.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 2 - Zephyr FVP unit_test build + run"
 build_variant unit --unit-test
 run_fvp_variant unit "${LOG_DIR}/unit.log" "${FVP_TIMEOUT_SECONDS}"
 require_marker "${LOG_DIR}/unit.log" "=== All Tests Passed ==="
+forbid_marker "${LOG_DIR}/unit.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 3 - Zephyr FVP DDS loopback build + run"
 build_variant dds-loopback --dds-loopback-test
@@ -113,11 +120,13 @@ run_fvp_variant dds-loopback "${LOG_DIR}/dds-loopback.log" "${FVP_TIMEOUT_SECOND
 require_marker "${LOG_DIR}/dds-loopback.log" "Starting DDS loopback test"
 require_marker "${LOG_DIR}/dds-loopback.log" "STEERING REPORT"
 require_marker "${LOG_DIR}/dds-loopback.log" "DDS loopback test passed"
+forbid_marker "${LOG_DIR}/dds-loopback.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 4 - Zephyr FVP CAN loopback build + run"
 build_variant can --can-output-test
 run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}"
 require_marker "${LOG_DIR}/can.log" "CAN output tests passed"
+forbid_marker "${LOG_DIR}/can.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 5 - Zephyr FVP TAP network build smoke"
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap -d "${ROOT_DIR}/build/zephyr-fvp-tap"
