@@ -123,4 +123,23 @@ echo "Phase 5 - Zephyr FVP TAP network build smoke"
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap -d "${ROOT_DIR}/build/zephyr-fvp-tap"
 test -f "${ROOT_DIR}/build/zephyr-fvp-tap/zephyr/zephyr.elf"
 
+echo "Phase 6 - Zephyr FVP scheduling statistics (rt-eval Layer 1)"
+# Kept separate from phase 3 rather than folded into it: if the statistics
+# layer regresses, that should not be indistinguishable from a DDS-path
+# regression. See docs/design/rt_evaluation_zephyr.rst.
+build_variant stats --trace-stats --dds-loopback-test
+run_fvp_variant stats "${LOG_DIR}/stats.log" "${FVP_TIMEOUT_SECONDS}"
+# The workload must still pass with the statistics enabled — this phase is a
+# non-regression check as much as a reporting one.
+require_marker "${LOG_DIR}/stats.log" "DDS loopback test passed"
+# A fatal error does not fail the run on its own, because the image is killed
+# by timeout either way. Assert it explicitly: an overflowing stack in a
+# reporting thread is exactly what this phase should catch.
+forbid_marker "${LOG_DIR}/stats.log" "ZEPHYR FATAL ERROR"
+# The per-thread block itself, and the CONFIG_SCHED_THREAD_USAGE_ANALYSIS
+# fields that make it worth collecting.
+require_marker "${LOG_DIR}/stats.log" "Thread analyze:"
+require_marker "${LOG_DIR}/stats.log" "Total CPU cycles used"
+require_marker "${LOG_DIR}/stats.log" "Longest Frame"
+
 echo "Zephyr FVP runtime validation OK"

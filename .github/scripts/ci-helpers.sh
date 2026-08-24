@@ -99,3 +99,16 @@ require_marker() {
     exit 1
   fi
 }
+
+# Assert a marker is ABSENT. The runtime phases are long-running images killed
+# by timeout, so a fatal error does not change the exit code and a
+# require_marker-only phase stays green through a crash.
+forbid_marker() {
+  local log="$1"
+  local marker="$2"
+  if grep -Fq -- "$marker" "$log"; then
+    dump_log "$log"
+    echo "Forbidden marker present in $log: $marker" >&2
+    exit 1
+  fi
+}
