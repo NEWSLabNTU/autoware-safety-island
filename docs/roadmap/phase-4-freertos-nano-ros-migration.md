@@ -458,6 +458,123 @@ Acceptance: S32Z2 image builds via nano-ros from a clean checkout with
 only NXP-licensed pieces provisioned locally; on-target smoke parity
 with the legacy baseline; `cyclonedds/` gone from `.gitmodules`.
 
+## MRM divergence — investigated and root-caused (2026-08-24)
+
+The post-arrival runaway (see the driving re-baseline above) was traced to
+`mrm_emergency_stop_operator` publishing an ACCELERATING command. This is
+the measurement record; the chain has two independent halves, one theirs
+and one ours.
+
+**Measured, not inferred.** All numbers below come from the live demo:
+`ros2 param get` on the operator, `ros2 node info` for its wiring, and an
+rclpy probe sampling `/system/emergency/control_cmd` and
+`/control/command/control_cmd` at full rate across the engagement edge.
+
+1. **It is NOT a feedback loop.** The operator subscribes to the gate's
+   output (`/control/command/control_cmd`) and publishes the emergency
+   command the gate then selects, so a loop is available — but driving it
+   via its own service (`/system/mrm/emergency_stop/operate`) with the gate
+   NOT in emergency reproduces the divergence exactly: over 40 s the
+   emergency command reached v = 138 497 m/s, a = +3786 m/s² while the
+   gate's own output sat unchanged at 0.0 / −1.5. The divergence is
+   internal to the operator.
+2. **The ramp itself is correct.** Sampled `da/dt = −3.000` exactly
+   (= `target_jerk`), and `dv/dt` equals the current acceleration, i.e.
+   `a_{k+1} = a_k + jerk·dt`, `v_{k+1} = v_k + a_k·dt` at
+   `update_rate = 30`. Parameters are sane: `target_acceleration = −3.0`,
+   `target_jerk = −3.0`.
+3. **The SEED is the defect.** Capturing the engagement edge shows the
+   published stamp jump BACKWARD by 2376 s at the transition, and the first
+   operating sample carrying `a₀ = +7127.39`, `v₀ = 3564.44` — exactly
+   `a₀ = −1.5 + 3.0 × 2376` and `v₀ = a₀ × 0.5`. So the operator seeds its
+   first ramp step over `dt = (its own now) − (the input command's stamp)`
+   with no sanity clamp, and applies the jerk term with the sign that turns
+   a braking ramp into `+|jerk|·dt`. A single mis-stamped input therefore
+   converts an emergency STOP into maximum acceleration, and the ramp needs
+   ~40 min to unwind. Upstream Autoware robustness bug (this demo image);
+   we cannot fix it from here, and `--drive` avoids it by leaving
+   autonomous mode as soon as the mission ends.
+4. **Our half: the island's clock races on FVP.** The 2376 s is not
+   arbitrary — it is the offset between the island's stamps and host wall
+   time. Measured live: island stamp 1787579546 vs host 1787575852
+   (offset 3694 s), growing 160 s per 16 s of wall clock, i.e. the island's
+   wall-clock estimate advances ~10.5× real time WHILE IDLE. Cause is the
+   known FVP pacing artifact (phase-3 item 3: the model fast-forwards when
+   the guest is idle; the rate limiter lives in the visualisation
+   component and does not pace idle time). The island seeds its epoch from
+   SNTP exactly ONCE, in the boot network hook
+   (`board_network_hook.cpp` → `Clock::init_clock_via_sntp()`), and then
+   advances it with the FVP-fast tick — so the error accumulates without
+   bound for as long as the image runs.
+
+**Why the two halves met.** The island goes idle exactly when the planner
+stops publishing at goal arrival; that is also the moment Autoware's
+trajectory rate check errors and MRM engages. So the operator's first
+ramp step lands precisely when the island's stamps are furthest into the
+future — worst input at the worst moment.
+
+Follow-ups from this (tracked in "Remaining work" below): periodic SNTP
+re-sync/slew on the island side, and the same requirement added to the
+nano-ros platform epoch design (issue 0758) so every consumer inherits a
+bounded stamp error rather than a one-shot epoch.
+
+## Remaining work and follow-ups (as of 2026-08-24)
+
+Consolidated so nothing lives only in a commit message. Phase-5 carries
+the legacy-retirement detail; this is the whole open set.
+
+**Hardware-gated (nothing else blocks them):**
+- W5.b item 5 — on-target smoke: wire the NXP RTD NETC sources + PBcfg into
+  `src/s32z2_board_glue` (the package is authored and env-gated; only the
+  source list is deliberately unwritten), run
+  `scripts/provision-nxp-freertos.sh` for the patched CR52_GIC port, reach
+  boot parity with the legacy baseline, then the 30 ms tier + launch-seeded
+  params.
+- W5.b item 6 = phase-5 W3/W4 — retire the legacy lane in one commit
+  (`actuation_module/freertos_s32z2/`, the `cyclonedds/` submodule + fork
+  branch, `msg/*.idl`, the idlc CMake branch), then collapse the
+  `ASI_USE_NANO_ROS` gates in the 8 remaining dual-mode files and delete
+  `include/common/dds/`.
+
+**Island clock (new, from the MRM investigation):**
+- [ ] Periodic SNTP re-sync / slew instead of the one-shot boot epoch. On
+      real silicon the drift is ppm-level and this is cosmetic; on FVP it
+      is ~10× real while idle, which is what fed the MRM seed. A bounded
+      re-sync interval also bounds the stamp error every downstream
+      consumer sees.
+- [ ] Add the same requirement to nano-ros issue 0758 (platform epoch
+      source): the epoch hook must support re-acquisition, not just a
+      one-shot at boot.
+
+**Upstream (nano-ros) — filed, waiting:**
+- 0754 idlc rung ignores the handed codegen tool; 0755 board-facts DEPLOY
+  passthrough; 0758 platform epoch source. (0753/0756/0757 are resolved.)
+
+**Upstream (Autoware) — recorded, not filed:**
+- `mrm_emergency_stop_operator` seeds its ramp from an unclamped
+  `now − input.stamp` with an inverted jerk sign (detail above). Not our
+  repo; documented here and in `scripts/run-tap-demo.sh` so the next
+  person does not re-chase it.
+
+**Phase-5 W5 (ASI plumbing → nano-ros features):**
+- [ ] `common/logger/` → `nros_log`: sequenced BEHIND W3 because the legacy
+      lane compiles `logger.hpp` and links no nros; a swap now would need a
+      banned mode gate. Keep the `log_*` API surface (20+ vendored Autoware
+      TUs call it), swap the sink; upstream has no throttle macros yet, so
+      `log_*_throttle` stays ASI-side.
+- (poll shim, network_config, main.cpp, SNTP epoch: closed or filed above.)
+
+**Demo / tooling:**
+- [ ] Lanes are unverified at pin `957c2b3ed` — a parallel session advanced
+      the pin after my last full CI sweep at `14e484fe0`; the submodule is
+      synced forward but zephyr/posix/s32z2 have not been re-run there.
+- [ ] `--drive` goal list is hand-derived from probing. Deriving on-lane
+      goals from the lanelet map (projector-aware) would make the mission
+      reproducible on other maps.
+- [ ] The FVP idle fast-forward has no clean pacing knob; the visualisation
+      rate limiter does not cover idle. Worth a look if demo timing
+      fidelity ever matters beyond the clock issue above.
+
 ## Non-goals
 
 - New RMW backends on FreeRTOS (cyclonedds only — it is what the Autoware
