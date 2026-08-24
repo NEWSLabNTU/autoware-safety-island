@@ -276,3 +276,76 @@ during boot. That is true, and arguably still worth a start-delay option, but
 it is not the defect: moving the print to a delayed application thread
 reproduced the fault exactly, at the delay instead of at boot. Only the stack
 size mattered.
+
+---
+
+## Issue 4 — `k_thread_priority_set()` emits no trace event, so CTF captures cannot show priority changes
+
+**Severity:** silent observability gap. The event is declared and implemented;
+it simply never fires, so its absence in a trace is meaningless — and reads as
+evidence that no priority change happened.
+
+### What happens
+
+A CTF capture of an application that calls `k_thread_priority_set()` contains
+**zero** `thread_priority_set` events, however many times it is called.
+
+### Why
+
+The event exists on the tracing side. `subsys/tracing/ctf/tsdl/metadata`
+declares it:
+
+```
+event {
+	name = thread_priority_set;
+	id = 0x12;
+	fields := struct {
+		uint32_t thread_id;
+		ctf_bounded_string_t name[20];
+		int8_t prio;
+	};
+};
+```
+
+and `subsys/tracing/ctf/ctf_top.c` implements the hook:
+
+```c
+void sys_trace_k_thread_priority_set(struct k_thread *thread)
+{
+	ctf_bounded_string_t name = { "unknown" };
+
+	_get_thread_name(thread, &name);
+	ctf_top_thread_priority_set((uint32_t)(uintptr_t)thread,
+				    thread->base.prio, name);
+}
+```
+
+But nothing calls it. `z_impl_k_thread_priority_set()` in `kernel/sched.c`
+contains no `SYS_PORT_TRACING_OBJ_FUNC` (or equivalent) invocation, so the
+hook is dead code and the event id is never emitted.
+
+Contrast `z_thread_mark_switched_in()`, `k_thread_create()` and the semaphore
+and mutex families, which all reach their CTF hooks and appear normally in the
+same capture.
+
+### Why it matters
+
+Thread priority is exactly the kind of thing a task-timeline capture is used to
+verify — "did this thread actually get the priority its configuration
+declares?" is a natural question for a real-time system. Today the trace cannot
+answer it, and, worse, answers it *incorrectly by omission*: an engineer
+reading a capture with no `thread_priority_set` events reasonably concludes
+that no priority change occurred.
+
+That happened to us. An application configured a real-time scheduling tier
+whose priority is applied with `k_thread_priority_set()`; the empty trace was
+read as the tier not being active, and it took reading the runtime's source to
+establish that the call does happen and simply is not traced.
+
+### Suggested fix
+
+Add the tracing call to `z_impl_k_thread_priority_set()` alongside the existing
+`z_thread_prio_set()`, matching how the other thread events are wired.
+
+Failing that, removing the unreachable hook and its metadata entry would at
+least stop the event from advertising a capability that does not exist.

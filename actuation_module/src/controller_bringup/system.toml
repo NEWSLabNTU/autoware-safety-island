@@ -60,7 +60,26 @@ priority = 7
 priority = 80
 [tiers.control.zephyr]
 # RAW Zephyr preemptive priority (lower number = higher priority).
-priority = 5
+#
+# 9, not 5. nano-ros RFC-0079 allocated the Zephyr priority bands: the DDS
+# transport sits at 7 and the tier pool is [8, 14], so 5 was ABOVE the
+# transport — the control tier could preempt the very transport it depends on
+# to receive trajectories and publish commands. That was recorded upstream as
+# a COLLIDES violation and closed in nano-ros's own bringups by moving 5 -> 9
+# (`feat(RFC-0079): Zephyr's four violations closed`, pin 957c2b3ed); this
+# consumer bringup had to follow.
+#
+# 9 keeps the tier inside the resolved pool and still more urgent than a
+# `low` tier at 10. Zephyr's band is DERIVED, so the pool is a property of
+# THIS image's .config rather than of the port.
+#
+# The single declared tier is the boot tier, which nano-ros runs on the
+# CALLING thread rather than a spawned one (entry_tiers.rs: "the boot thread
+# runs tiers[0] itself"), so this value lands on `main` via
+# k_thread_priority_set(). Note Zephyr 3.7 has no tracing hook in
+# z_impl_k_thread_priority_set(), so the change does not appear in a CTF
+# capture — see docs/design/upstream-zephyr-issues.md issue 4.
+priority = 9
 
 # FVP deploy target — ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr.
 # board cross-refs the `nros-board-fvp-aemv8r-smp` crate (Phase 215

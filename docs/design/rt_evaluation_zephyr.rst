@@ -517,28 +517,71 @@ family — which this document previously recommended as the way to separate a
 mis-armed period from a mis-delivered one — yields nothing on this lane. That
 technique needs a kernel timer to observe, and there isn't one.
 
-**No real-time tier threads are present.** Every thread the image creates:
+**The tier model IS active — but it runs on ``main``, not a spawned thread.**
+An earlier revision of this document read the thread list and concluded the
+phase-4 ``[tiers.control]`` model was not in effect on this lane. That was
+wrong, and the reasoning is worth recording because the evidence looks
+identical either way.
+
+Every thread the image creates:
 
 .. code-block:: text
 
    asi_thread_stats   stack 16384    (this repo's statistics reporter)
-   7 x "unknown"      stack 32768    (nano-ros generic pool)
+   7 x "unknown"      stack 32768    (nano-ros generic transport pool)
 
-The 32768-byte stacks are ``NROS_ZEPHYR_STACK_SIZE``, nano-ros's generic
-thread pool. The tier pool is ``NROS_ZEPHYR_TIER_STACK_SIZE``, 16384, and
-nothing in the image uses it — so the phase-4 ``[tiers.control]`` model, which
-moved the control timer into its own callback group bound to a real-time tier,
-is **not active on this Zephyr FVP build**. The controller runs its executor on
-``main``. Whether that is a build-configuration gap or intended for this lane
-is worth settling; the phase-4 notes describe the tier model as applying to
-both lanes.
+No thread uses ``NROS_ZEPHYR_TIER_STACK_SIZE`` (16384), which looks like "no
+tiers". It is not. From nano-ros ``entry_tiers.rs``: *the caller thread opens
+the boot* ``Executor``\ *, runs the boot tier's setup, then CHAIN-spawns the
+remaining tiers*. ASI declares exactly one tier, so ``control`` **is** the boot
+tier and runs on the caller — ``main``. There is nothing left to spawn.
 
-That also corrects something this document claimed earlier. Tier threads are
-named — ``nros_zephyr_tier_task_create()`` calls ``k_thread_name_set()`` — but
-the *generic* pool threads are not, and those are the ones that exist here.
-They appear in the timeline as ``unknown`` and can only be told apart by
-thread id and stack base. Naming them upstream would make a control-loop
-timeline substantially more readable.
+The generated entry confirms it:
+
+.. code-block:: c
+
+   static const ::nros::board::NativeTierSpec __nros_tiers[1] = {
+       { "control", __nros_tier_0_groups, 1u, 9LL, 0u, 5000ull, ... "real_time", ...},
+   };
+   int main(void) { return ZephyrBoard::run_tiers(..., __nros_tiers, 1u); }
+
+and ``main`` adopts the tier's priority through
+``nros_zephyr_set_current_priority()`` →
+``k_thread_priority_set(k_current_get(), ...)``.
+
+That also explains the 6 ms cadence measured above: ``spin_period_us = 5000``
+gives ``period_ms = 5``, and ~1 ms of work per spin lands the observed
+6.000 ms. Nothing is mis-scheduled.
+
+**Why the trace cannot show the priority.** Zephyr 3.7's
+``z_impl_k_thread_priority_set()`` contains no tracing hook, even though
+``subsys/tracing/ctf/ctf_top.c`` implements ``sys_trace_k_thread_priority_set``
+and the TSDL declares the event. A capture therefore contains **zero**
+``thread_priority_set`` events no matter what the application does, and the
+absence proves nothing. Filed as issue 4 in
+``docs/design/upstream-zephyr-issues.md``. Reading that absence as evidence is
+what produced the wrong conclusion above.
+
+**A real defect this did surface.** The bringup declared
+``[tiers.control.zephyr] priority = 5``. nano-ros RFC-0079 allocates Zephyr's
+bands with the DDS transport at 7 and the tier pool at [8, 14], so 5 sat
+*above the transport* — the control tier could preempt the transport it
+depends on to receive trajectories and publish commands. Upstream closed the
+same violation in its own bringups by moving 5 to 9; this consumer bringup had
+not followed. Now 9.
+
+Measured either side of that change, on an idle system, the cadence is
+**identical** — p50 6.0000 ms, p99 7.0000 ms, slice p50 0.6690 ms both ways.
+That is the expected result and not a null one: with no planner attached the
+transport is idle, so the two never contend and the priority relationship is
+never exercised. The fix is correct by allocation; demonstrating its effect
+needs the loaded measurement.
+
+**Generic pool threads are unnamed.** ``nros_zephyr_tier_task_create()`` calls
+``k_thread_name_set()``, but the generic pool path does not, so the seven
+transport threads appear as ``unknown`` and are separable only by thread id and
+stack base. Naming them upstream would make a control-loop timeline
+substantially more readable.
 
 **Longest slice.** ``main`` shows a 62.1 ms worst contiguous slice against a
 0.67 ms median. Worth attention if the 30 ms period matters, though note the
