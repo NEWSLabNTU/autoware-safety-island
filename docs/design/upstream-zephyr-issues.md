@@ -320,9 +320,29 @@ void sys_trace_k_thread_priority_set(struct k_thread *thread)
 }
 ```
 
-But nothing calls it. `z_impl_k_thread_priority_set()` in `kernel/sched.c`
-contains no `SYS_PORT_TRACING_OBJ_FUNC` (or equivalent) invocation, so the
-hook is dead code and the event id is never emitted.
+The path is broken in **three** places, any one of which suppresses the event:
+
+1. `subsys/tracing/ctf/tracing_ctf.h` never defines
+   `sys_port_trace_k_thread_priority_set`, so the macro falls through to the
+   no-op in `include/zephyr/tracing/tracing.h`. Note the *test* backend does
+   map it (`subsys/tracing/test/tracing_test.h`), which is part of why the
+   omission is easy to miss — the symbol looks wired if you only grep for its
+   name.
+2. `z_impl_k_thread_priority_set()` in `kernel/sched.c` never invokes the
+   macro, so even a correct mapping would not fire.
+3. `include/zephyr/tracing/tracking.h` has no
+   `sys_port_track_k_thread_priority_set` no-op. `SYS_PORT_TRACING_OBJ_FUNC`
+   expands to *both* a `sys_port_trace_*` and a `sys_port_track_*` call, so
+   adding the call site alone fails to LINK:
+
+   ```
+   sched.c.obj: in function `z_impl_k_thread_priority_set':
+   undefined reference to `sys_port_track_k_thread_priority_set'
+   ```
+
+   Note the tracking list does carry `sys_port_track_k_thread_sched_priority_set`
+   (the internal `sched_priority_set` variant), which makes the omission of the
+   public one easy to overlook.
 
 Contrast `z_thread_mark_switched_in()`, `k_thread_create()` and the semaphore
 and mutex families, which all reach their CTF hooks and appear normally in the
@@ -344,8 +364,34 @@ establish that the call does happen and simply is not traced.
 
 ### Suggested fix
 
-Add the tracing call to `z_impl_k_thread_priority_set()` alongside the existing
-`z_thread_prio_set()`, matching how the other thread events are wired.
+Both ends. Map the macro in `tracing_ctf.h`:
+
+```c
+#define sys_port_trace_k_thread_priority_set(thread)                            \
+	sys_trace_k_thread_priority_set(thread)
+```
+
+add the tracking no-op in `tracking.h` beside its siblings:
+
+```c
+#define sys_port_track_k_thread_priority_set(thread)
+```
+
+and invoke the macro from `z_impl_k_thread_priority_set()`:
+
+```c
+	bool need_sched = z_thread_prio_set((struct k_thread *)thread, prio);
+
+	SYS_PORT_TRACING_OBJ_FUNC(k_thread, priority_set, thread);
+```
+
+Placement matters: the hook reads `thread->base.prio`, so it must run **after**
+`z_thread_prio_set()`. Tracing before the store would emit the *old* priority,
+which is worse than emitting nothing.
+
+Verified as a local patch against v3.7.0 on `fvp_baser_aemv8r` — all three
+hunks are required; omitting the third gives the link error above. Happy to
+send it as a PR.
 
 Failing that, removing the unreachable hook and its metadata entry would at
 least stop the event from advertising a capability that does not exist.

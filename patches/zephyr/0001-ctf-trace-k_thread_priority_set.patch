@@ -1,0 +1,50 @@
+diff --git a/include/zephyr/tracing/tracking.h b/include/zephyr/tracing/tracking.h
+index 2b2429c83f7..9d4ca41f570 100644
+--- a/include/zephyr/tracing/tracking.h
++++ b/include/zephyr/tracing/tracking.h
+@@ -56,6 +56,7 @@ extern struct k_event *_track_list_k_event;
+ 
+ #define sys_port_track_k_thread_start(thread)
+ #define sys_port_track_k_thread_create(new_thread)
++#define sys_port_track_k_thread_priority_set(thread)
+ #define sys_port_track_k_thread_sched_ready(thread)
+ #define sys_port_track_k_thread_wakeup(thread)
+ #define sys_port_track_k_thread_sched_priority_set(thread, prio)
+@@ -118,6 +119,7 @@ void sys_track_socket_init(int sock, int family, int type, int proto);
+ 
+ #define sys_port_track_k_thread_start(thread)
+ #define sys_port_track_k_thread_create(new_thread)
++#define sys_port_track_k_thread_priority_set(thread)
+ #define sys_port_track_k_thread_sched_ready(thread)
+ #define sys_port_track_k_thread_wakeup(thread)
+ #define sys_port_track_k_thread_sched_priority_set(thread, prio)
+diff --git a/kernel/sched.c b/kernel/sched.c
+index 2827a41fd38..57bb8dbff79 100644
+--- a/kernel/sched.c
++++ b/kernel/sched.c
+@@ -1042,6 +1042,12 @@ void z_impl_k_thread_priority_set(k_tid_t thread, int prio)
+ 
+ 	bool need_sched = z_thread_prio_set((struct k_thread *)thread, prio);
+ 
++	/* Emitted AFTER z_thread_prio_set() on purpose: the backend hook reads
++	 * thread->base.prio, so tracing before the store would record the OLD
++	 * priority and the event would be actively misleading.
++	 */
++	SYS_PORT_TRACING_OBJ_FUNC(k_thread, priority_set, thread);
++
+ 	if ((need_sched) && (IS_ENABLED(CONFIG_SMP) ||
+ 			     (_current->base.sched_locked == 0U))) {
+ 		z_reschedule_unlocked();
+diff --git a/subsys/tracing/ctf/tracing_ctf.h b/subsys/tracing/ctf/tracing_ctf.h
+index 2756e6e8f5d..5a0da3709b1 100644
+--- a/subsys/tracing/ctf/tracing_ctf.h
++++ b/subsys/tracing/ctf/tracing_ctf.h
+@@ -43,6 +43,8 @@ extern "C" {
+ #define sys_port_trace_k_thread_wakeup(thread) sys_trace_k_thread_wakeup(thread)
+ #define sys_port_trace_k_thread_start(thread) sys_trace_k_thread_start(thread)
+ #define sys_port_trace_k_thread_abort(thread) sys_trace_k_thread_abort(thread)
++#define sys_port_trace_k_thread_priority_set(thread)                            \
++	sys_trace_k_thread_priority_set(thread)
+ #define sys_port_trace_k_thread_suspend_enter(thread)                          \
+ 	sys_trace_k_thread_suspend(thread)
+ #define sys_port_trace_k_thread_suspend_exit(thread)

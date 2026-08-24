@@ -194,6 +194,23 @@ if [[ ! -x "${NROS_CLI}" ]]; then die "nros CLI not built (expected ${NROS_CLI})
 say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
 ( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
     --zephyr-workspace "${ROOT}" )
+# ---- 6b.1 local zephyr patches (on top of the nano-ros set) ----
+# `nros setup board` rewrites ${ROOT}/zephyr, so anything this repo needs
+# beyond nano-ros's patch set has to be re-applied here or it vanishes on the
+# next provisioning run. Each is checked with --reverse first so re-running
+# bootstrap is idempotent. See patches/zephyr/README.md.
+if compgen -G "${ROOT}/patches/zephyr/*.patch" >/dev/null; then
+  for patch in "${ROOT}"/patches/zephyr/*.patch; do
+    if git -C "${ROOT}/zephyr" apply --check --reverse "${patch}" >/dev/null 2>&1; then
+      say "zephyr patch already applied: $(basename "${patch}")"
+    elif git -C "${ROOT}/zephyr" apply "${patch}" >/dev/null 2>&1; then
+      say "applied zephyr patch: $(basename "${patch}")"
+    else
+      warn "could not apply $(basename "${patch}") — it may need a refresh against the current pin."
+    fi
+  done
+fi
+
 # Host idlc: the pin's cyclonedds cmake resolves idlc from the nros SDK store
 # (~/.nros/sdk/cyclonedds/<ver>/bin/idlc) before PATH. Provision the board's
 # tool ∪ rmw set (cyclonedds prebuilt + cyclonedds-src + rosidl; the gated
