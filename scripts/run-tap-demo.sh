@@ -12,6 +12,7 @@
 #
 # Usage:
 #   scripts/run-tap-demo.sh            # build (incremental) + up + seed + verify
+#   scripts/run-tap-demo.sh --drive    # build + up + AUTONOMOUS DRIVING mission
 #   scripts/run-tap-demo.sh --no-seed  # up only; seed by hand / via rviz
 #   scripts/run-tap-demo.sh --down     # stop FVP + compose stack
 #
@@ -72,11 +73,13 @@ demo_down() {
 }
 
 DO_SEED=1
+DO_DRIVE=0
 case "${1:-}" in
   --down)    demo_down; exit 0 ;;
   --no-seed) DO_SEED=0 ;;
+  --drive)   DO_SEED=0; DO_DRIVE=1 ;;
   "")        ;;
-  *) die "unknown arg '$1' (usage: run-tap-demo.sh [--no-seed|--down])" ;;
+  *) die "unknown arg '$1' (usage: run-tap-demo.sh [--drive|--no-seed|--down])" ;;
 esac
 
 # ---- preflight ----
@@ -159,6 +162,155 @@ seed_ego_and_goal() {
 }
 if ((DO_SEED)); then
   seed_ego_and_goal
+fi
+
+# ---- autonomous driving mission (--drive) ----
+# Distinct from seed_ego_and_goal above, which only ever exercises the
+# EMERGENCY-STOP loop (see the seed note at the top). A driving mission needs
+# three things the bare-topic seed does not do:
+#   * a LANE-CONSISTENT spawn: an on-lane point with the LANE's heading, or the
+#     planner emits a goal-anchored zero-velocity sliver the island rightly
+#     refuses ("too large position error");
+#   * the route set through ADAPI `set_route_points`, not by publishing
+#     /planning/mission_planning/goal — the bare topic leaves ADAPI's
+#     route_state UNSET, which reds component_state_diagnostics: route_state
+#     and makes autonomous mode unavailable;
+#   * an explicit change_to_stop the moment the mission ends: when the planner
+#     stops publishing on arrival, Autoware's trajectory rate check errors, MRM
+#     engages, and this image's mrm_emergency_stop_operator ramps the WRONG way
+#     (vehicle_cmd_gate clamps its diverging command to 25 m/s / +4 m/s^2 and
+#     the sim runs away). Host-side defect; the island commands a safe stop
+#     throughout. Leaving stop mode off is what turns a finished mission into a
+#     runaway.
+DRIVE_SPAWN='{header: {frame_id: map}, pose: {pose: {position: {x: 3714.44, y: 73753.15, z: 0.0}, orientation: {z: 0.25, w: 0.968}}}}'
+# Goal candidates along the same lane, farthest first — the planner refuses a
+# goal it cannot route to ("The planned route is empty"), and how far it will
+# route varies with the lanelet the spawn landed on.
+DRIVE_GOALS=(
+  "3730.2 73761.8"
+  "3726.0 73759.5"
+  "3722.0 73757.0"
+)
+
+adapi_route() {  # $1 x, $2 y -> 0 on accepted
+  in_autoware "timeout 15 ros2 service call /api/routing/set_route_points \
+    autoware_adapi_v1_msgs/srv/SetRoutePoints \
+    '{header: {frame_id: map}, goal: {position: {x: $1, y: $2, z: 0.0}, \
+      orientation: {z: 0.25, w: 0.968}}}' 2>&1" | grep -q "success=True"
+}
+
+ego_speed() {
+  in_autoware "timeout 5 ros2 topic echo --once /localization/kinematic_state \
+    --field twist.twist.linear.x --csv 2>/dev/null" | tr -d '\r' | tail -1
+}
+
+ego_pos() {
+  in_autoware "timeout 5 ros2 topic echo --once /localization/kinematic_state \
+    --field pose.pose.position --csv 2>/dev/null" | tr -d '\r' | tail -1
+}
+
+route_state() {
+  in_autoware "timeout 5 ros2 topic echo --once /api/routing/state --field state --csv 2>/dev/null" \
+    | tr -d '\r' | tail -1
+}
+
+drive_mission() {
+  say "clearing any previous route…"
+  in_autoware "timeout 10 ros2 service call /api/routing/clear_route \
+    autoware_adapi_v1_msgs/srv/ClearRoute {}" >/dev/null 2>&1 || true
+
+  say "waiting for the planning sim, then spawning ego on-lane…"
+  for ((i = 0; i < 60; i++)); do
+    in_autoware "ros2 topic list 2>/dev/null | grep -q /initialpose" && break
+    sleep 2
+  done
+  local ok=0
+  for ((i = 0; i < 10; i++)); do
+    in_autoware "ros2 topic pub --once /initialpose \
+      geometry_msgs/msg/PoseWithCovarianceStamped '${DRIVE_SPAWN}'" >/dev/null
+    if in_autoware "timeout 8 ros2 topic echo --once /localization/kinematic_state >/dev/null 2>&1"; then
+      ok=1; break
+    fi
+    warn "spawn not accepted yet (attempt $((i + 1))/10) — sim still booting; retrying…"
+  done
+  ((ok)) || die "ego spawn never accepted — check: docker logs ${AUTOWARE_CTR}"
+  say "ego at $(ego_pos)"
+
+  local gx gy
+  ok=0
+  for g in "${DRIVE_GOALS[@]}"; do
+    read -r gx gy <<<"${g}"
+    if adapi_route "${gx}" "${gy}"; then
+      say "route accepted to (${gx}, ${gy})"
+      ok=1; break
+    fi
+    warn "planner refused goal (${gx}, ${gy}) — trying a nearer one…"
+    in_autoware "timeout 10 ros2 service call /api/routing/clear_route \
+      autoware_adapi_v1_msgs/srv/ClearRoute {}" >/dev/null 2>&1 || true
+  done
+  ((ok)) || die "no goal in DRIVE_GOALS could be routed — re-derive on-lane points from the map."
+
+  # A driveable trajectory carries non-zero velocities; the arrival-hold
+  # sliver does not. Wait for the real thing before engaging.
+  ok=0
+  for ((i = 0; i < 20; i++)); do
+    if in_autoware "timeout 8 ros2 topic echo --once /planning/scenario_planning/trajectory \
+        2>/dev/null | grep -m1 -E 'longitudinal_velocity_mps: [1-9]' >/dev/null"; then
+      ok=1; break
+    fi
+    sleep 2
+  done
+  ((ok)) || die "planner produced no driveable trajectory (all-zero velocities) — see rviz/planning logs."
+  say "driveable trajectory streaming."
+
+  ok=0
+  for ((i = 0; i < 10; i++)); do
+    if in_autoware "timeout 15 ros2 service call /api/operation_mode/change_to_autonomous \
+        autoware_adapi_v1_msgs/srv/ChangeOperationMode {} 2>&1" | grep -q "success=True"; then
+      ok=1; break
+    fi
+    warn "autonomous refused (attempt $((i + 1))/10) — check duplicated_node_checker and route_state; retrying…"
+    sleep 3
+  done
+  ((ok)) || die "autonomous mode never engaged — dump: ros2 topic echo --once /system/emergency/hazard_status"
+  say "ENGAGED — driving."
+
+  # Monitor: report progress, detect arrival (route_state ARRIVED=3) or a
+  # sustained stop, then IMMEDIATELY leave autonomous (see the MRM note above).
+  local moved=0 still=0 vmax=0 v st
+  for ((i = 0; i < 60; i++)); do
+    sleep 3
+    v="$(ego_speed)"; st="$(route_state)"
+    [[ -n "${v}" ]] || continue
+    awk -v a="${v}" -v b="${vmax}" 'BEGIN{exit !(a>b)}' && vmax="${v}"
+    say "  t+$((i * 3))s  v=${v} m/s  route_state=${st}  pos=$(ego_pos)"
+    awk -v a="${v}" 'BEGIN{exit !(a>0.2)}' && { moved=1; still=0; } || still=$((still + 1))
+    if [[ "${st}" == "3" ]]; then
+      say "ARRIVED (route_state=3)."
+      break
+    fi
+    if ((moved && still >= 4)); then
+      say "vehicle stopped and stayed stopped — treating the mission as finished."
+      break
+    fi
+  done
+
+  say "leaving autonomous (stop mode) before the planner goes quiet…"
+  in_autoware "timeout 15 ros2 service call /api/operation_mode/change_to_stop \
+    autoware_adapi_v1_msgs/srv/ChangeOperationMode {}" >/dev/null 2>&1 || true
+
+  if ((moved)); then
+    say "DRIVING MISSION OK — peak speed ${vmax} m/s, final pos $(ego_pos)"
+    say "  NOTE: parking ~5 m short of the requested goal is EXPECTED and is not an"
+    say "  island fault: the planner zeroes its trajectory velocity a stop-margin"
+    say "  before the goal, so the island's departure check (stop point > 0.5 m"
+    say "  ahead) correctly holds. route_state therefore stays SET, not ARRIVED."
+  else
+    die "vehicle never moved — island log: ${FVP_LOG}"
+  fi
+}
+if ((DO_DRIVE)); then
+  drive_mission
 fi
 
 # ---- verify the closed loop ----

@@ -262,7 +262,34 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
         `asi-rviz` container tripped duplicated_node_checker and
         blocked autonomous until stopped; `service_log_checker` then
         stays latched red with the failure history (cosmetic, but
-        confusing — it records every refused mode change).
+        confusing — it records every refused mode change). Same trap
+        bites DEBUG PROBES: two `rclpy` probe nodes sharing a name
+        (mine, left running) reproduce the identical block, and
+        `pkill` from the host does not reach them — kill inside the
+        container's PID namespace (`docker exec … kill`).
+- [x] **`scripts/run-tap-demo.sh --drive` — the driving mission is now
+      one command (2026-08-24).** The pre-existing seed path only ever
+      exercised the emergency-stop loop; `--drive` does the three
+      things a driving mission actually needs (lane-consistent spawn,
+      route via ADAPI `set_route_points` rather than the bare goal
+      topic, and `change_to_stop` the moment the mission ends, before
+      the planner goes quiet and the host MRM defect fires). Verified
+      end-to-end at pin `14e484fe0` with the safety fix in: island
+      drives the route, tracks it (lateral offset 0.25 m → 0.00 m),
+      peaks 2.14 m/s, stops cleanly. Post-mission control-cmd rate
+      6.7 Hz measured with the mission finished (the ~9.7 Hz figure
+      above is mid-drive).
+      **Parking ~5 m short of the requested goal is NOT an island
+      fault** — an instrumented probe (ego pose + nearest trajectory
+      index + arc distance to the first zero-velocity point + island
+      command, 2 Hz) shows the planner zeroes its trajectory velocity
+      a stop-margin ahead of the goal: at the park the stop point sits
+      0.26 m ahead while the goal is 5.35 m further, and the island's
+      departure check needs > 0.5 m. No behaviour module reports a
+      velocity factor, so it is the smoother's stop margin, not a
+      crosswalk/stop line. Consequence: ADAPI `route_state` stays SET
+      and never reaches ARRIVED, which is why an arrival-keyed demo
+      assertion would be wrong here.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 
