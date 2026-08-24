@@ -230,7 +230,8 @@ say "provisioning FreeRTOS kernel + nros-launch-resolve…"
        --manifest-path packages/cli/nros-launch-resolve/Cargo.toml )
 ln -sf "${ROOT}/modules/nros/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
        "${ROOT}/modules/nros/packages/cli/target/release/nros-launch-resolve"
-rustup target add aarch64-unknown-none
+rustup target add aarch64-unknown-none   # Zephyr FVP lane
+rustup target add armv8r-none-eabihf     # freertos-s32z2 lane (Cortex-R52 cross profile)
 [[ -d "${ROOT}/modules/lang/rust" ]] || \
   die "zephyr-lang-rust module missing at modules/lang/rust — run west update."
 
