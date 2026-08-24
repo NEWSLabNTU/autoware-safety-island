@@ -110,6 +110,11 @@ private:
   bool has_odometry_ = false;
   bool has_steering_ = false;
   bool has_accel_ = false;
+  // ASI safety hardening (2026-08-24): receipt time of the last trajectory.
+  // A trajectory older than timeout_thr_sec_ is treated as NOT READY —
+  // without this the controller re-processes the last sample forever after
+  // the planner stops (route cleared), including degenerate arrival slivers.
+  double last_trajectory_time_ = 0.0;
   bool has_operation_mode_ = true;
 
   // Phase 4 (RFC-0047) — the control timer runs in its OWN callback group so
@@ -160,6 +165,14 @@ private:
 
   //
   void publishControlCommand(const trajectory_follower::LongitudinalOutput & lon_out, const trajectory_follower::LateralOutput & lat_out);
+  // ASI safety hardening (2026-08-24): the island's fallback output path.
+  // makeSafeStopCommand() builds the braking command used whenever a real one
+  // cannot be computed (missing/stale inputs, non-finite controller output);
+  // publishSafeStopCommand() emits it; emitControlCommand() is the single
+  // DDS/CAN egress both the normal and the fallback path go through.
+  ControlMsg makeSafeStopCommand();
+  void publishSafeStopCommand();
+  void emitControlCommand(const ControlMsg & out);
 
   //
   void publishProcessingTime(
@@ -257,6 +270,11 @@ private:
   bool has_odometry_ = false;
   bool has_steering_ = false;
   bool has_accel_ = false;
+  // ASI safety hardening (2026-08-24): receipt time of the last trajectory.
+  // A trajectory older than timeout_thr_sec_ is treated as NOT READY —
+  // without this the controller re-processes the last sample forever after
+  // the planner stops (route cleared), including degenerate arrival slivers.
+  double last_trajectory_time_ = 0.0;
   bool has_operation_mode_ = true;
 
   // Publishers
@@ -299,6 +317,14 @@ private:
 
   //
   void publishControlCommand(const trajectory_follower::LongitudinalOutput & lon_out, const trajectory_follower::LateralOutput & lat_out);
+  // ASI safety hardening (2026-08-24): the island's fallback output path.
+  // makeSafeStopCommand() builds the braking command used whenever a real one
+  // cannot be computed (missing/stale inputs, non-finite controller output);
+  // publishSafeStopCommand() emits it; emitControlCommand() is the single
+  // DDS/CAN egress both the normal and the fallback path go through.
+  ControlMsg makeSafeStopCommand();
+  void publishSafeStopCommand();
+  void emitControlCommand(const ControlMsg & out);
 
   //
   void publishProcessingTime(

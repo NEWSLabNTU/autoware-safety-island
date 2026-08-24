@@ -32,6 +32,7 @@ using namespace common::logger;
 #include "controller_pkg/node_identity.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -193,6 +194,7 @@ void Controller::on_trajectory(const TrajectoryMsg_Raw& msg) {
   // for any future reader).
   current_trajectory_.header.frame_id = nullptr;
   has_trajectory_ = true;
+  last_trajectory_time_ = Clock::now();
 }
 
 Controller::LateralControllerMode Controller::getLateralControllerMode(
@@ -229,6 +231,13 @@ bool Controller::processData()
   }
   if (!has_trajectory_) {
     logData("trajectory");
+    is_ready = false;
+  } else if ((Clock::now() - last_trajectory_time_) > timeout_thr_sec_) {
+    // ASI safety hardening (2026-08-24): a silent planner must not leave the
+    // island tracking its last sample forever (degenerate arrival slivers
+    // included). Withhold commands; the vehicle gate's own timeout then owns
+    // the stop.
+    logData("fresh trajectory");
     is_ready = false;
   }
   if (!has_odometry_) {
@@ -287,7 +296,14 @@ void Controller::callbackTimerControl()
   // 1. create input data
   const auto input_data = createInputData();
   if (!input_data) {
-    log_info_throttle("Control is skipped since input data is not ready.");
+    // ASI safety hardening (phase-4 driving re-baseline defect, 2026-08-24):
+    // SILENCE IS NOT SAFE. Publishing nothing leaves whatever the island last
+    // emitted latched in the vehicle gate / actuator — observed as a
+    // full-steer, max-speed circle after the planner went quiet. A safety
+    // island that cannot compute a command must SAY SO by commanding a stop,
+    // every cycle, for as long as its inputs are missing or stale.
+    log_info_throttle("Inputs not ready — commanding safe stop.");
+    publishSafeStopCommand();
     return;
   }
 
@@ -374,6 +390,57 @@ void Controller::publishControlCommand(
   out.lateral.stamp = out.stamp;
   out.longitudinal = lon_out.control_cmd;
 
+  // ASI safety hardening (phase-4 driving re-baseline defect, 2026-08-24):
+  // a non-finite command NEVER leaves the island. NaN escaped the controller
+  // internals once (ego past trajectory end -> interpolation NaN) and the
+  // failure direction was +accel, not stop. Last line of defense: replace a
+  // non-finite command with the safe-stop profile and say so.
+  if (!std::isfinite(out.longitudinal.velocity) ||
+      !std::isfinite(out.longitudinal.acceleration) ||
+      !std::isfinite(out.lateral.steering_tire_angle) ||
+      !std::isfinite(out.lateral.steering_tire_rotation_rate)) {
+    log_error("Non-finite control command blocked (vel %f acc %f steer %f rate %f) — "
+              "substituting safe stop",
+              (double)out.longitudinal.velocity, (double)out.longitudinal.acceleration,
+              (double)out.lateral.steering_tire_angle,
+              (double)out.lateral.steering_tire_rotation_rate);
+    out = makeSafeStopCommand();
+  }
+
+  emitControlCommand(out);
+}
+
+// The braking command the island falls back to whenever it cannot compute a
+// real one: hold the last MEASURED steering angle (never a computed one, which
+// is what may be corrupt), zero velocity, firm decel. Deliberately a full
+// command and not silence — see callbackTimerControl.
+ControlMsg Controller::makeSafeStopCommand()
+{
+  ControlMsg out{};
+  out.stamp = Clock::toRosTime(Clock::now());
+  const float held_steer = std::isfinite(current_steering_.steering_tire_angle)
+                             ? current_steering_.steering_tire_angle : 0.0f;
+  out.lateral.stamp = out.stamp;
+  out.lateral.steering_tire_angle = held_steer;
+  out.lateral.steering_tire_rotation_rate = 0.0f;
+  out.lateral.is_defined_steering_tire_rotation_rate = true;
+  out.longitudinal.stamp = out.stamp;
+  out.longitudinal.velocity = 0.0f;
+  out.longitudinal.acceleration = -2.5f;
+  out.longitudinal.is_defined_acceleration = true;
+  out.longitudinal.is_defined_jerk = false;
+  return out;
+}
+
+void Controller::publishSafeStopCommand()
+{
+  ControlMsg out = makeSafeStopCommand();
+  emitControlCommand(out);
+}
+
+void Controller::emitControlCommand(const ControlMsg & out)
+{
+
   if (common::can::output_mode_uses_dds(output_mode_)) {
     if (control_cmd_pub_.publish(out).ok()) {
       log_debug("Control command published over DDS");
@@ -433,6 +500,7 @@ using namespace common::logger;
 #include "platform/platform_threading.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -614,6 +682,7 @@ void Controller::callbackTrajectory(const TrajectoryMsg_Raw* msg, void* arg) {
   // is currently disabled, but this keeps the field safe for any future reader).
   controller->current_trajectory_.header.frame_id = nullptr;
   controller->has_trajectory_ = true;
+  controller->last_trajectory_time_ = Clock::now();
 }
 
 Controller::LateralControllerMode Controller::getLateralControllerMode(
@@ -650,6 +719,13 @@ bool Controller::processData()
   }
   if (!has_trajectory_) {
     logData("trajectory");
+    is_ready = false;
+  } else if ((Clock::now() - last_trajectory_time_) > timeout_thr_sec_) {
+    // ASI safety hardening (2026-08-24): a silent planner must not leave the
+    // island tracking its last sample forever (degenerate arrival slivers
+    // included). Withhold commands; the vehicle gate's own timeout then owns
+    // the stop.
+    logData("fresh trajectory");
     is_ready = false;
   }
   if (!has_odometry_) {
@@ -708,7 +784,14 @@ void Controller::callbackTimerControl()
   // 1. create input data
   const auto input_data = createInputData();
   if (!input_data) {
-    log_info_throttle("Control is skipped since input data is not ready.");
+    // ASI safety hardening (phase-4 driving re-baseline defect, 2026-08-24):
+    // SILENCE IS NOT SAFE. Publishing nothing leaves whatever the island last
+    // emitted latched in the vehicle gate / actuator — observed as a
+    // full-steer, max-speed circle after the planner went quiet. A safety
+    // island that cannot compute a command must SAY SO by commanding a stop,
+    // every cycle, for as long as its inputs are missing or stale.
+    log_info_throttle("Inputs not ready — commanding safe stop.");
+    publishSafeStopCommand();
     return;
   }
 
@@ -794,6 +877,57 @@ void Controller::publishControlCommand(
   out.lateral.is_defined_steering_tire_rotation_rate = lat_out.control_cmd.is_defined_steering_tire_rotation_rate;
   out.lateral.stamp = out.stamp;
   out.longitudinal = lon_out.control_cmd;
+
+  // ASI safety hardening (phase-4 driving re-baseline defect, 2026-08-24):
+  // a non-finite command NEVER leaves the island. NaN escaped the controller
+  // internals once (ego past trajectory end -> interpolation NaN) and the
+  // failure direction was +accel, not stop. Last line of defense: replace a
+  // non-finite command with the safe-stop profile and say so.
+  if (!std::isfinite(out.longitudinal.velocity) ||
+      !std::isfinite(out.longitudinal.acceleration) ||
+      !std::isfinite(out.lateral.steering_tire_angle) ||
+      !std::isfinite(out.lateral.steering_tire_rotation_rate)) {
+    log_error("Non-finite control command blocked (vel %f acc %f steer %f rate %f) — "
+              "substituting safe stop",
+              (double)out.longitudinal.velocity, (double)out.longitudinal.acceleration,
+              (double)out.lateral.steering_tire_angle,
+              (double)out.lateral.steering_tire_rotation_rate);
+    out = makeSafeStopCommand();
+  }
+
+  emitControlCommand(out);
+}
+
+// The braking command the island falls back to whenever it cannot compute a
+// real one: hold the last MEASURED steering angle (never a computed one, which
+// is what may be corrupt), zero velocity, firm decel. Deliberately a full
+// command and not silence — see callbackTimerControl.
+ControlMsg Controller::makeSafeStopCommand()
+{
+  ControlMsg out{};
+  out.stamp = Clock::toRosTime(Clock::now());
+  const float held_steer = std::isfinite(current_steering_.steering_tire_angle)
+                             ? current_steering_.steering_tire_angle : 0.0f;
+  out.lateral.stamp = out.stamp;
+  out.lateral.steering_tire_angle = held_steer;
+  out.lateral.steering_tire_rotation_rate = 0.0f;
+  out.lateral.is_defined_steering_tire_rotation_rate = true;
+  out.longitudinal.stamp = out.stamp;
+  out.longitudinal.velocity = 0.0f;
+  out.longitudinal.acceleration = -2.5f;
+  out.longitudinal.is_defined_acceleration = true;
+  out.longitudinal.is_defined_jerk = false;
+  return out;
+}
+
+void Controller::publishSafeStopCommand()
+{
+  ControlMsg out = makeSafeStopCommand();
+  emitControlCommand(out);
+}
+
+void Controller::emitControlCommand(const ControlMsg & out)
+{
 
   if (common::can::output_mode_uses_dds(output_mode_)) {
     if (control_cmd_pub_ && control_cmd_pub_->publish(out)) {

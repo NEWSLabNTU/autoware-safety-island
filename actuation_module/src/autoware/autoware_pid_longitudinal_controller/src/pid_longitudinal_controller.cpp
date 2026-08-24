@@ -330,13 +330,20 @@ PidLongitudinalController::ControlData PidLongitudinalController::getControlData
   // check if the deviation is worth emergency
   m_diagnostic_data.trans_deviation =
     autoware::universe_utils::calcDistance2d(current_interpolated_pose.first, current_pose);
+  // ASI safety hardening (phase-4 driving re-baseline defect, 2026-08-24):
+  // spelled as !(dev <= thresh) so a NaN deviation routes to the EMERGENCY
+  // branch. When ego passes the trajectory end, the interpolated pose comes
+  // from calcLongitudinalOffsetToSegment's NaN path; the upstream
+  // `thresh < dev` spelling is false for NaN, which let the controller keep
+  // "driving" on NaN-poisoned data (observed as a full-throttle runaway in
+  // the planning-sim loop).
   const bool is_dist_deviation_large =
-    m_state_transition_params.emergency_state_traj_trans_dev < m_diagnostic_data.trans_deviation;
+    !(m_diagnostic_data.trans_deviation <= m_state_transition_params.emergency_state_traj_trans_dev);
   m_diagnostic_data.rot_deviation = std::abs(autoware::universe_utils::normalizeRadian(
     autoware::universe_utils::getYaw(current_interpolated_pose.first.pose.orientation) -
     autoware::universe_utils::getYaw(current_pose.orientation)));
   const bool is_yaw_deviation_large =
-    m_state_transition_params.emergency_state_traj_rot_dev < m_diagnostic_data.rot_deviation;
+    !(m_diagnostic_data.rot_deviation <= m_state_transition_params.emergency_state_traj_rot_dev);
 
   if (is_dist_deviation_large || is_yaw_deviation_large) {
     // return here if nearest index is not found

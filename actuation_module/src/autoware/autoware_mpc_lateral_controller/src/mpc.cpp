@@ -305,14 +305,17 @@ std::pair<ResultWithReason, MPCData> MPC::getData(
 
   // check error limit
   const double dist_err = calcDistance2d(current_pose, data.nearest_pose);
-  if (dist_err > m_admissible_position_error) {
+  // ASI safety hardening (2026-08-24): spelled as !(err <= limit) so a NaN
+  // error (ego past trajectory end -> interpolation NaN) fails the check
+  // instead of slipping past it — same class as the PID deviation guard.
+  if (!(dist_err <= m_admissible_position_error)) {
     return {ResultWithReason{false, "too large position error"}, MPCData{}};
   }
 
   log_debug("MPC: Position Error Checked");
 
-  // check yaw error limit
-  if (std::fabs(data.yaw_err) > m_admissible_yaw_error_rad) {
+  // check yaw error limit (NaN-safe spelling, see position check above)
+  if (!(std::fabs(data.yaw_err) <= m_admissible_yaw_error_rad)) {
     return {ResultWithReason{false, "too large yaw error"}, MPCData{}};
   }
 

@@ -50,7 +50,12 @@ require_marker "${log}" "Actuation Safety Island is Live"
 # node; this marker asserts launch-param seeding works end-to-end. The CAN
 # path is exercised by the Zephyr lane's can-output-test phase.
 require_marker "${log}" "Control command output mode: DDS_ONLY"
-require_marker "${log}" "Control is skipped since input data is not ready"
+# The control loop is spinning with no upstream Autoware to feed it, so it
+# takes the not-ready path every cycle. Since the 2026-08-24 safety hardening
+# that path COMMANDS A SAFE STOP rather than publishing nothing (silence let a
+# stale command stay latched downstream) — this marker asserts both that the
+# loop runs and that the fallback output path is the one it takes.
+require_marker "${log}" "Inputs not ready — commanding safe stop"
 echo "Controller smoke OK: boot markers + control-loop spin observed"
 
 echo "FreeRTOS POSIX (nano-ros) runtime validation OK"

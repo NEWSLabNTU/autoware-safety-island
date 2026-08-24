@@ -41,9 +41,13 @@ BOOT_TIMEOUT_S=120
 #   /initialpose  x 3714.44 y 73753.15  ori z 0.25 w 0.968   (on-lane, lane heading)
 #   ros2 service call /api/routing/set_route_points ... goal x 3730.2 y 73761.8
 #   ros2 service call /api/operation_mode/change_to_autonomous ...
-# Keep missions >= ~15 m: a goal reached while still moving hands the island
-# a duplicate-point arrival trajectory (NaN runaway — phase-4 driving
-# re-baseline note, open defect).
+# Expect a HOST-side runaway after arrival: when the planner stops publishing
+# on goal arrival, Autoware's trajectory rate check errors, MRM engages, and
+# this image's mrm_emergency_stop_operator ramps the WRONG way (its command
+# diverges; vehicle_cmd_gate clamps it to 25 m/s / +4 m/s² and the sim runs
+# away). The island keeps commanding a safe stop throughout — see the
+# phase-4 driving re-baseline note. Re-seed the pose or change_to_stop to
+# recover.
 INITIALPOSE='{header: {frame_id: map}, pose: {pose: {position: {x: 3722.16, y: 73723.1, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}}'
 GOALPOSE='{header: {frame_id: map}, pose: {position: {x: 3715.9, y: 73752.5, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}'
 

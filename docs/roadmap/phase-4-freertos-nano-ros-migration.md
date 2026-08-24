@@ -207,22 +207,57 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
         leave ADAPI route_state UNSET, which reds
         `component_state_diagnostics: route_state` and blocks
         autonomous — route via ADAPI, not the bare topic.
-      * **NEW SAFETY DEFECT (open, pre-hardware blocker): NaN runaway
-        on degenerate trajectory.** Mission 2 (10 m goal) reached the
-        goal area still moving; the planner's arrival-hold trajectory
-        carries duplicate points; the island's
-        `calcLongitudinalOffsetToSegment` returns NaN (throttled spam
-        in the log) and the longitudinal path drove the sim vehicle to
-        its 50 m/s clamp, ~1 km past the goal, until a host-side
-        change_to_stop braked it. Mission 1 escaped only because the
-        island latched Keep-STOPPED before the trajectory degenerated.
-        Fix needed in the island (not upstream): NaN guard at the
-        MPC/PID trajectory ingest + a sane output clamp — a hardware
-        island MUST fail to e-stop here, never to +accel. Second,
-        smaller finding: the island keeps re-processing the last
-        trajectory forever after the route is cleared (NaN spam
-        persists until reboot) — input invalidation on route clear
-        belongs in the same fix.
+      * **Post-arrival runaway — ATTRIBUTION CORRECTED 2026-08-24.**
+        First written up here as an island NaN defect ("the island's
+        longitudinal path drove the vehicle to its 50 m/s clamp").
+        That was WRONG, and an instrumented re-run
+        (`/api/fail_safe/mrm_state` + hazard_status + both command
+        topics + odometry on one timeline) shows the real chain, all
+        of it HOST-side:
+          1. island drives the mission and stops at the goal — its
+             command equals the gate's output sample-for-sample the
+             whole way (max 2.22 m/s / +0.57 m/s²);
+          2. on arrival the PLANNER stops publishing
+             `/planning/scenario_planning/trajectory` (frozen at 248
+             samples in the capture);
+          3. `/autoware/planning/topic_rate_check/trajectory` goes
+             ERROR ⇒ hazard level 3, emergency;
+          4. MRM engages (`mrm_state` 1→2→3, behavior 2) and
+             `mrm_emergency_stop_operator` publishes a DIVERGING
+             command on `/system/emergency/control_cmd` — velocity
+             climbing through 5×10⁵ m/s with acceleration ~+1.9×10³,
+             i.e. its ramp integrates the wrong way;
+          5. `vehicle_cmd_gate` takes the emergency source (it
+             outranks the island), clamps to its own limits — 25 m/s,
+             +4 m/s² — and the simulator integrates to its 50 m/s
+             clamp.
+        Throughout step 5 the island keeps commanding 0.0 m/s at
+        −2.5 m/s². The island was never in the runaway loop; this is
+        an Autoware-side MRM defect in the demo image, and the
+        island-side lesson is only that a stopped island must keep
+        SAYING stop (below).
+      * **Island hardening landed anyway (justified on its own).**
+        The NaN was real even though the runaway was not ours: after
+        arrival the island re-processed the planner's degenerate
+        last trajectory forever, `calcLongitudinalOffsetToSegment`
+        spamming NaN until reboot. Three changes, verified against
+        the reproduced event (zero NaN lines, island held 0.0/−2.5
+        for the whole emergency):
+          1. NaN-safe threshold spellings — `!(dev <= limit)` instead
+             of `limit < dev` in the PID deviation guard and the MPC
+             position/yaw guards, so a NaN error routes to EMERGENCY
+             instead of slipping past a comparison that is false for
+             NaN;
+          2. trajectory FRESHNESS: a trajectory older than
+             `timeout_thr_sec` is not ready, so a silent planner can
+             no longer keep the island tracking a stale sliver;
+          3. **silence is not safe** — when inputs are missing or
+             stale, or a computed command is non-finite, the island
+             now PUBLISHES an explicit safe stop (hold last measured
+             steering, v=0, −2.5 m/s²) every cycle instead of
+             returning without publishing. The old behaviour left
+             whatever it last emitted latched downstream, which is
+             the one way an island can cause a runaway.
       * Hygiene reconfirmed (the item-5 lesson): a 3-day-old
         `asi-rviz` container tripped duplicated_node_checker and
         blocked autonomous until stopped; `service_log_checker` then
