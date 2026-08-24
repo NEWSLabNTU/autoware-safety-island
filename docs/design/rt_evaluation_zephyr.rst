@@ -129,12 +129,14 @@ backend. This is the only in-tree route that produces a real, per-event
   shows DDS RX/TX bracketing directly against the control timer's slice,
   without instrumenting nano-ros at all.
 
-**Why the thread names are useful.** nano-ros creates real, named Zephyr
-threads for its RT tiers — ``nros_zephyr_tier_task_create()`` in
+**Thread names — with a caveat measured later.** nano-ros names its RT *tier*
+threads: ``nros_zephyr_tier_task_create()`` in
 ``modules/nros/zephyr/nros_platform_zephyr_shims.c:445`` calls
 ``k_thread_create()`` at the tier's raw priority and then
-``k_thread_name_set(tid, name)``. So ``[tiers.control]`` shows up in the trace
-under its authored name, not as an anonymous TID.
+``k_thread_name_set(tid, name)``. Its *generic* pool threads get no name, and
+on the FVP controller build those are the only ones that exist — see
+`Capturing the real control loop`_. Expect ``unknown`` rows unless the tier
+model is active.
 
 **Configuration:**
 
@@ -462,6 +464,85 @@ the image stalls at ``Waiting for DHCP to get IP address...`` and never
 reaches "Starting Controller Node", so no nano-ros tier threads or
 ``timer_start`` events appear. Reaching the control timer needs the TAP
 profile (``scripts/setup-tap.sh``, which needs root).
+
+
+Capturing the real control loop
+===============================
+
+The findings above came from the DDS-loopback workload. The controller lane
+itself needs the TAP profile, and this is what it shows.
+
+Getting there: ``sudo scripts/setup-tap.sh`` once, then
+``scripts/sntp-server.py`` must be running on 192.168.10.1:12123 — the image
+blocks on SNTP (``Setting time using SNTP...``) and gives up after ~11 s
+without it, never reaching the controller. With it, the node comes up:
+
+.. code-block:: text
+
+   Time set using SNTP: Mon Aug 24 03:18:08 2026
+   Starting Controller Node...
+   Controller Node Started
+   Actuation Safety Island is Live
+   Control is skipped since input data is not ready.
+
+Capture: 81398684 bytes, **6545980 events, 0 skipped, 0 trailing**, only 68 WFI
+counter jumps (the system is busy rather than idle, so the WFI problem that
+dominates an idle capture barely appears here).
+
+**The executor wakes every 6 ms, not every 30 ms.**
+
+.. code-block:: text
+
+   main dispatches:     59635
+   inter-dispatch ms:   min 0.164   p50 6.0000   p90 6.0007   p99 7.0   max 1000.8
+   gaps in 25-35 ms:    0
+   main slice ms:       p50 0.669   p99 1.031   max 62.102
+
+The bringup declares ``ctrl_period=0.03``, but there is no 30 ms cadence
+anywhere in the thread timeline — not one inter-dispatch gap falls in a
+25–35 ms window. The executor thread wakes on a fixed 6.000 ms period, roughly
+166 Hz, and each wake does about 0.67 ms of work. That is five wakes per
+control period.
+
+Read this carefully, because the trace does **not** say the control callback
+runs at 6 ms. Callbacks execute inside a wake, as ordinary function calls, so
+thread-level tracing cannot see their boundaries. What the trace establishes is
+the *executor's* cadence and cost; relating that to the control period needs
+either a kernel timer (see below) or application-level instrumentation.
+
+**The control period is not driven by a Zephyr timer.** ``CONFIG_TRACING_TIMER``
+is enabled and the capture contains **zero** ``timer_start`` events. nano-ros
+paces its executor itself rather than through ``k_timer``, so the timer event
+family — which this document previously recommended as the way to separate a
+mis-armed period from a mis-delivered one — yields nothing on this lane. That
+technique needs a kernel timer to observe, and there isn't one.
+
+**No real-time tier threads are present.** Every thread the image creates:
+
+.. code-block:: text
+
+   asi_thread_stats   stack 16384    (this repo's statistics reporter)
+   7 x "unknown"      stack 32768    (nano-ros generic pool)
+
+The 32768-byte stacks are ``NROS_ZEPHYR_STACK_SIZE``, nano-ros's generic
+thread pool. The tier pool is ``NROS_ZEPHYR_TIER_STACK_SIZE``, 16384, and
+nothing in the image uses it — so the phase-4 ``[tiers.control]`` model, which
+moved the control timer into its own callback group bound to a real-time tier,
+is **not active on this Zephyr FVP build**. The controller runs its executor on
+``main``. Whether that is a build-configuration gap or intended for this lane
+is worth settling; the phase-4 notes describe the tier model as applying to
+both lanes.
+
+That also corrects something this document claimed earlier. Tier threads are
+named — ``nros_zephyr_tier_task_create()`` calls ``k_thread_name_set()`` — but
+the *generic* pool threads are not, and those are the ones that exist here.
+They appear in the timeline as ``unknown`` and can only be told apart by
+thread id and stack base. Naming them upstream would make a control-loop
+timeline substantially more readable.
+
+**Longest slice.** ``main`` shows a 62.1 ms worst contiguous slice against a
+0.67 ms median. Worth attention if the 30 ms period matters, though note the
+capture ran without a planner attached, so this is not a loaded-system figure.
 
 
 Caveats read out of the source
