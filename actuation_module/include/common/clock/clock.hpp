@@ -12,16 +12,9 @@ using namespace common::logger;
 
 // Msgs — dual-mode (phase 3 W1): nros-cpp generated types on the Zephyr
 // build, CycloneDDS idlc C structs on the FreeRTOS platforms.
-#ifdef ASI_USE_NANO_ROS
 #include "builtin_interfaces.hpp"
 using TimeMsg = builtin_interfaces::msg::Time;
 using DurationMsg = builtin_interfaces::msg::Duration;
-#else
-#include "Time.h"
-#include "Duration.h"
-using TimeMsg = builtin_interfaces_msg_Time;
-using DurationMsg = builtin_interfaces_msg_Duration;
-#endif
 
 class Clock {
 public:

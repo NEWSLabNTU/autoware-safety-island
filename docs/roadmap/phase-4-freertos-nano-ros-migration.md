@@ -452,9 +452,16 @@ ASI-side work breakdown (ordered; 1-3 can start before hardware):
        domain-2 participant + controller live), then the 30 ms tier +
        launch-seeded params (0745 chain) — the legacy lane ran 150 ms
        compiled defaults.
-6. [ ] Retire the legacy lane = phase-5 W3 (whole `freertos_s32z2/`
-       legacy set, `cyclonedds/` submodule + fork branch, `msg/*.idl`,
-       idlc CMake branch, dual-mode gates W4) in one commit.
+6. [x] Retire the legacy lane = phase-5 W3 (2026-08-24, DONE AHEAD OF
+       item 5 by owner decision — hardware smoke deferred, no board on
+       hand; the legacy baseline remains on `main` and in history).
+       Whole `freertos_s32z2/` legacy set, `cyclonedds/` submodule,
+       `msg/*.idl` + idlc CMake branch, and the W4 dual-mode gates went
+       in one commit. The survivors the nros lane still consumes
+       (lwip_bringup.c, ethif_shim.c, vendor_patched patches,
+       s32ct_config submodule, README) moved into
+       `src/s32z2_board_glue/`; everything the board bundle already
+       provides died, per the phase-5 2026-08-25 inventory audit.
 
 Acceptance: S32Z2 image builds via nano-ros from a clean checkout with
 only NXP-licensed pieces provisioned locally; on-target smoke parity

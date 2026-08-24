@@ -9,7 +9,7 @@
 //
 // During the migration window both headers coexist. ASI's
 // platform/zephyr/zephyr_network.h includes whichever one matches the
-// chosen build path (CMake selects via ASI_USE_NANO_ROS).
+// chosen build path.
 
 #ifndef COMMON__NET__NETWORK_CONFIG_HPP_
 #define COMMON__NET__NETWORK_CONFIG_HPP_

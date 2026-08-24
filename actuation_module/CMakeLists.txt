@@ -37,8 +37,6 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
   if(NOT DEFINED NROS_RMW)
     set(NROS_RMW cyclonedds)
   endif()
-  add_compile_definitions(ASI_USE_NANO_ROS=1)
-
   set(_asi_freertos_subdirs
       src/autoware/autoware_msgs
       src/controller_pkg)
@@ -51,7 +49,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
         src/freertos_s32z2_entry)
 
     # Two hardware-proven remedies carried over from the legacy lane
-    # (freertos_s32z2/CMakeLists.txt), both cross-only:
+    # (the retired legacy lane), both cross-only:
     #
     # (1) Eigen 3.4 psincos on arm-none-eabi ILP32: newlib types int32_t as
     #     `long`, so Eigen's NEON integer-packet specialisations (keyed on
@@ -62,7 +60,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     find_package(Patch REQUIRED)
     set(_eigen_patched_dir ${CMAKE_BINARY_DIR}/eigen-patched)
     set(_eigen_patch
-        ${CMAKE_CURRENT_SOURCE_DIR}/freertos_s32z2/vendor_patched/eigen-psincos-int32.patch)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/s32z2_board_glue/vendor_patched/eigen-psincos-int32.patch)
     if(NOT EXISTS ${_eigen_patched_dir}/.patched)
       file(REMOVE_RECURSE ${_eigen_patched_dir})
       file(COPY ${EIGEN3_INCLUDE_DIR}/Eigen DESTINATION ${_eigen_patched_dir})
@@ -143,9 +141,6 @@ endif()
 project(actuation_module)
 include(GNUInstallDirs)
 set(PLATFORM_ZEPHYR ON)
-# Phase 3 W1 — select the nros side of the dual-mode messages.hpp umbrella
-# (the FreeRTOS platforms build without this define and take the idlc side).
-add_compile_definitions(ASI_USE_NANO_ROS=1)
 target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 
 # nano-ros nros-cpp is the sole build path post-Phase 1.3/1.4 cleanup.

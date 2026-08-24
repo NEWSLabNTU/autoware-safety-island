@@ -42,13 +42,14 @@ FixedSequence capacity). Landed:
       orphaned `.git/modules/freertos-kernel` object store (130 MB) and the
       stale `submodule.freertos-kernel.url` entry in `.git/config` — `rm -rf`
       on the working tree alone leaves both behind.
-- [ ] `cyclonedds/` (24 MB, fork `freertos-s32z2` branch) — last consumer is
-      the legacy `freertos-s32z2` lane (W3). Removed together with it.
-- [~] `actuation_module/freertos_s32z2/s32ct_config` — S32 Config Tools
-      output (pinmux/clocks). KEPT: likely reusable by the phase-4 W5.b nros
-      S32Z2 lane; decide when that lane lands.
+- [x] `cyclonedds/` (24 MB, fork `freertos-s32z2` branch) — removed with W3
+      (2026-08-24). CI workflows no longer init it; the release lane's
+      CycloneDDS build cache step is gone.
+- [~] s32ct_config — S32 Config Tools output (pinmux/clocks). KEPT, moved
+      to `actuation_module/src/s32z2_board_glue/s32ct_config` with W3; the
+      W5.b hardware session decides its final shape.
 
-## W3 — legacy freertos-s32z2 lane  [~]
+## W3 — legacy freertos-s32z2 lane  [x]
 
 `actuation_module/freertos_s32z2/` (208 KB) + `build.sh`'s
 `freertos-s32z2-legacy` target + `build_cyclonedds_host()` +
@@ -82,42 +83,45 @@ gained a second consumer: `src/s32z2_board_glue/` delegates its strong
 netif overrides to them — retirement (this W3) subsumes moving what the
 glue keeps into that package.
 
-KEPT until phase-4 W5.b (nros freertos S32Z2 lane: nano-ros phase-372 board
-bundle + hardware) reaches boot parity — it is the only S32Z2 build this
-branch has.
+RETIRED 2026-08-24 in one commit (with W2's `cyclonedds/`), AHEAD of the
+W5.b hardware-parity gate by owner decision (no board on hand; item 5 is
+deferred and the legacy baseline stays on `main`). Executed as the
+2026-08-25 audit table prescribes: the survivors moved into
+`src/s32z2_board_glue/` — `board/lwip_bringup.c`, `board/ethif_shim.c`,
+`vendor_patched/` (eigen + port.c patches, plus eth_port.c.patch for the
+NETC RX path; provision-nxp-freertos.sh and the root CMakeLists
+eigen-patch path retargeted), README.md, and the s32ct_config submodule —
+and everything the nros board bundle already provides died. build.sh lost
+the `freertos-s32z2-legacy` platform, `build_cyclonedds_host()`, and the
+`--dds-interface`/`--control-output` flags (legacy-only consumers).
 
-**A board is not the only way to reach that parity** (scoped 2026-08-26 in
-`phase-6-emulated-r52-lane.md`): QEMU's `mps3-an536` is a dual Cortex-R52
-machine with the same `lan9118` NIC nano-ros already drives, so an emulated
-R52 lane could carry the SOFTWARE half of the proof — scheduler, GIC/tick,
-lwIP, Cyclone, the controller — leaving only NETC, PBcfg, the licensed
-CR52_GIC port and flash/boot bench-gated. If that lane lands, W3/W4 split:
-the second controller implementation and the vendored Cyclone can go, while
-phase-5 W3's hardware-specific survivors stay listed as bench-gated. The moment W5.b boots on the board, this whole set goes in one
-commit (and W2's `cyclonedds/` with it). The concrete W5.b work breakdown
+**The deferred item-5 parity need not wait for a board** (scoped
+2026-08-26 in `phase-6-emulated-r52-lane.md`): QEMU's `mps3-an536` is a
+dual Cortex-R52 machine with the same `lan9118` NIC nano-ros already
+drives, so an emulated R52 lane can carry the SOFTWARE half of the proof —
+scheduler, GIC/tick, lwIP, Cyclone, the controller — leaving only NETC,
+PBcfg, the licensed CR52_GIC port and flash/boot bench-gated.
+The concrete W5.b work breakdown
+
 (6 ordered items; 1-3 pre-hardware) lives in phase-4; the upstream gap
 analysis lives in nano-ros phase-372 "Exploration findings" — headline:
 the netif seam already exists upstream, the NXP CR52 GIC kernel port stays
 consumer-provisioned (licensed + needs ASI's Thumb-resume CPSR patch), and
 the first Cyclone blocker is the stubbed lwIP multicast join.
 
-## W4 — dual-mode gates + legacy shims  [ ]
+## W4 — dual-mode gates + legacy shims  [x]
 
-- [ ] Collapse `ASI_USE_NANO_ROS` to nros-only. Re-counted 2026-08-25:
-      **7 files, 18 occurrences** — `actuation_module/CMakeLists.txt` (2,
-      both `add_compile_definitions`), `common/node/node.hpp` (4),
-      `common/clock/clock.hpp` (1), `common/net/network_config.hpp` (1),
-      `autoware_msgs/messages.hpp` (4), `controller_node.hpp` (3),
-      `controller_node.cpp` (3). The test programs are already OFF the
-      list — phase-5 W5 rewrote all four onto `nros::ComponentNode`, and
-      `node_nros.hpp` no longer exists.
-      The bulk is not the gate lines but what they guard: the legacy arm
-      of `controller_node.cpp` is **489 lines**, a second full controller
-      implementation that dies with the gate.
-      Blocked with W3: the legacy halves are what the legacy s32z2 lane
-      compiles.
-- [ ] Delete `include/common/dds/` (6 legacy CycloneDDS wrapper headers) once
-      the gates collapse.
+- [x] Collapse `ASI_USE_NANO_ROS` to nros-only (2026-08-24). The
+      2026-08-25 re-count held: **7 files, 18 occurrences** — root
+      CMakeLists (2), `node.hpp` (4), `clock.hpp` (1),
+      `network_config.hpp` (1), `messages.hpp` (4),
+      `controller_node.hpp` (3), `controller_node.cpp` (3); the test
+      programs were already off the list (phase-5 W5). The 489-line
+      legacy arm of `controller_node.cpp` — the second full controller
+      implementation — died with the gate.
+- [x] Delete `include/common/dds/` (6 legacy CycloneDDS wrapper headers) —
+      done with the gate collapse (2026-08-24). `src/main.cpp` (last
+      consumer: the legacy lane) deleted too, per the W5 audit.
 
 ## W5 — ASI plumbing replaceable by nano-ros features  [ ]
 

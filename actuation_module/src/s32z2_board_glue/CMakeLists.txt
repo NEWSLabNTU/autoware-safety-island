@@ -14,7 +14,7 @@
 #   * src/s32z2_netif_glue.c — the STRONG `nros_board_register_netif` /
 #     `nros_board_poll_netif` overrides,
 #   * the hardware-proven legacy glue it delegates to
-#     (`../../freertos_s32z2/lwip_bringup.c`, `ethif_shim.c`) plus the RTD
+#     (`board/lwip_bringup.c`, `board/ethif_shim.c` — moved here at phase-5 W3) plus the RTD
 #     driver sources + PBcfg — the exact set the legacy lane's CMake proved
 #     on the board. Wiring that set into this target is the FIRST task of
 #     the hardware bring-up session (phase-4 W5.b item 5): it needs the SDK
@@ -29,7 +29,7 @@ if(NOT DEFINED ENV{S32_RTD_PATH})
         "s32z2_board_glue: S32_RTD_PATH not set — NXP RTD glue SKIPPED. The "
         "image links against the board bundle's weak netif/tick stubs "
         "(boot will say 'no netif'). Provision the NXP SDK (see "
-        "actuation_module/freertos_s32z2/README.md) to enable the NETC path.")
+        "actuation_module/src/s32z2_board_glue/README.md) to enable the NETC path.")
     return()
 endif()
 
