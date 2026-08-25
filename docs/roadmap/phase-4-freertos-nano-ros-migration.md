@@ -523,7 +523,9 @@ bounded stamp error rather than a one-shot epoch.
 ## Remaining work and follow-ups (as of 2026-08-24)
 
 Consolidated so nothing lives only in a commit message. Phase-5 carries
-the legacy-retirement detail; this is the whole open set.
+the legacy-retirement detail, phase-6 the target-side real-time evaluation
+(`docs/roadmap/phase-6-realtime-evaluation.md`, open items in its W5/W6);
+together with the below that is the whole open set.
 
 **Hardware-gated (nothing else blocks them):**
 - W5.b item 5 — on-target smoke: wire the NXP RTD NETC sources + PBcfg into
@@ -596,6 +598,22 @@ the legacy-retirement detail; this is the whole open set.
 - [ ] The FVP idle fast-forward has no clean pacing knob; the visualisation
       rate limiter does not cover idle. Worth a look if demo timing
       fidelity ever matters beyond the clock issue above.
+
+## Continued in phase 6
+
+Target-side real-time evaluation of the Zephyr FVP lane — the CTF task
+timeline, scheduling statistics, and what they measured — is
+`docs/roadmap/phase-6-realtime-evaluation.md`. Two results there bear directly
+on this phase's rate work:
+
+- The Zephyr lane's executor wakes every 6.000 ms (`spin_period_us = 5000`
+  plus ~0.67 ms of work), and no Zephyr kernel timer is involved at all — zero
+  `timer_start` events. The timer-event technique for separating a mis-armed
+  period from a mis-delivered one does not apply here.
+- `[tiers.control.zephyr] priority = 5` outranked the DDS transport under
+  nano-ros RFC-0079's allocation and is now 9. The tier model itself was
+  always active: with one declared tier it runs on the caller thread, so the
+  absence of a tier-stack thread is expected rather than a gap.
 
 ## Non-goals
 

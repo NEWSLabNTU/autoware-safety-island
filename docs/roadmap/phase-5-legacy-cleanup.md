@@ -38,6 +38,10 @@ FixedSequence capacity). Landed:
       `build-ci.yml`/`release.yml` init lines + CLAUDE.md/AGENTS.md mentions.
       (The `nros setup --source freertos-kernel` spellings that remain are
       nano-ros's SDK source NAME, not this submodule.)
+      Working-tree copy deleted from this checkout 2026-08-25, along with the
+      orphaned `.git/modules/freertos-kernel` object store (130 MB) and the
+      stale `submodule.freertos-kernel.url` entry in `.git/config` — `rm -rf`
+      on the working tree alone leaves both behind.
 - [ ] `cyclonedds/` (24 MB, fork `freertos-s32z2` branch) — last consumer is
       the legacy `freertos-s32z2` lane (W3). Removed together with it.
 - [~] `actuation_module/freertos_s32z2/s32ct_config` — S32 Config Tools
