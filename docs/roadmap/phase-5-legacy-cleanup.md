@@ -50,11 +50,30 @@ FixedSequence capacity). Landed:
 
 ## W3 — legacy freertos-s32z2 lane  [~]
 
-`actuation_module/freertos_s32z2/` (freertos_main.cpp, lwIP bringup, ethif
-shim, cdds-target build, edge_ecu_peer) + `build.sh` legacy target
-+ `build_cyclonedds_host()` + `demo/cyclonedds-s32z2.xml` +
-`autoware_msgs/msg/*.idl` (44 files) + the idlc `else`-branch in
-`autoware_msgs/CMakeLists.txt`.
+`actuation_module/freertos_s32z2/` (208 KB) + `build.sh`'s
+`freertos-s32z2-legacy` target + `build_cyclonedds_host()` +
+`demo/cyclonedds-s32z2.xml` + `autoware_msgs/msg/*.idl` (49 files, not the
+44 first counted) + the idlc `else`-branch in `autoware_msgs/CMakeLists.txt`
++ the `--dds-interface` / `--control-output` build.sh flags.
+
+**W3 IS A SPLIT, NOT A DELETE (audited 2026-08-25).** Five things inside
+`freertos_s32z2/` are consumed by the NEW nros lane and must MOVE, not die,
+or the retirement breaks a working lane:
+
+| survivor | consumer today |
+| --- | --- |
+| `vendor_patched/eigen-psincos-int32.patch` | `actuation_module/CMakeLists.txt` (nros lane, configure-time Eigen patch) |
+| `vendor_patched/port.c.patch` | `scripts/provision-nxp-freertos.sh` (patched NXP CR52_GIC kernel) |
+| `lwip_bringup.c`, `ethif_shim.c` | `src/s32z2_board_glue/` delegates its strong netif overrides to them |
+| `s32ct_config` (PBcfg) | expected by W5.b item 5 hardware wiring |
+| `README.md` | cited by the glue package and the provisioning script as the NXP download instructions |
+
+What actually dies: `freertos_main.cpp`, `board_init.c`, `cp15_arm.S`, the
+linker fragments (`heap_in_sram.ld`, `node_stack_in_sram.ld`,
+`netc_bd_no_cacheable.ld`, `discard_unwind.ld`), `newlib_stubs.c`,
+`operator_new.cpp`, `pbcfg_shims`, `edge_ecu_peer`, `cmake/`, `scripts/` —
+i.e. everything the nros board bundle already provides. Decide each
+survivor's new home (probably `src/s32z2_board_glue/`) in the same commit.
 
 2026-08-22: the `freertos-s32z2` build.sh key now names the NROS lane
 (phase-4 W5.b items 2-4, link-complete); the legacy lane moved to
@@ -75,14 +94,19 @@ the first Cyclone blocker is the stubbed lwIP multicast join.
 
 ## W4 — dual-mode gates + legacy shims  [ ]
 
-- [ ] Collapse `ASI_USE_NANO_ROS` to nros-only in the 8 gated files
-      (`actuation_module/CMakeLists.txt`, `common/node/node.hpp`,
-      `common/node/node_nros.hpp`, `common/clock/clock.hpp`,
-      `common/net/network_config.hpp`, `autoware_msgs/messages.hpp`,
-      `controller_node.{hpp,cpp}`) and in the test programs
-      (`test/{unit_test,dds_pub,dds_sub,dds_loopback_test,can_output_test}.cpp`
-      — the programs themselves stay: the Zephyr 5-phase CI runs them).
-      Blocked with W3: the legacy halves are what the s32z2 lane compiles.
+- [ ] Collapse `ASI_USE_NANO_ROS` to nros-only. Re-counted 2026-08-25:
+      **7 files, 18 occurrences** — `actuation_module/CMakeLists.txt` (2,
+      both `add_compile_definitions`), `common/node/node.hpp` (4),
+      `common/clock/clock.hpp` (1), `common/net/network_config.hpp` (1),
+      `autoware_msgs/messages.hpp` (4), `controller_node.hpp` (3),
+      `controller_node.cpp` (3). The test programs are already OFF the
+      list — phase-5 W5 rewrote all four onto `nros::ComponentNode`, and
+      `node_nros.hpp` no longer exists.
+      The bulk is not the gate lines but what they guard: the legacy arm
+      of `controller_node.cpp` is **489 lines**, a second full controller
+      implementation that dies with the gate.
+      Blocked with W3: the legacy halves are what the legacy s32z2 lane
+      compiles.
 - [ ] Delete `include/common/dds/` (6 legacy CycloneDDS wrapper headers) once
       the gates collapse.
 
