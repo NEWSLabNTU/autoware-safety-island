@@ -182,21 +182,69 @@ fi
 #     the sim runs away). Host-side defect; the island commands a safe stop
 #     throughout. Leaving stop mode off is what turns a finished mission into a
 #     runaway.
+# The mission is DERIVED from the lanelet2 map, not hand-picked (see
+# demo/derive-drive-goals.py). These are the fallback poses that derivation
+# replaces: the hand-probed pair this demo shipped with, kept so the demo still
+# runs if the deriver cannot (no lanelet2 bindings, an unusual projector).
 DRIVE_SPAWN='{header: {frame_id: map}, pose: {pose: {position: {x: 3714.44, y: 73753.15, z: 0.0}, orientation: {z: 0.25, w: 0.968}}}}'
 # Goal candidates along the same lane, farthest first — the planner refuses a
 # goal it cannot route to ("The planned route is empty"), and how far it will
 # route varies with the lanelet the spawn landed on.
+# Each entry is "x y qz qw".
 DRIVE_GOALS=(
-  "3730.2 73761.8"
-  "3726.0 73759.5"
-  "3722.0 73757.0"
+  "3730.2 73761.8 0.25 0.968"
+  "3726.0 73759.5 0.25 0.968"
+  "3722.0 73757.0 0.25 0.968"
 )
+# Where on the map to drive, and how long a mission to ask for. The point is
+# only a HINT: the deriver snaps it onto the nearest lane centerline, so it
+# selects an area rather than a pose. Override to move the demo elsewhere.
+MAP_DIR="${MAP_DIR:-${ROOT}/demo/map/sample-map-planning}"
+DRIVE_NEAR_X="${DRIVE_NEAR_X:-3714.44}"
+DRIVE_NEAR_Y="${DRIVE_NEAR_Y:-73753.15}"
+DRIVE_DISTANCES="${DRIVE_DISTANCES:-30,20,14,10}"
 
-adapi_route() {  # $1 x, $2 y -> 0 on accepted
+# Replace the fallbacks above with poses derived from the map's own geometry:
+# a spawn on a lane centerline headed along it, and goals at arc-length
+# distances reachable by following the routing graph. Runs inside the Autoware
+# container because that is where the lanelet2 python bindings live.
+derive_mission() {
+  local proj grid out spawn_set=0
+  [[ -f "${MAP_DIR}/map_projector_info.yaml" ]] || { warn "no map_projector_info.yaml under ${MAP_DIR}"; return 1; }
+  proj="$(awk '/projector_type:/ {print $2}' "${MAP_DIR}/map_projector_info.yaml")"
+  grid="$(awk '/mgrs_grid:/ {print $2}' "${MAP_DIR}/map_projector_info.yaml")"
+  docker cp "${ROOT}/demo/derive-drive-goals.py" \
+    "${AUTOWARE_CTR}:/tmp/derive-drive-goals.py" >/dev/null 2>&1 || return 1
+
+  out="$(docker exec "${AUTOWARE_CTR}" bash -c \
+    "source /opt/autoware/setup.bash 2>/dev/null; \
+     python3 /tmp/derive-drive-goals.py \
+       --map /root/autoware_map/lanelet2_map.osm \
+       --projector '${proj:-MGRS}' --mgrs-grid '${grid}' \
+       --near-x ${DRIVE_NEAR_X} --near-y ${DRIVE_NEAR_Y} \
+       --distances '${DRIVE_DISTANCES}' 2>/dev/null")" || return 1
+
+  local kind a b c d e derived=()
+  while read -r kind a b c d e; do
+    case "${kind}" in
+      SPAWN)
+        DRIVE_SPAWN="{header: {frame_id: map}, pose: {pose: {position: {x: ${a}, y: ${b}, z: 0.0}, orientation: {z: ${c}, w: ${d}}}}}"
+        spawn_set=1
+        ;;
+      GOAL) derived+=("${b} ${c} ${d} ${e}") ;;  # a is the distance
+    esac
+  done <<<"${out}"
+
+  ((spawn_set)) && ((${#derived[@]})) || return 1
+  DRIVE_GOALS=("${derived[@]}")
+  say "mission derived from the map: spawn + ${#DRIVE_GOALS[@]} goal candidates (${DRIVE_DISTANCES} m)"
+}
+
+adapi_route() {  # $1 x, $2 y, $3 qz, $4 qw -> 0 on accepted
   in_autoware "timeout 15 ros2 service call /api/routing/set_route_points \
     autoware_adapi_v1_msgs/srv/SetRoutePoints \
     '{header: {frame_id: map}, goal: {position: {x: $1, y: $2, z: 0.0}, \
-      orientation: {z: 0.25, w: 0.968}}}' 2>&1" | grep -q "success=True"
+      orientation: {z: $3, w: $4}}}' 2>&1" | grep -q "success=True"
 }
 
 ego_speed() {
@@ -224,6 +272,9 @@ drive_mission() {
     in_autoware "ros2 topic list 2>/dev/null | grep -q /initialpose" && break
     sleep 2
   done
+
+  derive_mission || warn "map derivation unavailable — using the hand-probed fallback poses \
+(valid only on sample-map-planning near ${DRIVE_NEAR_X}, ${DRIVE_NEAR_Y})"
   local ok=0
   for ((i = 0; i < 10; i++)); do
     in_autoware "ros2 topic pub --once /initialpose \
@@ -236,11 +287,11 @@ drive_mission() {
   ((ok)) || die "ego spawn never accepted — check: docker logs ${AUTOWARE_CTR}"
   say "ego at $(ego_pos)"
 
-  local gx gy
+  local gx gy gqz gqw
   ok=0
   for g in "${DRIVE_GOALS[@]}"; do
-    read -r gx gy <<<"${g}"
-    if adapi_route "${gx}" "${gy}"; then
+    read -r gx gy gqz gqw <<<"${g}"
+    if adapi_route "${gx}" "${gy}" "${gqz}" "${gqw}"; then
       say "route accepted to (${gx}, ${gy})"
       ok=1; break
     fi
@@ -248,7 +299,7 @@ drive_mission() {
     in_autoware "timeout 10 ros2 service call /api/routing/clear_route \
       autoware_adapi_v1_msgs/srv/ClearRoute {}" >/dev/null 2>&1 || true
   done
-  ((ok)) || die "no goal in DRIVE_GOALS could be routed — re-derive on-lane points from the map."
+  ((ok)) || die "no goal could be routed — check DRIVE_NEAR_X/Y (is the hint near a drivable lane?)."
 
   # A driveable trajectory carries non-zero velocities; the arrival-hold
   # sliver does not. Wait for the real thing before engaging.
@@ -301,10 +352,15 @@ drive_mission() {
 
   if ((moved)); then
     say "DRIVING MISSION OK — peak speed ${vmax} m/s, final pos $(ego_pos)"
-    say "  NOTE: parking ~5 m short of the requested goal is EXPECTED and is not an"
-    say "  island fault: the planner zeroes its trajectory velocity a stop-margin"
-    say "  before the goal, so the island's departure check (stop point > 0.5 m"
-    say "  ahead) correctly holds. route_state therefore stays SET, not ARRIVED."
+    if [[ "$(route_state)" != "3" ]]; then
+      say "  NOTE: route_state is not ARRIVED and the vehicle likely parked short."
+      say "  With a MAP-DERIVED goal this does not happen (the mission reaches the"
+      say "  goal within ~0.1 m). It is what a goal that is not on the lane"
+      say "  centerline looks like: the planner routes to the nearest point it can"
+      say "  and zeroes trajectory velocity there, and the island's departure check"
+      say "  (stop point > 0.5 m ahead) then correctly holds short of the request."
+      say "  Check whether derivation fell back to the hand-probed poses above."
+    fi
   else
     die "vehicle never moved — island log: ${FVP_LOG}"
   fi

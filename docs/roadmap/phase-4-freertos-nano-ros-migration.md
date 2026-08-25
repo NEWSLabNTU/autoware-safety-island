@@ -279,17 +279,19 @@ Consumed nano-ros phase-370 W1–W3 (landed same day; both ASI-filed issues
       peaks 2.14 m/s, stops cleanly. Post-mission control-cmd rate
       6.7 Hz measured with the mission finished (the ~9.7 Hz figure
       above is mid-drive).
-      **Parking ~5 m short of the requested goal is NOT an island
-      fault** — an instrumented probe (ego pose + nearest trajectory
-      index + arc distance to the first zero-velocity point + island
-      command, 2 Hz) shows the planner zeroes its trajectory velocity
-      a stop-margin ahead of the goal: at the park the stop point sits
-      0.26 m ahead while the goal is 5.35 m further, and the island's
-      departure check needs > 0.5 m. No behaviour module reports a
-      velocity factor, so it is the smoother's stop margin, not a
-      crosswalk/stop line. Consequence: ADAPI `route_state` stays SET
-      and never reaches ARRIVED, which is why an arrival-keyed demo
-      assertion would be wrong here.
+      **Parking ~5 m short of the requested goal was NOT an island
+      fault, and is now GONE** — an instrumented probe (ego pose +
+      nearest trajectory index + arc distance to the first
+      zero-velocity point + island command, 2 Hz) showed the planner
+      zeroing its trajectory velocity 0.26 m ahead while the requested
+      goal was 5.35 m further, with the island's departure check
+      correctly refusing to move for a stop point inside 0.5 m. The
+      first reading of that was "the smoother keeps a stop margin
+      before the goal". The map-derived mission (below) disproves it:
+      with a goal ON the lane centerline the same stack routes all the
+      way and the vehicle ARRIVES. The 5 m was the distance between a
+      hand-picked goal and the nearest pose the planner could actually
+      route to — an artifact of the goal, not a margin.
 
 ### W5.a wall ledger (all consumer-side unless noted)
 
@@ -578,9 +580,19 @@ the legacy-retirement detail; this is the whole open set.
       the unmodified tree. NOTE upstream main has since moved ~40 commits
       past that pin; bumping is a separate decision (the parallel session
       that set it owns the sweep for the next one).
-- [ ] `--drive` goal list is hand-derived from probing. Deriving on-lane
-      goals from the lanelet map (projector-aware) would make the mission
-      reproducible on other maps.
+- [x] `--drive` mission is DERIVED from the map (2026-08-25) —
+      `demo/derive-drive-goals.py` runs inside the Autoware container
+      (lanelet2 python bindings), snaps a hint point onto the nearest
+      road centerline, and walks the routing graph to emit a spawn pose
+      plus goal candidates at requested ARC lengths. The MGRS square
+      origin is computed from the grid code (the python bindings expose
+      no MGRS projector, so the map loads under a UTM projector anchored
+      at one of its own nodes and is translated into the square — same
+      zone, so a pure translation). Hand-probed poses remain only as a
+      fallback. VERIFIED: derived spawn matches the old hand-probed one
+      to 0.01 m, and a 30 m derived mission reached `route_state=3`
+      (ARRIVED) 0.12 m from the goal — the first arrival this demo has
+      recorded.
 - [ ] The FVP idle fast-forward has no clean pacing knob; the visualisation
       rate limiter does not cover idle. Worth a look if demo timing
       fidelity ever matters beyond the clock issue above.
