@@ -1,10 +1,24 @@
 # Phase 6 — an EMULATED Cortex-R52 lane (QEMU `mps3-an536`)
 
-Status: **UPSTREAM BOARD LANDED** (2026-08-26). The nano-ros half is built and
-running: an image boots on QEMU `mps3-an536`, schedules on a GICv3 +
-generic-timer tick, brings up lwIP over the emulated LAN9118, and **delivers
-CycloneDDS pub/sub on Cortex-R52** — the first R52 image in either repo to run
-at all. The ASI half (A1–A6) has not started.
+Status: **LANE COMPLETE** (2026-08-26). Both halves are in. Upstream
+(nano-ros phase-385) the board boots, schedules on a GICv3 + generic-timer
+tick, brings up lwIP over the emulated LAN9118 and delivers CycloneDDS pub/sub.
+Consumer-side, **the ASI controller image runs on emulated Cortex-R52 in CI**:
+
+```
+Network ready
+[INFO] nros: Starting Controller Node...
+[INFO] nros: Control command output mode: DDS_ONLY
+[INFO] nros: Controller Node Started
+[INFO] nros: Actuation Safety Island is Live
+nros: tier priority set tier=`control` prio=7
+[INFO] nros: Inputs not ready — commanding safe stop.
+```
+
+Every marker the POSIX lane asserts, plus the launch-seeded `control_output`
+param and the `[tiers.control]` real-time model reaching the board's scheduler —
+on the ARMv8-R code path that could previously only be LINKED. Remaining:
+N4's runtime matrix cell and N6 (delivery out of the guest), both upstream.
 
 **Upstream half: nano-ros phase-385**
 (`docs/roadmap/phase-385-mps3-an536-freertos-board.md`), filed 2026-08-26.
@@ -225,7 +239,27 @@ a working implementation to copy when that hardware appears.
   peer.* **This is the gate ASI's closed loop depends on** — everything ASI
   needs except this is already available at N4.
 
-### Consumer (ASI) — A1…A6
+### Consumer (ASI) — A1…A6. **DONE 2026-08-26.**
+
+Landed as described below, with two deviations worth recording:
+
+* **A4 broadened rather than duplicated.** The four cross seams were keyed on
+  `NANO_ROS_BOARD STREQUAL "s32z270-freertos"`; they are now keyed on an
+  `_asi_armv8r_boards` list, because the Eigen psincos patch and the pthread
+  shim are properties of the arm-none-eabi ARMv8-R toolchain, not of the SoC.
+  A third R52 board is one list entry.
+* **A5 parameterised the lane.** `build_freertos_armv8r_nros <board> <target>
+  <label>` carries the shared 70 lines; `build_freertos_s32z2_nros` and
+  `build_freertos_an536_nros` are two-line wrappers over it.
+
+One upstream fix was needed on the way: the board's heap. The family default is
+3 MiB — a demo budget — and the controller (MPC + PID, a 256-slot parameter
+store, 16 KiB subscription buffers, CycloneDDS) exhausted it during node
+construction, dying with `*** MALLOC FAILED ***` immediately after `Network
+ready`, which reads as a network fault rather than a heap one. The AN536 board
+now defaults to 32 MiB (nano-ros `589a9d0cf`); it has 3 GiB of DDR.
+
+Original plan:
 
 - **A1.** Pin bump to the nano-ros commit carrying the bundle (submodule +
   `west.yml` lockstep), then the usual three-lane sweep.

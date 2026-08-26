@@ -20,7 +20,17 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
   if(NOT DEFINED NANO_ROS_BOARD)
     set(NANO_ROS_BOARD freertos-posix)
   endif()
-  if(NOT CMAKE_TOOLCHAIN_FILE AND NANO_ROS_BOARD STREQUAL "s32z270-freertos")
+  # Every ARMv8-R cross board takes the same Cortex-R52 toolchain file: the
+  # NXP S32Z270 (hardware) and QEMU's mps3-an536 (emulated, phase-6) differ in
+  # what they can RUN, not in how they are compiled. Listed rather than
+  # duplicated so a third R52 board is one entry, not a fourth copy of this
+  # block.
+  set(_asi_armv8r_boards "s32z270-freertos" "mps3-an536-freertos")
+  set(_asi_is_armv8r FALSE)
+  if(NANO_ROS_BOARD IN_LIST _asi_armv8r_boards)
+    set(_asi_is_armv8r TRUE)
+  endif()
+  if(NOT CMAKE_TOOLCHAIN_FILE AND _asi_is_armv8r)
     if(DEFINED ENV{NROS_REPO_DIR})
       set(_asi_nros_root "$ENV{NROS_REPO_DIR}")
     else()
@@ -40,13 +50,23 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
   set(_asi_freertos_subdirs
       src/autoware/autoware_msgs
       src/controller_pkg)
-  if(NANO_ROS_BOARD STREQUAL "s32z270-freertos")
-    # Cross target: no host rpath; the NXP-licensed board glue (RTD NETC
-    # netif override etc.) joins only when its SDK env is provisioned —
-    # the pkg's own CMakeLists gates and reports.
-    list(APPEND _asi_freertos_subdirs
-        src/s32z2_board_glue
-        src/freertos_s32z2_entry)
+  if(_asi_is_armv8r)
+    # Cross target: no host rpath. Which entry leaf joins depends on the
+    # board; the Eigen/pthread remedies below are shared by both because they
+    # are properties of the arm-none-eabi ARMv8-R toolchain, not of the SoC.
+    if(NANO_ROS_BOARD STREQUAL "s32z270-freertos")
+      # The NXP-licensed board glue (RTD NETC netif override etc.) joins only
+      # when its SDK env is provisioned — the pkg's own CMakeLists gates and
+      # reports.
+      list(APPEND _asi_freertos_subdirs
+          src/s32z2_board_glue
+          src/freertos_s32z2_entry)
+    else()
+      # phase-6 A3 — the emulated lane needs no board glue at all: the
+      # nano-ros mps3-an536 bundle carries startup, GICv3, tick and netif.
+      list(APPEND _asi_freertos_subdirs
+          src/freertos_an536_entry)
+    endif()
 
     # Two hardware-proven remedies carried over from the legacy lane
     # (the retired legacy lane), both cross-only:
@@ -85,6 +105,8 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     set(_asi_pthread_shim_dir ${CMAKE_BINARY_DIR}/s32z2-pthread-shim)
     file(MAKE_DIRECTORY ${_asi_pthread_shim_dir})
     configure_file(
+        # Named for the board it was written for, but the gap it fills is
+        # newlib's on arm-none-eabi — every ARMv8-R lane needs it.
         ${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/s32z2/pthread.h
         ${_asi_pthread_shim_dir}/pthread.h COPYONLY)
     include_directories(BEFORE ${_asi_pthread_shim_dir})

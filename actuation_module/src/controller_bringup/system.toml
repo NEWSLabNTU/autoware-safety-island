@@ -106,3 +106,13 @@ board = "freertos-posix"
 [deploy.s32z2]
 kind  = "embedded"
 board = "s32z270-freertos"
+
+# phase-6 A2 — the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
+# phase-385). Same CPU and kernel port as [deploy.s32z2] above, but nothing
+# about it is licensed or hardware-gated: it boots, schedules on a GICv3 +
+# generic-timer tick, and runs CycloneDDS over an emulated LAN9118. It exists
+# so the ARMv8-R code path — which the S32Z2 lane can only LINK today — has
+# runtime coverage in CI without a board.
+[deploy.an536]
+kind  = "embedded"
+board = "mps3-an536-freertos"

@@ -51,7 +51,12 @@ ensure_fvp_available()
 ensure_fvp_available
 
 # FVP run timeout
-FVP_TIMEOUT_SECONDS="${FVP_TIMEOUT_SECONDS:-90}"
+# 90 s stopped being enough: the image spends its first ~10 s in the DHCP
+# initial-delay wait before `configure_network()` even runs, and the boot ahead
+# of "Starting Controller Node" grew with the nano-ros pin. A too-tight window
+# fails as a MISSING MARKER, which reads as a broken image rather than a slow
+# one — the most expensive way to be wrong about this.
+FVP_TIMEOUT_SECONDS="${FVP_TIMEOUT_SECONDS:-200}"
 
 build_variant()
 {

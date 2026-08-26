@@ -31,7 +31,7 @@ BUILD_PLATFORM_SET=0
 NETWORK_PROFILE="default"
 TRACE_ENABLED=0
 TRACE_STATS_ENABLED=0
-RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2")
+RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-an536")
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -64,6 +64,7 @@ function usage() {
   echo -e "    zephyr-s32z      Zephyr on S32Z hardware."
   echo -e "    freertos-posix   FreeRTOS POSIX runtime for local validation."
   echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware (nano-ros lane, phase-4 W5.b)."
+  echo -e "    freertos-an536   FreeRTOS on QEMU mps3-an536 (emulated Cortex-R52; phase-6)."
   echo ""
   echo -e "${GREEN}    Examples:${NC}"
   echo -e "    $0 --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap"
@@ -211,6 +212,15 @@ function normalize_platform() {
       fi
       if [ "${BUILD_DIR_SET}" = "0" ]; then
         BUILD_DIR="build/freertos-s32z2"
+      fi
+      ;;
+    freertos-an536)
+      if [ "${ZEPHYR_TARGET_SET}" = "1" ]; then
+        echo -e "${RED}-t is only valid for Zephyr platforms${NC}" 1>&2
+        exit 1
+      fi
+      if [ "${BUILD_DIR_SET}" = "0" ]; then
+        BUILD_DIR="build/freertos-an536"
       fi
       ;;
     *)
@@ -376,6 +386,15 @@ function build_zephyr_actuation_module() {
   # Build command with common arguments
   local build_args=(
     -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
+    # Name WHICH deploy this build is. The bringup carries four
+    # ([deploy.fvp|freertos-posix|s32z2|an536]) and `nros ws board-facts`
+    # refuses when several resolve differently — correct of it, but the cmake
+    # wrapper then soft-skips and the image silently loses its board facts
+    # (nano-ros issue 0755). Adding [deploy.an536] made the set ambiguous and
+    # broke this lane exactly that way, so every lane now says which it is.
+    # `fvp` for both Zephyr targets: the bringup declares one Zephyr deploy
+    # and the S32Z board reuses it (there is no [deploy.s32z]).
+    -DNROS_DEPLOY="fvp"
     -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
@@ -517,6 +536,7 @@ function build_freertos_posix() {
   cmake -S actuation_module -B "${app_build_dir}" \
     -DNANO_ROS_PLATFORM=freertos \
     -DNANO_ROS_BOARD=freertos-posix \
+    -DNROS_DEPLOY=freertos-posix \
     -DNROS_RMW=cyclonedds \
     -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
     -DNROS_CLI_BIN="${nros_cli_bin}" \
@@ -524,15 +544,21 @@ function build_freertos_posix() {
   cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
 }
 
-function build_freertos_s32z2_nros() {
-  # Phase 4 W5.b — the nano-ros S32Z2 lane: same workspace as freertos-posix,
-  # cross-compiled for Cortex-R52 via the nros-board-s32z270-freertos bundle
-  # (nano-ros phase-372). Without the NXP SDK the image LINK-COMPLETES
-  # against the bundle's in-tree GCC/ARM_CRx_No_GIC port and weak netif
-  # stubs; hardware provisioning (scripts/provision-nxp-freertos.sh) points
-  # FREERTOS_DIR/FREERTOS_PORT at the patched NXP GCC/ARM_CR52_GIC port and
-  # enables src/s32z2_board_glue via S32_RTD_PATH.
-  echo -e "${GREEN}Building FreeRTOS S32Z2 runtime (nano-ros lane)...${NC}"
+# The two ARMv8-R lanes — NXP S32Z270 hardware and QEMU mps3-an536 — differ in
+# board name, entry target and whether an NXP SDK is involved. Everything else
+# (CLI, ament env, cross toolchain discovery, kernel/port, sizing knobs, the
+# cmake invocation) is identical, so it lives here once.
+#
+#   $1 board name        e.g. s32z270-freertos
+#   $2 entry target      e.g. actuation_s32z2_entry
+#   $3 human label       e.g. "S32Z2"
+#   $4 deploy name       e.g. s32z2   (the [deploy.*] block in the bringup)
+function build_freertos_armv8r_nros() {
+  local board="$1"
+  local entry_target="$2"
+  local label="$3"
+  local deploy="$4"
+  echo -e "${GREEN}Building FreeRTOS ${label} runtime (nano-ros lane)...${NC}"
   if [ "${BUILD_TEST_FLAG}" != "0" ]; then
     echo -e "${RED}test programs are Zephyr-lane only; this lane builds the controller image${NC}" 1>&2
     exit 1
@@ -585,13 +611,33 @@ function build_freertos_s32z2_nros() {
 
   cmake -S actuation_module -B "${app_build_dir}" \
     -DNANO_ROS_PLATFORM=freertos \
-    -DNANO_ROS_BOARD=s32z270-freertos \
+    -DNANO_ROS_BOARD="${board}" \
+    -DNROS_DEPLOY="${deploy}" \
     -DNROS_RMW=cyclonedds \
     -DFREERTOS_PORT="${FREERTOS_PORT}" \
     -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
     -DNROS_CLI_BIN="${nros_cli_bin}" \
     -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
-  cmake --build "${app_build_dir}" --target actuation_s32z2_entry -j"$(nproc)"
+  cmake --build "${app_build_dir}" --target "${entry_target}" -j"$(nproc)"
+}
+
+# Phase 4 W5.b — the NXP S32Z270 lane. Without the NXP SDK the image
+# LINK-COMPLETES against the bundle's in-tree GCC/ARM_CRx_No_GIC port and weak
+# netif stubs; hardware provisioning (scripts/provision-nxp-freertos.sh) points
+# FREERTOS_DIR/FREERTOS_PORT at the patched NXP GCC/ARM_CR52_GIC port and
+# enables src/s32z2_board_glue via S32_RTD_PATH.
+function build_freertos_s32z2_nros() {
+  build_freertos_armv8r_nros s32z270-freertos actuation_s32z2_entry "S32Z2" s32z2
+}
+
+# Phase 6 A5 — the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
+# phase-385). Same CPU and kernel port as the S32Z2 lane above, but nothing is
+# licensed or hardware-gated: the board bundle carries startup, GICv3, tick and
+# the LAN9118 netif, so this image BOOTS. Run it with:
+#   qemu-system-arm -machine mps3-an536 -nographic \
+#       -semihosting-config enable=on,target=native -kernel <image>
+function build_freertos_an536_nros() {
+  build_freertos_armv8r_nros mps3-an536-freertos actuation_an536_entry "AN536 (emulated R52)" an536
 }
 
 ## MAIN ##
@@ -611,5 +657,8 @@ case "${BUILD_PLATFORM}" in
     ;;
   freertos-s32z2)
     build_freertos_s32z2_nros
+    ;;
+  freertos-an536)
+    build_freertos_an536_nros
     ;;
 esac
