@@ -56,6 +56,78 @@ legacy lane's SOFTWARE* (it is the only thing keeping a second controller
 implementation and the vendored Cyclone alive) while the hardware-specific
 survivors listed in phase-5 W3 stay untested until a board exists.
 
+## Exploration findings (2026-08-26) — M0 is already PROVEN
+
+Rather than estimate from the outside, a throwaway ~30-line assembly image was
+built with the SDK toolchain and run on the machine. It printed:
+
+```
+AN536-R52-BOOT-OK
+```
+
+Everything below is measured on that run, and each item is a question that
+would otherwise have been answered mid-implementation:
+
+- **Toolchain works as-is.** SDK `arm-none-eabi-gcc` 13.2 with
+  `-mcpu=cortex-r52 -marm`; the `armv8r-none-eabihf` Rust target is already
+  installed (nano-ros `rust-targets` fix).
+- **Boot protocol: `-kernel <elf>`.** QEMU loads the ELF at its own addresses
+  and starts at `e_entry`; linking `.text` at DDR `0x20000000` is enough. No
+  bootloader, no `-device loader` needed. Verified by monitor: `R15` was
+  inside the image immediately after reset.
+- **Reset mode is `hyp32` (EL2), not SVC/PL1.** This is the single most
+  important find: the FreeRTOS `ARM_CRx_No_GIC` port is a PL1 port (it does
+  `CPS #SVC_MODE`, uses IRQ/SVC banked stacks). Board startup MUST drop
+  EL2 → EL1 before `vTaskStartScheduler()`. Nothing in the existing s32z270
+  bundle does that today.
+- **Console is `0xe7c00000`, the PER-CPU UART** — that is QEMU's `serial0`.
+  The four shared CMSDK UARTs at `0xe0205000`–`0xe0208000` are serial1..4 and
+  print nowhere by default. Writing only to `0xe0205000` produces silence,
+  which reads exactly like a dead image; this cost two of the spike's
+  iterations and is the kind of fact worth writing down.
+- **No GICC (memory-mapped CPU interface) exists** — `info mtree` shows only
+  `gicv3_dist` (`0xf0000000`) and `gicv3_redist_region[0]` (`0xf0100000`). So
+  the port's `configEOI_ADDRESS` MMIO store cannot be a real EOI.
+  **This does not require forking the kernel**: the port never reads IAR at
+  all — it calls `vApplicationIRQHandler()` with no argument, so
+  acknowledgement is ALREADY the board's job. Point `configEOI_ADDRESS` at a
+  scratch RAM word (its trailing `STR` becomes harmless) and do the real
+  `ICC_IAR1` / `ICC_EOIR1` in our handler.
+- **NIC needs no interrupt path**: the sibling MPS2 board registers its netif
+  in poll mode (`nros_board_poll_netif`), and `lan9118-lwip` takes a
+  configurable `base_addr`, so an536's `0xe0300000` is a parameter. GICv3 is
+  therefore needed for the TICK ALONE.
+
+## Roadmap
+
+Ordered so each milestone is independently verifiable and the risky one is
+second, not last.
+
+- **M0 — toolchain + boot + console. DONE** (spike above).
+- **M1 — FreeRTOS actually scheduling.** The only substantial new code, and
+  the whole risk of the phase: EL2→EL1 drop, per-mode stacks and `VBAR`, MPU
+  left disabled initially, GICv3 init (distributor, redistributor, and the
+  CPU interface via the A32 `ICC_*` CP15 encodings), generic-timer tick on
+  PPI 30, and a `vApplicationIRQHandler` that does IAR → dispatch → EOI with
+  `configEOI_ADDRESS` aimed at scratch. *Acceptance: two tasks alternate on
+  the console and the tick count advances.* This is also the work the
+  eventual S32Z2 bench session needs, with only the GIC base changing.
+- **M2 — networking.** lwIP + the existing `lan9118-lwip` at `0xe0300000`,
+  poll-mode netif, static IP. *Acceptance: host pings the image over tap.*
+- **M3 — a real nano-ros bundle.** `nros-board-mps3-an536-freertos`:
+  descriptor, `cargo_config` QEMU runner, entry signature, priority plan,
+  CMake overlay, `fixtures.toml` witness row, CI cell. *Acceptance: the
+  fixture builds and boots from a clean checkout in CI.*
+- **M4 — CycloneDDS.** *Acceptance: the image creates a participant and
+  exchanges a topic with a host peer* (phase-370 W4 already did this on MPS2
+  Cortex-M3, so this milestone is a port, not a bring-up).
+- **M5 — the ASI lane.** `[deploy.an536]`, `src/freertos_an536_entry/`, a
+  `build.sh` lane and a CI phase. *Acceptance: controller boot markers plus
+  the control loop ticking at its configured period.*
+- **M6 — re-scope phase-5.** Retire what the emulated lane proves; leave the
+  hardware-specific survivors (NETC, PBcfg, licensed port, flash) listed as
+  bench-gated.
+
 ## Work breakdown
 
 Most of this belongs UPSTREAM in nano-ros — it is board/RTOS infrastructure,
@@ -97,10 +169,13 @@ FreeRTOS cell on QEMU MPS2 — an536 changes the CPU, not the stack).
 ## Risks
 
 - **First-ever running R52 FreeRTOS image in this tree.** The s32z270 lane is
-  link-complete but has never scheduled a task. Expect the usual unknowns:
-  MPU/PMSAv8 region setup, cache enable ordering, AArch32 boot state, vector
-  table placement. This is the same risk the bench session would face — paying
-  it in an emulator, where a debugger is free, is the point.
+  link-complete but has never scheduled a task. Remaining unknowns after M0:
+  MPU/PMSAv8 setup (deferrable — run MPU-off first), cache enable ordering,
+  and the EL2→EL1 drop. This is the same risk the bench session would face —
+  paying it in an emulator, where a debugger is free, is the point.
+- **EL2 reset is a real gap in the EXISTING s32z270 bundle too** (found by the
+  M0 spike). Whatever M1 writes for the drop is likely needed there as well;
+  worth checking against the NXP boot flow when hardware appears.
 - **`GCC/ARM_CRx_No_GIC` is a no-GIC port**: it deliberately leaves interrupt
   controller setup to the consumer, which is exactly item 2. If it proves a bad
   fit, the fallback is a small in-bundle port derived from it, NOT the licensed
@@ -115,10 +190,21 @@ FreeRTOS cell on QEMU MPS2 — an536 changes the CPU, not the stack).
 
 ## Effort
 
-Rough, and the middle item carries the variance: bundle skeleton ~1 day;
-GICv3 + tick ~1–2 days; startup/netif ~1 day; fixture/CI ~0.5 day; ASI lane
-~0.5 day; bring-up debugging 1–3 days. **Call it 5–8 working days**, ~80 % of
-it upstream in nano-ros.
+Revised after the M0 spike, which removed the boot/toolchain/console unknowns
+and answered the EOI question without a kernel fork:
+
+| milestone | estimate |
+| --- | --- |
+| M0 toolchain + boot + console | **done** (~1 h) |
+| M1 EL2→EL1, GICv3, tick, scheduler | 1.5–3 days (all the variance) |
+| M2 lwIP + lan9118 | 0.5–1 day (driver exists, poll mode) |
+| M3 bundle + fixture + CI | 1 day |
+| M4 CycloneDDS | 0.5–1 day (proven on MPS2 already) |
+| M5 ASI lane | 0.5 day |
+| M6 phase-5 re-scope | 0.5 day |
+
+**4–7 working days**, ~80 % upstream in nano-ros. The estimate is now
+dominated by one milestone instead of spread across unknowns.
 
 ## The FVP alternative — SPIKED 2026-08-26, and it does NOT come free
 
