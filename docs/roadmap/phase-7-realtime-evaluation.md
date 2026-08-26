@@ -1,4 +1,4 @@
-# Phase 6 — real-time evaluation of the Zephyr FVP lane
+# Phase 7 — real-time evaluation of the Zephyr FVP lane
 
 Status: **in progress** (started 2026-08-21). Scope: measure the scheduling
 behaviour of the safety island on its production target, and build the tooling
@@ -8,6 +8,11 @@ target-side, on `fvp_baser_aemv8r`.
 
 Survey date: 2026-08-25. Legend: [x] done, [ ] planned, [~] deliberately
 deferred (with the condition that unblocks it).
+
+Renumbered from 6 to 7 on 2026-08-26: phase 6 is the emulated Cortex-R52 lane
+(`phase-6-emulated-r52-lane.md`), which has an upstream counterpart in nano-ros
+phase-385. This track had taken the number first by a day, but the migration
+sequence is not mine to allocate from.
 
 Design reference: `docs/design/rt_evaluation_zephyr.rst` — mechanism survey,
 measured results, and the caveats that bound each. Upstream defects found on

@@ -256,7 +256,7 @@ def report_stats(evs):
         print(f"  {label:<30} {total / 1e6:>10.3f} "
               f"{w:>11} {longest[label] / 1e6:>11.3f} {mean:>9.4f}{note}")
 
-    # phase-6 W6 — application markers. The CTF stream shows executor wakes,
+    # phase-7 W6 — application markers. The CTF stream shows executor wakes,
     # not callback boundaries, because callbacks run inside a wake as ordinary
     # calls. `app_marker` (out-of-tree, patches/zephyr/0002) brackets the
     # control cycle so its PERIOD and DURATION are measurable, and so a cycle

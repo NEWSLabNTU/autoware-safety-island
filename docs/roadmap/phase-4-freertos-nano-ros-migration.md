@@ -530,8 +530,8 @@ bounded stamp error rather than a one-shot epoch.
 ## Remaining work and follow-ups (as of 2026-08-24)
 
 Consolidated so nothing lives only in a commit message. Phase-5 carries
-the legacy-retirement detail, phase-6 the target-side real-time evaluation
-(`docs/roadmap/phase-6-realtime-evaluation.md`, open items in its W5/W6);
+the legacy-retirement detail, phase-7 the target-side real-time evaluation
+(`docs/roadmap/phase-7-realtime-evaluation.md`, open items in its W5/W6);
 together with the below that is the whole open set.
 
 **Hardware-gated (nothing else blocks them):**
@@ -606,11 +606,11 @@ together with the below that is the whole open set.
       rate limiter does not cover idle. Worth a look if demo timing
       fidelity ever matters beyond the clock issue above.
 
-## Continued in phase 6
+## Continued in phase 7
 
 Target-side real-time evaluation of the Zephyr FVP lane — the CTF task
 timeline, scheduling statistics, and what they measured — is
-`docs/roadmap/phase-6-realtime-evaluation.md`. Two results there bear directly
+`docs/roadmap/phase-7-realtime-evaluation.md`. Two results there bear directly
 on this phase's rate work:
 
 - The Zephyr lane's executor wakes every 6.000 ms (`spin_period_us = 5000`

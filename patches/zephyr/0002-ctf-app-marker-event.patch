@@ -43,7 +43,7 @@ index 38ce467d3fe..33d29759ba6 100644
 +
  #endif /* SUBSYS_DEBUG_TRACING_CTF_TOP_H */
 diff --git a/subsys/tracing/ctf/tsdl/metadata b/subsys/tracing/ctf/tsdl/metadata
-index dd5733432a2..ff4bfd79ea7 100644
+index dd5733432a2..0dd38593669 100644
 --- a/subsys/tracing/ctf/tsdl/metadata
 +++ b/subsys/tracing/ctf/tsdl/metadata
 @@ -707,3 +707,17 @@ event {
@@ -54,7 +54,7 @@ index dd5733432a2..ff4bfd79ea7 100644
 +/* ASI (out-of-tree): a generic application marker, so app-level phase
 + * boundaries land in the SAME stream as the scheduling events and can be
 + * correlated against thread switches. `id` names the marker site, `arg` is
-+ * site-defined. See docs/roadmap/phase-6-realtime-evaluation.md W6.
++ * site-defined. See docs/roadmap/phase-7-realtime-evaluation.md W6.
 + */
 +event {
 +	name = app_marker;

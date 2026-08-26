@@ -293,7 +293,7 @@ void Controller::callbackTimerControl()
   // out at the default INFO level (see PROFILE_* in logger.hpp).
   PROFILE_POINT(cyc_t0);
 
-  // phase-6 W6: bracket the cycle in the CTF stream so its span can be read
+  // phase-7 W6: bracket the cycle in the CTF stream so its span can be read
   // against the thread switches and ISRs that happened inside it. The exit
   // marker carries WHY the cycle ended, so a trace distinguishes a real
   // control cycle from a safe-stop or a not-ready skip without the console.

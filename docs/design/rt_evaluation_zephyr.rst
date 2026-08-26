@@ -17,7 +17,7 @@ All Kconfig / source claims below were read out of the pinned Zephyr v3.7.0
 tree in ``zephyr/`` and the nano-ros checkout in ``modules/nros/``.
 
 Open work, and the campaign this belongs to, are tracked in
-``docs/roadmap/phase-6-realtime-evaluation.md``. The largest open item is that
+``docs/roadmap/phase-7-realtime-evaluation.md``. The largest open item is that
 every measurement below was taken on an idle system.
 
 .. contents::

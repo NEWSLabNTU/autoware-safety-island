@@ -4,7 +4,7 @@
 #ifndef COMMON__DIAG__TRACE_MARKER_HPP_
 #define COMMON__DIAG__TRACE_MARKER_HPP_
 
-// Application markers in the CTF stream (phase-6 W6).
+// Application markers in the CTF stream (phase-7 W6).
 //
 // A CTF capture shows thread switches, ISRs and lock activity, but callbacks
 // run INSIDE an executor wake as ordinary function calls, so the timeline
