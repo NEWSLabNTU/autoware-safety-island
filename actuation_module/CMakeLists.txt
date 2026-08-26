@@ -196,6 +196,32 @@ else()
   # component, and the LAUNCH-only entry below assembles the bootable
   # image from controller_bringup's launch topology.
   find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
+
+  # Phase 6 W6 — lower the param_services capability into OUR scope before the
+  # node package is added.
+  #
+  # modules/nros/zephyr/CMakeLists.txt already does
+  # `add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)` under the same
+  # condition, but add_compile_definitions() is DIRECTORY-SCOPED: it applies to
+  # the nros Zephyr module's own directory and never reaches
+  # src/controller_pkg. The component therefore compiled with
+  # ComponentNode::adopt_launch_seed_() #if'd out, so declare_parameter()
+  # never consulted the executor's launch-seeded store and every launch
+  # parameter silently lost to its compiled default.
+  #
+  # MEASURED: `ctrl_period` is seeded 0.03 by the generated entry and the
+  # control loop ran at 151 ms — the 0.15 s default — a 5x slower control loop
+  # than declared. Probe at construction: `adopted=0.150000 has_param=1`.
+  #
+  # nano_ros_workspace(SYSTEM ...) lowers the axes from a scope that parents
+  # the component directories, which is why the freertos-posix lane was
+  # unaffected; the Zephyr lane's mirror sits in the wrong directory. Upstream
+  # names the follow-up ("resolve from the entry's BRINGUP like
+  # nano_ros_workspace(SYSTEM ...) does") — until that lands, lower it here.
+  if("param_services" IN_LIST NANO_ROS_FEATURES)
+    add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)
+  endif()
+
   add_subdirectory(src/controller_pkg)
 
   # Phase 4 — canonical LAUNCH+BRINGUP spelling (nano-ros phase-330 W7):

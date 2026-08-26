@@ -152,39 +152,46 @@ locally and are small.
       because it reads the TSDL, and reports cycle period + duration +
       outcomes. Compiles away entirely when tracing is off.
 
-### The defect it found immediately  [ ]
+### The defect it found immediately  [x] FIXED 2026-08-26
 
-- [ ] **The control loop runs at 151 ms, not the declared 30 ms.** Measured
-      on the FVP TAP lane, n=1032 cycles:
+- [x] **The control loop ran at 151 ms, not the declared 30 ms.** ROOT-CAUSED
+      AND FIXED. `modules/nros/zephyr/CMakeLists.txt:432` lowers the
+      capability with `add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)`,
+      which is DIRECTORY-SCOPED: it reaches the nros Zephyr module's own
+      directory and never `src/controller_pkg`. The component therefore
+      compiled with `ComponentNode::adopt_launch_seed_()` `#if`'d out, so
+      `declare_parameter()` never consulted the executor's launch-seeded
+      store — and EVERY launch parameter silently lost to its compiled
+      default, not just `ctrl_period`.
+
+      The freertos-posix lane was unaffected because
+      `nano_ros_workspace(SYSTEM ...)` lowers the axes from a scope that
+      parents the component directories. That asymmetry is why phase 4 fixed
+      issue 0745 for posix and believed it covered both lanes.
+
+      Fixed consumer-side in `actuation_module/CMakeLists.txt`, immediately
+      before `add_subdirectory(src/controller_pkg)`. Upstream already names
+      the proper follow-up ("resolve from the entry's BRINGUP like
+      `nano_ros_workspace(SYSTEM ...)` does"); this is the interim.
+
+      Measured, same workload, probe at construction then removed:
 
       ```
-      period ms:   min=144.999 p50=151.000 p90=151.001 p99=152.000 max=152.001
-      duration ms: min=0.719   p50=0.721   p90=0.722   p99=1.383   max=1.456
-      outcomes:    safe_stop=1033
+      before  adopted=0.150000 timer_ms=150   period p50=151.000 p99=152.000 n=1032
+      after   adopted=0.030000 timer_ms=30    period p50= 31.000 p99= 31.002 n=5025
       ```
 
-      `system.launch.xml` declares `ctrl_period=0.03`. The measured period is
-      the compiled default of 0.15 s. This is the SAME failure mode phase 4
-      recorded as nano-ros issue 0745 ("the launch-declared ctrl_period=0.03
-      NEVER REACHED the node ... the 80-140 ms stalls were the compiled 0.15 s
-      default's real ticks"), fixed there for the freertos-posix lane and
-      described as covering both. It is still present on the Zephyr FVP lane.
+      Callback duration is unchanged (p50 0.721 ms), confirming the callback
+      itself was never implicated.
 
-      Nothing upstream of the callback looks wrong — the executor wakes at
-      6 ms exactly as configured — which is why only W6's markers exposed it.
-
-      Established so far:
-      - The seed IS emitted pre-construction by the generated entry:
-        `nros_cpp_declare_param(executor, "ctrl_period", "0.03")`.
-      - The node reads it as
-        `declare_parameter<double>("ctrl_period", 0.15)`.
-      - `CONFIG_NROS_MAX_PARAMETERS=32` in the built `.config`, while the
-        controller declares ~150 parameters. Note `build.sh` exports
-        `NROS_MAX_PARAMETERS=256`, so the Rust build.rs knob and the Kconfig
-        symbol that sizes the store are NOT the same thing.
-      - Nothing is logged about any of it — the store is silent on overflow.
-      - NOT yet proven that store exhaustion is the mechanism. Next step is a
-        direct read-back of `ctrl_period` at construction.
+- [ ] Follow-up: `min` period is 13.997 ms in the fixed run (p50 31.000), so a
+      few cycles land early. Not investigated.
+- [ ] Follow-up: every other launch parameter was equally dead before this
+      fix. `timeout_thr_sec`, the lateral/longitudinal controller modes and
+      the ~150 MPC/PID parameters all ran on compiled defaults on the Zephyr
+      lane. Worth an audit of which declared values actually differ from
+      their defaults — the control period was simply the one with a visible
+      symptom.
 
 - [ ] The callback's own cost is NOT the 62.102 ms `main` slice recorded in
       W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
