@@ -140,15 +140,18 @@ the others):
       stubs are gone. Dropped with the shim: the spin()/stop()
       thread-management and stop_timer unit tests (executor-owned
       lifecycle now). can_output_test was already node-free.
-- [ ] `common/logger/` → `nros_log` (`nros_error!`/`log.hpp` macros): one
-      logging spine instead of two; nros_log reaches no_std targets and
-      avoids the native_sim std-stdio hazard class.
-      SEQUENCED BEHIND W3 (2026-08-22): `logger.hpp` is compiled by the
-      legacy `freertos-s32z2-legacy` lane too, which links no nros — a
-      swap now would need a mode gate (banned) or break that lane. Keep
-      the `log_*` API surface when it lands (20+ vendored Autoware TUs
-      call it); swap the sink to `nros_log_emit_fmt`, and note upstream
-      has no throttle macros yet (`log_*_throttle` stays ASI-side).
+- [x] `common/logger/` → `nros_log` — DONE 2026-08-26 (unblocked by W3:
+      the legacy lane that compiled logger.hpp without nros is gone).
+      The `log_*` API surface stays (20+ vendored Autoware TUs); the sink
+      is `nros_log_emit_fmt` through the per-platform writer chain, with
+      a lazy idempotent `nros_log_init()` for the no_std lanes. Kept
+      ASI-side: `log_*_throttle` (upstream has no throttle macros) and
+      the CONFIG_LOG_LEVEL compile-time gate. Upstream frictions noted:
+      no C-API setter for the per-logger runtime threshold (defaults
+      INFO — `log_debug`/PROFILE therefore emit at INFO severity, the
+      compile-time gate stays the debug switch), and no SUCCESS-class
+      severity (log_success maps to INFO; the CI boot markers grep text,
+      not color, so phases 1-4 are unaffected).
 - [x] `common/net/network_config.hpp` + `SAFETY_ISLAND_DDS_INTERFACE`
       plumbing — AUDITED 2026-08-22: `SAFETY_ISLAND_DDS_INTERFACE` has no
       remaining consumers (already gone). `configure_network()` stays: it

@@ -1,47 +1,61 @@
 #ifndef COMMON__LOGGER_LOGGER_HPP_
 #define COMMON__LOGGER_LOGGER_HPP_
 
+// Phase 5 W5 — one logging spine: the `log_*` API surface stays (20+
+// vendored Autoware TUs call it), but the sink is nano-ros's `nros_log`
+// dispatcher (`nros_log_emit_fmt` through the per-platform writer chain:
+// POSIX stderr / Zephyr LOG / board fn-ptr on the FreeRTOS family). The
+// old ASI-local implementation (colors, HH:MM:SS.mmm prefix, stderr) is
+// gone — timestamps/format now come from the platform sink.
+//
+// Kept ASI-side (upstream has no equivalents yet):
+//   * `log_*_throttle` — nros_log has no throttle macros (noted in
+//     docs/roadmap/phase-5-legacy-cleanup.md W5).
+//   * CONFIG_LOG_LEVEL compile-time gating — zero-cost below level; the
+//     nros per-logger runtime threshold defaults to INFO and the C API
+//     exposes no setter, so `log_debug`/PROFILE emit at INFO severity and
+//     ASI's compile-time gate stays the debug on/off switch.
+
 #include <chrono>
 #include <map>
-#include <string>
 #include <cstdio>
 #include <cstdarg>
 #include <pthread.h>
 #include "platform/platform_config.h"
 
-#define COLOR_RED "\033[31m"
-#define COLOR_GREEN "\033[32m"
-#define COLOR_YELLOW "\033[33m"
-#define COLOR_RESET "\033[0m"
+#include <nros/log.h>
 
 #define log_info_throttle(msg, ...) common::logger::log_info_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
 #define log_warn_throttle(msg, ...) common::logger::log_warn_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
 
 namespace common::logger {
 
-inline void vprint_color_(const char * format, va_list args, const char * color) {
-    // Get current time with milliseconds
-    auto now = std::chrono::system_clock::now();
-    auto time_t_now = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-    
-    // Print time in HH:MM:SS.mmm format
-    char time_str[13]; 
-    strftime(time_str, 9, "%H:%M:%S", localtime(&time_t_now));
-    sprintf(time_str + 8, ".%03ld", ms.count());
+// Lazy, idempotent sink bring-up. Hosted POSIX wires the dispatcher from
+// .init_array; the no_std lanes (FreeRTOS/S32Z2) need the explicit
+// `nros_log_init()` after the board's platform-log writer registers —
+// calling it from a magic static covers both (idempotent upstream).
+inline nros_logger_t default_logger_() {
+    static const bool init_once = (nros_log_init(), true);
+    (void)init_once;
+    return nros_log_default_logger();
+}
 
-    // Print message with time and color
-    fprintf(stderr, "%s[%s] | ", color, time_str);
-    vfprintf(stderr, format, args);
-    fprintf(stderr, "%s\n", COLOR_RESET);
+inline void vemit_(nros_log_severity_t severity, const char * format, va_list args) {
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    // Callers historically embed a trailing '\n'; the sink adds its own
+    // line ending, so strip one trailing newline to avoid blank lines.
+    size_t len = 0;
+    while (buffer[len] != '\0') { ++len; }
+    if (len > 0 && buffer[len - 1] == '\n') { buffer[len - 1] = '\0'; }
+    nros_log_emit_fmt(default_logger_(), severity, "%s", buffer);
 }
 
 inline void log_success(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vprint_color_(format, args, COLOR_GREEN);
+    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -50,7 +64,7 @@ inline void log_info(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vprint_color_(format, args, COLOR_RESET);
+    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -59,7 +73,7 @@ inline void log_warn(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vprint_color_(format, args, COLOR_YELLOW);
+    vemit_(NROS_LOG_SEVERITY_WARN, format, args);
     va_end(args);
     #endif
 }
@@ -68,7 +82,7 @@ inline void log_error(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vprint_color_(format, args, COLOR_RED);
+    vemit_(NROS_LOG_SEVERITY_ERROR, format, args);
     va_end(args);
     #endif
 }
@@ -77,7 +91,9 @@ inline void log_debug(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 2
     va_list args;
     va_start(args, format);
-    vprint_color_(format, args, COLOR_RESET);
+    // INFO severity on purpose: the nros default threshold is INFO with no
+    // C-side setter; ASI's compile-time gate is the debug switch.
+    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -111,12 +127,10 @@ inline void log_info_throttle_(const char * file, int line, const char * format,
     pthread_mutex_unlock(&mutex_info);
 
     if (should_print) {
-        char formatted_msg_buffer[1024];
         va_list args;
         va_start(args, format);
-        vsnprintf(formatted_msg_buffer, sizeof(formatted_msg_buffer), format, args);
+        vemit_(NROS_LOG_SEVERITY_INFO, format, args);
         va_end(args);
-        log_info("%s", formatted_msg_buffer);
     }
 }
 
@@ -150,12 +164,10 @@ inline void log_warn_throttle_(const char * file, int line, const char * format,
     pthread_mutex_unlock(&mutex_warn);
 
     if (should_print) {
-        char formatted_msg_buffer[1024];
         va_list args;
         va_start(args, format);
-        vsnprintf(formatted_msg_buffer, sizeof(formatted_msg_buffer), format, args);
+        vemit_(NROS_LOG_SEVERITY_WARN, format, args);
         va_end(args);
-        log_warn("%s", formatted_msg_buffer);
     }
 }
 
