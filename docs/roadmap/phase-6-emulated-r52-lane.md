@@ -1,7 +1,10 @@
 # Phase 6 — an EMULATED Cortex-R52 lane (QEMU `mps3-an536`)
 
-Status: **SCOPED + FVP alternative spiked + M0 proven** (2026-08-26). QEMU
-`mps3-an536` is the target; implementation not started.
+Status: **UPSTREAM BOARD LANDED** (2026-08-26). The nano-ros half is built and
+running: an image boots on QEMU `mps3-an536`, schedules on a GICv3 +
+generic-timer tick, brings up lwIP over the emulated LAN9118, and **delivers
+CycloneDDS pub/sub on Cortex-R52** — the first R52 image in either repo to run
+at all. The ASI half (A1–A6) has not started.
 
 **Upstream half: nano-ros phase-385**
 (`docs/roadmap/phase-385-mps3-an536-freertos-board.md`), filed 2026-08-26.
@@ -154,10 +157,35 @@ N6 lands.
 
 ### Upstream (nano-ros) — N0…N6
 
-- **N0. DONE** (2026-08-26) — phase id reserved with `just phase-new` and the
-  upstream doc filed as `docs/roadmap/phase-385-mps3-an536-freertos-board.md`
-  (nano-ros commit `2f8f5096e`). It carries the W0 spike findings, so they
-  live where the implementer will look. N1–N6 below are its W1–W6.
+- **N0–N3, N5. DONE** (2026-08-26, nano-ros commits `058fb6c7d` +
+  `e511a39d1`). The bundle
+  (`packages/boards/nros-board-mps3-an536-freertos`), the cmake overlay, both
+  example workspaces, the entry-emitter allowlist — and `c/board_an536.c`
+  implementing the EL2→EL1 drop, FPU enable, GICv3 bring-up, generic-timer
+  tick and the LAN9118 netif. Measured: `Network ready`, 11 792 timer IRQs in
+  12 s at a 1 kHz tick, and continuous `Published:`/`Received:` pairs.
+  **N5 exceeded its bar** — it asked for entities, the image delivers.
+- **N4. PARTIAL.** The fixture row is registered and resolves to a coordinate,
+  so the build lane and freshness gates see the board; the RUNTIME matrix cell
+  is not written (it needs a new `MP::` platform variant touching ~67
+  references across the test framework, each gated — its own commit).
+- **N6. OPEN.** Two guests on a shared QEMU socket LAN: node A runs normally,
+  node B boots, says `Network ready` and stalls before its first publish
+  (alive — sampled in `sys32` inside `vApplicationIdleHook`; fine standalone).
+  A host peer additionally needs `tap`: the baked network is `192.0.3.0/24`
+  with only the last octet configurable, this host's `tap0` is
+  `192.168.10.1/24`, and bringing a tap up needs root.
+
+**Four defects surfaced upstream on the way**, three pre-existing and none
+about the new board: `[arch.cortex-r52]` was declared but missing from the
+platform manifest's `arch = [..]` list (so no R52 cargo build could resolve
+flags); the family's semihosting console used the Thumb-only `bkpt #0xAB`, so
+an ARM-state board took a real abort and printed nothing; the FPU needed
+enabling (plus `HCPTR` cleared at EL2) before the kernel's `vmov` in
+`pxPortInitialiseStack`; and `activate.sh` exports `FREERTOS_PORT=GCC/ARM_CM3`
+repo-wide, which silently selects an M-profile port for an R52. The last two
+are exactly the "consumer early-init" the S32Z270 bundle defers — there is now
+a working implementation to copy when that hardware appears.
 - **N1 — bundle skeleton.** `packages/boards/nros-board-mps3-an536-freertos/`:
   `nros-board.toml` (names `["mps3-an536-freertos", "an536"]`, platform
   `freertos`, `supported_netstacks = ["lwip"]`, `board_crate`, entry
