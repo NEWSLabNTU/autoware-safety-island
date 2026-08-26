@@ -1,6 +1,7 @@
 # Phase 6 — an EMULATED Cortex-R52 lane (QEMU `mps3-an536`)
 
-Status: **SCOPED, not started** (2026-08-26). Owner decision pending.
+Status: **SCOPED + FVP alternative spiked** (2026-08-26). QEMU `mps3-an536`
+is the recommended target; implementation not started.
 
 ## Why
 
@@ -108,6 +109,9 @@ FreeRTOS cell on QEMU MPS2 — an536 changes the CPU, not the stack).
 - QEMU networking for a closed-loop demo needs tap (user-mode networking will
   not carry DDS multicast) — the demo's `setup-tap.sh` already exists, but the
   bridge/compose wiring assumes the FVP island's address plan.
+- **NIC risk is low** (spike finding): the netif is poll-mode on the sibling
+  board, so the lan9118 needs no IRQ path, and GICv3 is required for the tick
+  alone.
 
 ## Effort
 
@@ -116,15 +120,39 @@ GICv3 + tick ~1–2 days; startup/netif ~1 day; fixture/CI ~0.5 day; ASI lane
 ~0.5 day; bring-up debugging 1–3 days. **Call it 5–8 working days**, ~80 % of
 it upstream in nano-ros.
 
-## Alternative worth a spike first
+## The FVP alternative — SPIKED 2026-08-26, and it does NOT come free
 
-`FVP_BaseR_AEMv8R` — already provisioned here for the Zephyr lane, already
-wired into the tap demo, SNTP and compose — is an AEMv8-R model that can run
-AArch32 at EL1. If it will boot an R52-class FreeRTOS image, the demo
-integration comes free and only the bundle work remains. Unverified; a
-half-day spike would settle it. QEMU stays preferable for CI (free, no
-license, already in the SDK), so the likely answer is "QEMU for CI, FVP if the
-closed-loop demo matters on this lane too".
+The premise was that `FVP_BaseR_AEMv8R` (already provisioned, already wired
+into the tap demo, SNTP and compose) would give the demo integration for free
+if it could run an R52-class AArch32 image. Half of that is true and the
+load-bearing half is not:
+
+- **AArch32 is fine — better than expected.** `cluster0.has_aarch64` DEFAULTS
+  to `0` on this model (our Zephyr lane is what turns it on), the reset
+  controls for A32 exist (`RVBAR32`, `TEINIT`,
+  `aarch32_reset_from_impdef_addr`), and Zephyr even ships
+  `fvp_baser_aemv8r_fvp_aemv8r_aarch32{,_smp}` board variants. The CPU side of
+  an FVP FreeRTOS image is not the problem.
+- **The NIC kills the "free integration" claim.** The FVP's ethernet is
+  `bp.smsc_91c111` — an SMSC/LAN91C111, which Zephyr drives with its own
+  `eth_smsc91x.c`. It is NOT the LAN9118 family (the model's
+  `not_lan911x` parameter is about failing a LAN911x probe, not about being
+  one). nano-ros ships lan9118 drivers only (`lan9118-lwip`,
+  `lan9118-smoltcp`) and has no smsc91c111 lwIP driver, so networking on an
+  FVP FreeRTOS lane means writing one — a chunk comparable to the GICv3 work,
+  and precisely what `mps3-an536` avoids.
+
+**Verdict: QEMU `mps3-an536` is the primary target.** Its `lan9118` is the
+part nano-ros already drives, the driver takes a configurable `base_addr` (so
+an536's `0xe0300000` is a parameter, not a port), and the existing MPS2 board
+registers its netif in POLL mode (`nros_board_poll_netif`) — so the NIC needs
+no interrupt wiring, leaving GICv3 needed only for the tick. That is the
+cheapest possible shape for the risky part.
+
+The FVP stays a LATER option, worth taking only if the closed-loop tap demo is
+wanted on the R52 lane too, and only once someone writes the smsc91c111 lwIP
+driver. A non-networked FreeRTOS-on-FVP smoke would work today, but QEMU gives
+the same thing for free and in CI.
 
 ## Acceptance
 
