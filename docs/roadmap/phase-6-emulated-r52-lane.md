@@ -118,15 +118,101 @@ second, not last.
   descriptor, `cargo_config` QEMU runner, entry signature, priority plan,
   CMake overlay, `fixtures.toml` witness row, CI cell. *Acceptance: the
   fixture builds and boots from a clean checkout in CI.*
-- **M4 — CycloneDDS.** *Acceptance: the image creates a participant and
-  exchanges a topic with a host peer* (phase-370 W4 already did this on MPS2
-  Cortex-M3, so this milestone is a port, not a bring-up).
+- **M4 — CycloneDDS. SPLIT, after checking what upstream actually proved.**
+  An earlier draft of this doc called M4 "a port, not a bring-up" on the
+  strength of nano-ros phase-370 W4. Reading that phase doc closely says
+  less than the summary does: the MPS2 cell "builds, boots, and creates
+  writers and readers", and its stretch goal — "boots and DELIVERS locally"
+  — is not claimed as met. **Cross-node DDS delivery out of a QEMU FreeRTOS
+  guest has not been demonstrated upstream.** So:
+  - **M4a — entities.** Participant + writers/readers on an536. A genuine
+    port of the proven MPS2 state; low risk.
+  - **M4b — delivery.** A sample actually reaching a host Cyclone peer. NEW
+    ground, and the part ASI needs. Note the existing an385 QEMU cells use
+    **slirp** with a TCP zenoh locator; Cyclone's SPDP wants multicast, which
+    slirp does not carry — so this milestone owns a networking decision (tap,
+    or a Cyclone unicast-peer config), not just a build.
 - **M5 — the ASI lane.** `[deploy.an536]`, `src/freertos_an536_entry/`, a
   `build.sh` lane and a CI phase. *Acceptance: controller boot markers plus
   the control loop ticking at its configured period.*
 - **M6 — re-scope phase-5.** Retire what the emulated lane proves; leave the
   hardware-specific survivors (NETC, PBcfg, licensed port, flash) listed as
   bench-gated.
+
+## Execution order — nano-ros first, then ASI
+
+Deliberately upstream-first: every milestone below M5 is board/RTOS
+infrastructure that belongs in nano-ros, and ASI consumes it through a pin
+bump exactly like the s32z270 lane did. Nothing in ASI needs to change until
+N6 lands.
+
+### Upstream (nano-ros) — N0…N6
+
+- **N0.** `just phase-new mps3-an536-freertos-board` to reserve the phase
+  number (repo rule: never read the highest and add one), then write
+  `docs/roadmap/phase-NNN-*.md` there. This ASI doc stays the consumer view.
+- **N1 — bundle skeleton.** `packages/boards/nros-board-mps3-an536-freertos/`:
+  `nros-board.toml` (names `["mps3-an536-freertos", "an536"]`, platform
+  `freertos`, `supported_netstacks = ["lwip"]`, `board_crate`, entry
+  signature, capabilities, `[board.cmake] toolchain_file =
+  cmake/toolchain/arm-freertos-armcr52.cmake` — **already exists** from
+  phase-372 — a `[board.priority_plan]` copied from the family, and a
+  `cargo_config` runner `qemu-system-arm -M mps3-an536 -nographic -kernel`);
+  `Cargo.toml` / `build.rs` / `src/lib.rs` + its own `Cargo.lock` and the
+  root `Cargo.toml` exclude entry (cross-only crate, the phase-372 lesson);
+  `config/{FreeRTOSConfig.h,lwipopts.h,arch/cc.h,an536.ld}` with `.text` at
+  DDR `0x20000000`. `[arch.cortex-r52]` in
+  `config/freertos/nros-platform.toml` is **already there** — reuse, do not
+  add.
+- **N2 — M1, the risky one.** `c/board_an536.c` + a small `.S`: vector table,
+  **EL2→EL1 drop** (the M0 find), per-mode stacks, `VBAR`, MPU off initially,
+  GICv3 init (dist `0xf0000000`, redist `0xf0100000`, CPU interface via the
+  A32 `ICC_*` CP15 encodings), generic-timer tick on PPI 30, and
+  `vApplicationIRQHandler` doing IAR → dispatch → EOI with
+  `configEOI_ADDRESS` aimed at a scratch word. Console = `0xe7c00000`.
+  Overlay `cmake/board/nano-ros-board-mps3-an536-freertos.cmake` mirroring
+  the s32z270 one (env-provisioned `FREERTOS_DIR`/`FREERTOS_PORT`,
+  `enable_language(ASM)` + `portASM.S`). *Acceptance: two tasks alternate on
+  the console, tick count advances.*
+- **N3 — M2, networking.** Strong `nros_board_register_netif` /
+  `nros_board_poll_netif` over the EXISTING
+  `packages/drivers/net/lan9118-lwip` at base `0xe0300000`, static IP.
+  *Acceptance: host pings the guest.*
+- **N4 — M3, make CI run it.** `examples/fixtures.toml` witness row
+  (`platform = "freertos"`, `NANO_ROS_BOARD = "mps3-an536-freertos"`, own
+  `build_subdir`), lane membership for `just build-test-fixtures`, and a
+  runtime cell in the test matrix. *Acceptance: builds and boots from a
+  clean checkout in CI.*
+- **N5 — M4a, Cyclone entities.** *Acceptance: participant + writers/readers,
+  matching the MPS2 cell's proven state.*
+- **N6 — M4b, Cyclone delivery.** The networking decision above (tap, or
+  unicast peers). *Acceptance: a sample crosses from the QEMU guest to a host
+  peer.* **This is the gate ASI's closed loop depends on** — everything ASI
+  needs except this is already available at N4.
+
+### Consumer (ASI) — A1…A6
+
+- **A1.** Pin bump to the nano-ros commit carrying the bundle (submodule +
+  `west.yml` lockstep), then the usual three-lane sweep.
+- **A2.** `[deploy.an536]` in `src/controller_bringup/system.toml` — the same
+  bringup both other lanes already bake from.
+- **A3.** `src/freertos_an536_entry/` (`nano_ros_add_executable`, `BOARD
+  mps3-an536-freertos`, `LANG cpp`, `TYPED`, `BRINGUP ../controller_bringup`,
+  `LAUNCH default`, `DEPLOY an536`) + `package.xml`.
+- **A4.** `actuation_module/CMakeLists.txt`: today the cross seams are keyed
+  on `NANO_ROS_BOARD STREQUAL "s32z270-freertos"` — the toolchain selection
+  (line ~23), the per-board `SUBDIRS`, the Eigen psincos patch and the
+  pthread shim staging. **Broaden that condition to "any ARMv8-R cross
+  board"** rather than duplicating the block; both boards want exactly the
+  same remedies. The pthread shim's port switch (`ASI_S32Z2_NXP_PORT`)
+  already defaults to the plain `xTaskCreate*`, which is what an536 uses.
+- **A5.** `build.sh`: a `freertos-an536` lane mirroring
+  `build_freertos_s32z2_nros()` (nros sync, cross toolchain, the same sizing
+  knobs; kernel from the nros pin, no NXP provisioning).
+- **A6.** A CI phase that boots the image under QEMU and asserts the
+  controller markers plus the control-loop period — the same markers the
+  posix lane asserts. With N6, extend to a closed loop against the demo
+  stack.
 
 ## Work breakdown
 
@@ -199,12 +285,16 @@ and answered the EOI question without a kernel fork:
 | M1 EL2→EL1, GICv3, tick, scheduler | 1.5–3 days (all the variance) |
 | M2 lwIP + lan9118 | 0.5–1 day (driver exists, poll mode) |
 | M3 bundle + fixture + CI | 1 day |
-| M4 CycloneDDS | 0.5–1 day (proven on MPS2 already) |
+| M4a Cyclone entities | 0.5–1 day (ports the proven MPS2 state) |
+| M4b Cyclone DELIVERY out of QEMU | 1–2 days (new ground upstream; owns the tap-vs-unicast decision) |
 | M5 ASI lane | 0.5 day |
 | M6 phase-5 re-scope | 0.5 day |
 
-**4–7 working days**, ~80 % upstream in nano-ros. The estimate is now
-dominated by one milestone instead of spread across unknowns.
+**5–9 working days**, ~85 % upstream in nano-ros (N0–N6); ASI's own share is
+about a day. The estimate is dominated by two milestones — M1 (EL2/GIC/tick)
+and M4b (delivery out of a QEMU guest) — rather than spread across unknowns.
+Everything ASI needs to BUILD and BOOT is available after N4; only the closed
+loop waits for N6.
 
 ## The FVP alternative — SPIKED 2026-08-26, and it does NOT come free
 
