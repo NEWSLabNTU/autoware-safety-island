@@ -196,9 +196,6 @@ locally and are small.
 - [ ] The callback's own cost is NOT the 62.102 ms `main` slice recorded in
       W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
       slice is elsewhere in the executor thread.
-- [ ] nano-ros generic pool threads are unnamed (`k_thread_name_set` is called
-      for tier threads only), so the seven transport threads appear as
-      `unknown`. Worth raising upstream.
 - [ ] nano-ros's generic pool threads are unnamed (`k_thread_name_set` is
       called for tier threads only), so the seven transport threads appear as
       `unknown` and are separable only by thread id and stack base. Worth
