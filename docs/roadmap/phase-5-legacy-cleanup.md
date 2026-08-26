@@ -84,7 +84,16 @@ glue keeps into that package.
 
 KEPT until phase-4 W5.b (nros freertos S32Z2 lane: nano-ros phase-372 board
 bundle + hardware) reaches boot parity — it is the only S32Z2 build this
-branch has. The moment W5.b boots on the board, this whole set goes in one
+branch has.
+
+**A board is not the only way to reach that parity** (scoped 2026-08-26 in
+`phase-6-emulated-r52-lane.md`): QEMU's `mps3-an536` is a dual Cortex-R52
+machine with the same `lan9118` NIC nano-ros already drives, so an emulated
+R52 lane could carry the SOFTWARE half of the proof — scheduler, GIC/tick,
+lwIP, Cyclone, the controller — leaving only NETC, PBcfg, the licensed
+CR52_GIC port and flash/boot bench-gated. If that lane lands, W3/W4 split:
+the second controller implementation and the vendored Cyclone can go, while
+phase-5 W3's hardware-specific survivors stay listed as bench-gated. The moment W5.b boots on the board, this whole set goes in one
 commit (and W2's `cyclonedds/` with it). The concrete W5.b work breakdown
 (6 ordered items; 1-3 pre-hardware) lives in phase-4; the upstream gap
 analysis lives in nano-ros phase-372 "Exploration findings" — headline:
