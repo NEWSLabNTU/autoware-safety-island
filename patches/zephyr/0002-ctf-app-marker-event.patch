@@ -1,0 +1,66 @@
+diff --git a/subsys/tracing/ctf/ctf_top.c b/subsys/tracing/ctf/ctf_top.c
+index b8d1def37e3..9a36fe3346e 100644
+--- a/subsys/tracing/ctf/ctf_top.c
++++ b/subsys/tracing/ctf/ctf_top.c
+@@ -635,3 +635,16 @@ void sys_trace_socket_socketpair_exit(int sock_A, int sock_B, int ret)
+ {
+ 	ctf_top_socket_socketpair_exit(sock_A, sock_B, ret);
+ }
++
++/* ASI (out-of-tree) — generic application marker.
++ *
++ * Deliberately a plain exported function rather than a SYS_PORT_TRACING hook:
++ * application code should not have to include Zephyr's tracing internals, and
++ * there is no user-event facility in this release (upstream's named_event
++ * landed later). Callers declare it themselves; see
++ * actuation_module/include/common/diag/trace_marker.hpp.
++ */
++void sys_trace_app_marker(uint32_t marker_id, uint32_t arg)
++{
++	ctf_top_app_marker(marker_id, arg);
++}
+diff --git a/subsys/tracing/ctf/ctf_top.h b/subsys/tracing/ctf/ctf_top.h
+index 38ce467d3fe..33d29759ba6 100644
+--- a/subsys/tracing/ctf/ctf_top.h
++++ b/subsys/tracing/ctf/ctf_top.h
+@@ -151,6 +151,8 @@ typedef enum {
+ 	CTF_EVENT_SOCKET_GETSOCKNAME_EXIT = 0x59,
+ 	CTF_EVENT_SOCKET_SOCKETPAIR_ENTER = 0x5A,
+ 	CTF_EVENT_SOCKET_SOCKETPAIR_EXIT = 0x5B,
++	/* ASI (out-of-tree) — generic application marker. */
++	CTF_EVENT_APP_MARKER = 0x70,
+ 
+ } ctf_event_t;
+ 
+@@ -609,4 +611,9 @@ static inline void ctf_top_socket_socketpair_exit(int32_t sock_A, int32_t sock_B
+ 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SOCKET_SOCKETPAIR_EXIT), sock_A, sock_B, ret);
+ }
+ 
++static inline void ctf_top_app_marker(uint32_t marker_id, uint32_t arg)
++{
++	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_APP_MARKER), marker_id, arg);
++}
++
+ #endif /* SUBSYS_DEBUG_TRACING_CTF_TOP_H */
+diff --git a/subsys/tracing/ctf/tsdl/metadata b/subsys/tracing/ctf/tsdl/metadata
+index dd5733432a2..ff4bfd79ea7 100644
+--- a/subsys/tracing/ctf/tsdl/metadata
++++ b/subsys/tracing/ctf/tsdl/metadata
+@@ -707,3 +707,17 @@ event {
+ 		int32_t result;
+ 	};
+ };
++
++/* ASI (out-of-tree): a generic application marker, so app-level phase
++ * boundaries land in the SAME stream as the scheduling events and can be
++ * correlated against thread switches. `id` names the marker site, `arg` is
++ * site-defined. See docs/roadmap/phase-6-realtime-evaluation.md W6.
++ */
++event {
++	name = app_marker;
++	id = 0x70;
++	fields := struct {
++		uint32_t marker_id;
++		uint32_t arg;
++	};
++};

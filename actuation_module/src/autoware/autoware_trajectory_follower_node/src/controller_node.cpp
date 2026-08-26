@@ -22,6 +22,7 @@
 #include <autoware/trajectory_follower_base/lateral_controller_base.hpp>
 
 #include "common/logger/logger.hpp"
+#include "common/diag/trace_marker.hpp"
 #include "common/clock/clock.hpp"
 using namespace common::logger;
 
@@ -293,6 +294,14 @@ void Controller::callbackTimerControl()
   // out at the default INFO level (see PROFILE_* in logger.hpp).
   PROFILE_POINT(cyc_t0);
 
+  // phase-6 W6: bracket the cycle in the CTF stream so its span can be read
+  // against the thread switches and ISRs that happened inside it. The exit
+  // marker carries WHY the cycle ended, so a trace distinguishes a real
+  // control cycle from a safe-stop or a not-ready skip without the console.
+  static uint32_t cycle_seq;
+  const uint32_t this_cycle = ++cycle_seq;
+  common::diag::trace_marker(common::diag::Marker::control_cycle_enter, this_cycle);
+
   // 1. create input data
   const auto input_data = createInputData();
   if (!input_data) {
@@ -304,6 +313,8 @@ void Controller::callbackTimerControl()
     // every cycle, for as long as its inputs are missing or stale.
     log_info_throttle("Inputs not ready — commanding safe stop.");
     publishSafeStopCommand();
+    common::diag::trace_marker(common::diag::Marker::control_cycle_exit,
+      static_cast<uint32_t>(common::diag::CycleOutcome::safe_stop));
     return;
   }
 
@@ -314,6 +325,8 @@ void Controller::callbackTimerControl()
   const bool is_lon_ready = longitudinal_controller_->isReady(*input_data);
   if (!is_lat_ready || !is_lon_ready) {
     log_info_throttle("Control is skipped since lateral and/or longitudinal controllers are not ready to run.");
+    common::diag::trace_marker(common::diag::Marker::control_cycle_exit,
+      static_cast<uint32_t>(common::diag::CycleOutcome::not_ready));
     return;
   }
 
@@ -372,6 +385,9 @@ void Controller::callbackTimerControl()
     PROFILE_MS(cyc_t0, cyc_t_ready), PROFILE_MS(cyc_t_ready, cyc_t_lat),
     PROFILE_MS(cyc_t_lat, cyc_t_lon), PROFILE_MS(cyc_t_lon, cyc_t_end),
     PROFILE_MS(cyc_t0, cyc_t_end));
+
+  common::diag::trace_marker(common::diag::Marker::control_cycle_exit,
+    static_cast<uint32_t>(common::diag::CycleOutcome::commanded));
 
   // 6. Reset flags for next cycle
   // TODO: Check if this is required, autoware version keeps publishing even there is no new data

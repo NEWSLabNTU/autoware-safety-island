@@ -21,7 +21,7 @@ import argparse
 import re
 import struct
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 # Fixed 20-byte character array -- `typedef struct { char buf[20]; }
 # ctf_bounded_string_t` in ctf_top.h, emitted with a raw memcpy.
@@ -255,6 +255,50 @@ def report_stats(evs):
         note = "  <- idle, times not meaningful" if label.startswith("idle") else ""
         print(f"  {label:<30} {total / 1e6:>10.3f} "
               f"{w:>11} {longest[label] / 1e6:>11.3f} {mean:>9.4f}{note}")
+
+    # phase-6 W6 — application markers. The CTF stream shows executor wakes,
+    # not callback boundaries, because callbacks run inside a wake as ordinary
+    # calls. `app_marker` (out-of-tree, patches/zephyr/0002) brackets the
+    # control cycle so its PERIOD and DURATION are measurable, and so a cycle
+    # can be read against the switches and ISRs that landed inside it.
+    OUTCOME = {0: "commanded", 1: "safe_stop", 2: "not_ready"}
+    ENTER, EXIT = 1, 2
+    marks = [e for e in evs if e.name == "app_marker"]
+    if marks:
+        print("\n=== control cycles (app markers) " + "=" * 31)
+        enters = [e for e in marks if e.fields.get("marker_id") == ENTER]
+        exits = [e for e in marks if e.fields.get("marker_id") == EXIT]
+        print(f"  enter={len(enters)}  exit={len(exits)}")
+
+        # Cycle PERIOD: enter-to-enter. This is the number the 30 ms
+        # ctrl_period is actually a claim about.
+        starts = [e.ts for e in enters if not e.disc]
+        if len(starts) > 2:
+            g = sorted((b - a) / 1e6 for a, b in zip(starts, starts[1:]) if b > a)
+            print(f"  period ms:   min={g[0]:.3f} p50={g[len(g) // 2]:.3f} "
+                  f"p90={g[int(len(g) * 0.9)]:.3f} p99={g[int(len(g) * 0.99)]:.3f} "
+                  f"max={g[-1]:.3f}  n={len(g)}")
+
+        # Cycle DURATION: enter to its own exit. Pair by walking the stream, so
+        # an unmatched marker (a capture that starts or ends mid-cycle) is
+        # dropped rather than silently pairing across cycles.
+        durs, outcomes, pending = [], Counter(), None
+        for ev in marks:
+            if ev.disc:
+                pending = None
+                continue
+            if ev.fields.get("marker_id") == ENTER:
+                pending = ev
+            elif pending is not None:
+                durs.append((ev.ts - pending.ts) / 1e6)
+                outcomes[OUTCOME.get(ev.fields.get("arg"), ev.fields.get("arg"))] += 1
+                pending = None
+        if durs:
+            d = sorted(durs)
+            print(f"  duration ms: min={d[0]:.3f} p50={d[len(d) // 2]:.3f} "
+                  f"p90={d[int(len(d) * 0.9)]:.3f} p99={d[int(len(d) * 0.99)]:.3f} "
+                  f"max={d[-1]:.3f}  n={len(d)}")
+            print("  outcomes:    " + ", ".join(f"{k}={v}" for k, v in outcomes.most_common()))
 
     # Timers: `timer_start` carries the REQUESTED duration/period in ticks
     # alongside the arm time, so the requested period and the delivered

@@ -141,14 +141,57 @@ locally and are small.
       and PID controllers directly, so the W3 figures predate it.
 - [ ] Then capture under `--drive` and re-run all three questions above.
 
-## W6 — callback-level visibility  [ ]
+## W6 — callback-level visibility  [x]
 
-- [ ] The timeline sees executor wakes, not control-callback boundaries, so
-      control-loop LATENCY is still not measurable — only cadence and cost.
-      Callbacks execute inside a wake as ordinary function calls. Needs either
-      a marker around the callback in nano-ros, or an application shim. Until
-      then, "is the control callback meeting its 30 ms deadline" cannot be
-      answered from a capture.
+- [x] **Application markers in the CTF stream.** `app_marker` (id 0x70) added
+      out-of-tree by `patches/zephyr/0002-ctf-app-marker-event.patch` — Zephyr
+      3.7 has no user-event facility (upstream's `named_event` came later).
+      `common/diag/trace_marker.hpp` is the app-side seam; the control callback
+      is bracketed at entry and at all three exits, the exit marker carrying
+      WHY the cycle ended. `parse-zephyr-ctf.py` decodes it with no change,
+      because it reads the TSDL, and reports cycle period + duration +
+      outcomes. Compiles away entirely when tracing is off.
+
+### The defect it found immediately  [ ]
+
+- [ ] **The control loop runs at 151 ms, not the declared 30 ms.** Measured
+      on the FVP TAP lane, n=1032 cycles:
+
+      ```
+      period ms:   min=144.999 p50=151.000 p90=151.001 p99=152.000 max=152.001
+      duration ms: min=0.719   p50=0.721   p90=0.722   p99=1.383   max=1.456
+      outcomes:    safe_stop=1033
+      ```
+
+      `system.launch.xml` declares `ctrl_period=0.03`. The measured period is
+      the compiled default of 0.15 s. This is the SAME failure mode phase 4
+      recorded as nano-ros issue 0745 ("the launch-declared ctrl_period=0.03
+      NEVER REACHED the node ... the 80-140 ms stalls were the compiled 0.15 s
+      default's real ticks"), fixed there for the freertos-posix lane and
+      described as covering both. It is still present on the Zephyr FVP lane.
+
+      Nothing upstream of the callback looks wrong — the executor wakes at
+      6 ms exactly as configured — which is why only W6's markers exposed it.
+
+      Established so far:
+      - The seed IS emitted pre-construction by the generated entry:
+        `nros_cpp_declare_param(executor, "ctrl_period", "0.03")`.
+      - The node reads it as
+        `declare_parameter<double>("ctrl_period", 0.15)`.
+      - `CONFIG_NROS_MAX_PARAMETERS=32` in the built `.config`, while the
+        controller declares ~150 parameters. Note `build.sh` exports
+        `NROS_MAX_PARAMETERS=256`, so the Rust build.rs knob and the Kconfig
+        symbol that sizes the store are NOT the same thing.
+      - Nothing is logged about any of it — the store is silent on overflow.
+      - NOT yet proven that store exhaustion is the mechanism. Next step is a
+        direct read-back of `ctrl_period` at construction.
+
+- [ ] The callback's own cost is NOT the 62.102 ms `main` slice recorded in
+      W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
+      slice is elsewhere in the executor thread.
+- [ ] nano-ros generic pool threads are unnamed (`k_thread_name_set` is called
+      for tier threads only), so the seven transport threads appear as
+      `unknown`. Worth raising upstream.
 - [ ] nano-ros's generic pool threads are unnamed (`k_thread_name_set` is
       called for tier threads only), so the seven transport threads appear as
       `unknown` and are separable only by thread id and stack base. Worth
