@@ -1,7 +1,13 @@
 # Phase 6 — an EMULATED Cortex-R52 lane (QEMU `mps3-an536`)
 
-Status: **SCOPED + FVP alternative spiked** (2026-08-26). QEMU `mps3-an536`
-is the recommended target; implementation not started.
+Status: **SCOPED + FVP alternative spiked + M0 proven** (2026-08-26). QEMU
+`mps3-an536` is the target; implementation not started.
+
+**Upstream half: nano-ros phase-385**
+(`docs/roadmap/phase-385-mps3-an536-freertos-board.md`), filed 2026-08-26.
+That doc owns the board bundle (N0–N6 below map to its W1–W6 and carry the
+same acceptance); this one is the CONSUMER view — what ASI does with it, and
+what it unblocks in phase-5.
 
 ## Why
 
@@ -148,9 +154,10 @@ N6 lands.
 
 ### Upstream (nano-ros) — N0…N6
 
-- **N0.** `just phase-new mps3-an536-freertos-board` to reserve the phase
-  number (repo rule: never read the highest and add one), then write
-  `docs/roadmap/phase-NNN-*.md` there. This ASI doc stays the consumer view.
+- **N0. DONE** (2026-08-26) — phase id reserved with `just phase-new` and the
+  upstream doc filed as `docs/roadmap/phase-385-mps3-an536-freertos-board.md`
+  (nano-ros commit `2f8f5096e`). It carries the W0 spike findings, so they
+  live where the implementer will look. N1–N6 below are its W1–W6.
 - **N1 — bundle skeleton.** `packages/boards/nros-board-mps3-an536-freertos/`:
   `nros-board.toml` (names `["mps3-an536-freertos", "an536"]`, platform
   `freertos`, `supported_netstacks = ["lwip"]`, `board_crate`, entry
