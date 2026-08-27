@@ -245,7 +245,7 @@ unvalidated under the conditions that matter:
       loaded, so the 1200 default it shipped with was overrun 2.4x — worse
       than the idle figure implied.
 
-- [ ] SUPERSEDED by the above: `net_socket_service` at 70 % of its (now
+- [x] SUPERSEDED by the above: `net_socket_service` at 70 % of its (now
       4096-byte) stack, and
       `tcp_work` at 62 %. Both unloaded, and W2 proved this thread was already
       overflowing once.
@@ -261,7 +261,8 @@ runs the autonomous mission in one command. Cost to be aware of:
 and the disk is at 95 % (300 GB free); the bridge and visualizer images build
 locally and are small.
 
-- [ ] **The console clock is no longer a usable ground truth.** The WFI
+- [x] RECORDED (not work, a standing caveat): **the console clock is no longer
+      a usable ground truth.** The WFI
       finding in W3 was established by comparing a capture against the
       target's own console timestamps (12.214 s). Periodic SNTP re-sync
       landed 2026-08-25 (phase-4, `common/clock/clock_resync.cpp`) and steps
