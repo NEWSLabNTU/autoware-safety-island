@@ -18,6 +18,28 @@ Design reference: `docs/design/rt_evaluation_zephyr.rst` — mechanism survey,
 measured results, and the caveats that bound each. Upstream defects found on
 the way: `docs/design/upstream-zephyr-issues.md`.
 
+## W8 — stack headroom is now a CI assertion  [x] 2026-08-27
+
+Three stack overflows were found in this repo by reading the Layer 1 report by
+eye, and none printed a diagnostic:
+
+| thread | allocated | needed | how it presented |
+|---|---|---|---|
+| `net_socket_service` | 1200 | 2880 | silent corruption; fatal only once INIT_STACKS painted the stacks |
+| `main` | 16 KiB | 153 KB | booted to "Live", then zero control cycles |
+| `asi_sntp_resync` | 4096 | 7024 | reported 100 %, overflowing on every loaded run |
+
+`require_stack_headroom` in ci-helpers.sh asserts no thread exceeds 85 % of its
+allocation, wired into FVP CI phase 6 which already captures the report. 85 %
+is chosen against the measured figures: the healthy image's worst thread sits
+at 70 %, and a thread reporting 100 % is ALREADY overflowing — the analyzer
+clamps at the stack end, so its true requirement is unknown and may be far
+higher. Verified both directions against real logs: it catches the
+`asi_sntp_resync` 4096/4096 breach and passes a healthy report.
+
+The point is that this pattern recurred three times and each instance cost
+hours of bisection. It is now caught without anyone looking.
+
 ## W1 — instrumentation  [x]
 
 - [x] **Layer 1, scheduling statistics.** `./build.sh --trace-stats` +
@@ -199,7 +221,8 @@ Caveats, stated because they bound the result:
 transport never contends with the control tier, so three results are
 unvalidated under the conditions that matter:
 
-- [ ] `main`'s **62.102 ms** worst contiguous slice against a 0.669 ms median —
+- [x] ANSWERED by W7: `main`'s **62.102 ms** worst contiguous slice against a
+      0.669 ms median was this same MPC tail seen without load —
       real, or an artefact of an idle executor?
 - [x] **Stack headroom under load — ANSWERED 2026-08-27, and it found a third
       overflow.** Layer 1 report from a loaded driving mission:
@@ -247,10 +270,12 @@ locally and are small.
       calibration against console time must account for the steps — or use a
       capture shorter than one re-sync interval
       (`CONFIG_ASI_SNTP_RESYNC_INTERVAL_S`, default 10 s).
-- [ ] Re-baseline the idle capture first against `36d08cf fix(safety): the
+- [x] DONE: re-baselined against `36d08cf fix(safety): the
       island never goes silent, and NaN never leaves it` — it touches the MPC
       and PID controllers directly, so the W3 figures predate it.
-- [ ] Then capture under `--drive` and re-run all three questions above.
+- [x] DONE: captured under `--drive` (three successful missions). Stack
+      headroom and the tail are answered; the priority 5-vs-9 comparison is
+      NOT — it needs a loaded run at priority 5, which does not exist.
 
 ## W7 — where the tail goes  [x] ANSWERED 2026-08-27
 
@@ -299,7 +324,8 @@ Follow-ups this opens (none investigated):
 
 ## W7-original — the question
 
-- [ ] W5 shows 10 % of loaded control cycles exceeding 336 ms and a 4.6 s
+- [x] ANSWERED — the MPC lateral solve. W5 showed 10 % of loaded control
+      cycles exceeding 336 ms and a 4.6 s
       worst case, with period tracking duration — so the callback runs long
       rather than being preempted. WHICH PHASE is unknown: the markers bracket
       the whole callback. `callbackTimerControl` already carries PROFILE_POINT
@@ -374,7 +400,8 @@ Follow-ups this opens (none investigated):
       Consequence: the only behavioural change to validate is the control
       period, not a broad retune.
 
-- [ ] The callback's own cost is NOT the 62.102 ms `main` slice recorded in
+- [x] RESOLVED by W7: the callback's own cost is NOT the 62.102 ms `main`
+      slice recorded in
       W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
       slice is elsewhere in the executor thread.
 - [ ] nano-ros's generic pool threads are unnamed (`k_thread_name_set` is

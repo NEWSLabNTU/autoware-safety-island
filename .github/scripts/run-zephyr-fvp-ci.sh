@@ -155,5 +155,12 @@ forbid_marker "${LOG_DIR}/stats.log" "ZEPHYR FATAL ERROR"
 require_marker "${LOG_DIR}/stats.log" "Thread analyze:"
 require_marker "${LOG_DIR}/stats.log" "Total CPU cycles used"
 require_marker "${LOG_DIR}/stats.log" "Longest Frame"
+# Three stack overflows were found in this repo by reading this very report by
+# eye — net_socket_service, main and asi_sntp_resync — and none of them printed
+# a diagnostic. Assert on it so the fourth is caught without anyone looking.
+# 85% is chosen against the measured figures: the healthy image's worst thread
+# sits at 70%, and a thread reporting 100% is already overflowing (the analyzer
+# clamps at the stack end, so its real requirement is unknown).
+require_stack_headroom "${LOG_DIR}/stats.log" 85
 
 echo "Zephyr FVP runtime validation OK"

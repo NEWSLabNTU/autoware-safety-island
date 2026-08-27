@@ -112,3 +112,40 @@ forbid_marker() {
     exit 1
   fi
 }
+
+# Assert no thread's stack high-water exceeds a percentage of its allocation.
+#
+# Three separate stack overflows were found in this repo by reading the Layer 1
+# report by eye — net_socket_service (1200 allocated, 2880 needed), main
+# (16 KiB allocated, 153 KB needed) and asi_sntp_resync (4096 allocated, 7024
+# needed). NONE printed a diagnostic: an overflow here corrupts whatever sits
+# adjacent and the image either hangs silently or dies somewhere unrelated. The
+# report is the only thing that makes them visible, so assert on it rather than
+# relying on someone reading the artifact.
+#
+# A thread already AT 100 % is the dangerous case and reads as exactly 100:
+# the analyzer clamps at the stack end, so the true requirement is unknown and
+# may be far higher. Treat any breach as fatal and name the numbers.
+#
+#   require_stack_headroom <log> <max_percent>
+require_stack_headroom() {
+  local log="$1"
+  local limit="$2"
+  local breach
+
+  # Format: " name : STACK: unused N usage U / T (P %); CPU: C %"
+  breach=$(sed 's/\r$//' "$log" \
+    | grep -a "STACK: unused" \
+    | sed -E 's/^ *([^ ]+) *: STACK: unused ([0-9]+) usage ([0-9]+) \/ ([0-9]+) \(([0-9]+) %\).*/\5 \1 \3 \4/' \
+    | awk -v lim="$limit" '$1 >= lim {printf "  %s: %s/%s bytes (%s%%)\n", $2, $3, $4, $1}')
+
+  if [ -n "${breach}" ]; then
+    dump_log "$log"
+    echo "Thread stack high-water at or above ${limit}% in $log:" >&2
+    echo "${breach}" >&2
+    echo "A thread at 100% is already overflowing — the analyzer clamps at the" >&2
+    echo "stack end, so its real requirement is unknown. Raise the stack and" >&2
+    echo "re-measure to find the true figure." >&2
+    exit 1
+  fi
+}
