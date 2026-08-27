@@ -18,6 +18,39 @@ Design reference: `docs/design/rt_evaluation_zephyr.rst` — mechanism survey,
 measured results, and the caveats that bound each. Upstream defects found on
 the way: `docs/design/upstream-zephyr-issues.md`.
 
+## W10 — the duplicate setTrajectory  [x] FIXED 2026-08-28
+
+`MpcLateralController::isReady()` and `::run()` each called
+`setTrajectory(input_data.current_trajectory, input_data.current_odometry)`
+with identical arguments, one immediately after the other — the node calls
+`isReady(*input_data)` then `run(*input_data)` on the same object. So the most
+expensive operation in the cycle (resample, filter, curvature) ran TWICE per
+commanded cycle, and the trajectory was pushed into `m_trajectory_buffer`
+twice, which is the buffer the shape-change detection reads.
+
+Removed from `run()`, not from `isReady()`. Removing it from `isReady()`
+deadlocks: that function's own `m_reference_trajectory.empty()` check is
+satisfied by the call, so it would return false forever and `run()` would
+never be reached to populate it.
+
+Measured, same workload:
+
+| phase | before | after | delta |
+|---|---|---|---|
+| `mpc_lateral` | 298.1 ms | **227.5 ms** | −70.6 |
+| `in:is_ready` | 33.95 ms | 21.85 ms | −12.1 |
+| cycle total | ~340 ms | **~254 ms** | −86 (~25 %) |
+| period p90 | 374 ms | 298 ms | −76 |
+
+The prediction was ~34 ms off `mpc_lateral` and no change to `is_ready`. Both
+deltas came out LARGER, so the duplicate cost more than one redundant call —
+most likely the doubled buffer pushes were themselves costing time in the
+maintenance loop, and halving the churn helped both sites.
+
+**It does not change the conclusion.** 227 ms is still 7.6x the 30 ms budget.
+Worth fixing on its own merits — duplicated work and corrupted buffer
+semantics — but the period question remains a controls decision.
+
 ## W8 — stack headroom is now a CI assertion  [x] 2026-08-27
 
 Three stack overflows were found in this repo by reading the Layer 1 report by
