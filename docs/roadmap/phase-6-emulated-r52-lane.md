@@ -30,8 +30,26 @@ records twice (the orphaned FVP on tap0, and issue 0746's stale island
 processes) — the rule is now upstream too: prove the participant count before
 believing a multi-node result.
 
-Remaining upstream: N4's runtime matrix cell, and a HOST DDS peer (needs tap,
-which needs root). Guest-to-guest was W6's acceptance and is met.
+**A HOST ROS 2 peer now works too** (2026-08-27, nano-ros `93b664263`). Over
+`tap1`, a host `ros2 topic echo /chatter` receives 39 of the guest's samples
+and the guest logs the host's published value 20 times — so the emulated R52
+talks to a real ROS 2 stack in both directions, which is what the closed-loop
+demo needs.
+
+Getting there cost a day, and the reason is worth carrying: the blocker was
+QEMU, not nano-ros. With only the board NIC and the tap on QEMU's net hub,
+host-to-guest frames are never delivered — the guest transmits fine and
+receives nothing, which reads exactly like a discovery or driver bug. One flag
+fixes it (`-netdev hubport,id=h0,hubid=0`, an unpeered third hub port; upstream
+issue 0830). Anything on this lane that wants a host peer needs that flag.
+
+Two wrong explanations were recorded before the wiring was suspected, both
+corrected upstream: `rt/` topic-name mangling (disproved — the host echo
+matches with no naming change), and "the host cannot transmit", which came from
+a tun/tap `tx_packets` counter that stays frozen while the interface is
+demonstrably sending.
+
+Remaining upstream: N4's runtime matrix cell.
 
 **Upstream half: nano-ros phase-385**
 (`docs/roadmap/phase-385-mps3-an536-freertos-board.md`), filed 2026-08-26.
@@ -196,12 +214,11 @@ N6 lands.
   so the build lane and freshness gates see the board; the RUNTIME matrix cell
   is not written (it needs a new `MP::` platform variant touching ~67
   references across the test framework, each gated — its own commit).
-- **N6. OPEN.** Two guests on a shared QEMU socket LAN: node A runs normally,
-  node B boots, says `Network ready` and stalls before its first publish
-  (alive — sampled in `sys32` inside `vApplicationIdleHook`; fine standalone).
-  A host peer additionally needs `tap`: the baked network is `192.0.3.0/24`
-  with only the last octet configurable, this host's `tap0` is
-  `192.168.10.1/24`, and bringing a tap up needs root.
+- **N6. DONE.** Guest-to-guest and guest-to-host both exchange samples. The
+  earlier "node B stalls before its first publish" was ghost instances on a
+  reused multicast group, not a defect; the host-peer half needed a tap plus
+  QEMU's third hub port (issue 0830), and now runs 39 samples host-ward and 20
+  guest-ward.
 
 **Four defects surfaced upstream on the way**, three pre-existing and none
 about the new board: `[arch.cortex-r52]` was declared but missing from the
@@ -420,7 +437,9 @@ the same thing for free and in CI.
 1. `nros-board-mps3-an536-freertos` boots on QEMU and runs the FreeRTOS
    scheduler with a working tick (upstream fixture, in CI).
 2. lwIP + CycloneDDS come up; the image creates a participant and exchanges a
-   topic with a host peer.
+   topic with a host peer. **Met 2026-08-27** — over `tap1`, `ros2 topic echo`
+   receives 39 guest samples and the guest receives 20 host samples. Needs
+   QEMU's third hub port (issue 0830).
 3. The ASI controller image boots on the lane and prints its markers, with the
    control loop ticking at its configured period.
 4. Phase-5 W3/W4 re-scoped against it: what the emulated lane proves is
