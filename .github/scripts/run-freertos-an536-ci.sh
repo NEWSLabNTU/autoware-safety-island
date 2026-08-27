@@ -21,30 +21,60 @@ set -euo pipefail
 ROOT_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
 BUILD_ROOT="${ROOT_DIR}/build/freertos-an536"
 NROS="${ROOT_DIR}/modules/nros"
-QEMU="${QEMU_SYSTEM_ARM:-qemu-system-arm}"
+NROS_CLI="${NROS}/packages/cli/target/release/nros"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
 cd "${ROOT_DIR}"
 
-if ! command -v "${QEMU}" >/dev/null 2>&1; then
-  echo "${QEMU} not found — install qemu-system-arm (>= 9.0 for mps3-an536)." >&2
-  exit 1
-fi
-# The machine arrived in QEMU 9.0; an older binary reports "unsupported
-# machine type", which is worth naming rather than letting the boot look dead.
-if ! "${QEMU}" -machine help 2>/dev/null | grep -q "mps3-an536"; then
-  echo "${QEMU} has no mps3-an536 machine (needs QEMU >= 9.0)." >&2
-  exit 1
-fi
-
-echo "Phase 0 - nano-ros provisioning (CLI, launch-resolve, FreeRTOS kernel)"
+echo "Phase 0 - nano-ros provisioning (CLI, launch-resolve, FreeRTOS kernel, SDK tools)"
 cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
 cargo build --release \
   --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
 ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
        "${NROS}/packages/cli/target/release/nros-launch-resolve"
-( cd "${NROS}" && ./packages/cli/target/release/nros setup --source freertos-kernel )
+( cd "${NROS}" && "${NROS_CLI}" setup --source freertos-kernel )
+
+# Two tools this lane needs that a stock runner does not have, both from the
+# nano-ros SDK store so CI matches what a developer gets locally:
+#
+#   * QEMU >= 9.0 — mps3-an536 does not exist before it, and Ubuntu 22.04 ships
+#     6.2. The store's build is 11.0.0.
+#   * arm-none-eabi-gcc 13.2 — the system 10.3 REJECTS the entry codegen's C++
+#     designated initializers, which fails deep in the build with an error that
+#     reads as a codegen bug rather than a toolchain-age one (the same trap
+#     build.sh's SDK-first PATH order exists to avoid).
+# `--tool` takes ONE name (it is not repeatable — passing two prints the usage
+# and exits 0, which would look like success and leave the tool missing).
+for tool in qemu arm-none-eabi-gcc; do
+  ( cd "${NROS}" && "${NROS_CLI}" setup --tool "${tool}" ) || {
+    echo "SDK provisioning failed for ${tool} — see the nros setup output above." >&2
+    exit 1
+  }
+done
+
+# Resolve the store's QEMU explicitly (newest first, mirroring activate.sh and
+# build.sh) rather than trusting PATH, which may still hold the system one.
+sdk_qemu_bin=$(find "${NROS_HOME:-$HOME/.nros}/sdk/qemu" \
+    -maxdepth 2 -type d -name bin 2>/dev/null | sort -Vr | head -1)
+QEMU="${QEMU_SYSTEM_ARM:-}"
+if [ -z "${QEMU}" ] && [ -n "${sdk_qemu_bin}" ] && [ -x "${sdk_qemu_bin}/qemu-system-arm" ]; then
+  QEMU="${sdk_qemu_bin}/qemu-system-arm"
+fi
+QEMU="${QEMU:-qemu-system-arm}"
+
+if ! command -v "${QEMU}" >/dev/null 2>&1 && [ ! -x "${QEMU}" ]; then
+  echo "${QEMU} not found — the SDK store has no qemu and PATH has none." >&2
+  exit 1
+fi
+# The machine arrived in QEMU 9.0; an older binary reports "unsupported machine
+# type", which is worth naming rather than letting the boot look dead.
+if ! "${QEMU}" -machine help 2>/dev/null | grep -q "mps3-an536"; then
+  echo "${QEMU} has no mps3-an536 machine (needs QEMU >= 9.0):" >&2
+  "${QEMU}" --version >&2 || true
+  exit 1
+fi
+echo "QEMU: ${QEMU} ($("${QEMU}" --version | head -1))"
 
 echo "Phase 1 - AN536 (emulated Cortex-R52) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-an536 -d "${BUILD_ROOT}"

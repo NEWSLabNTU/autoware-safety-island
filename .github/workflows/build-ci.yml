@@ -138,3 +138,63 @@ jobs:
       - name: Run FreeRTOS POSIX validation
         shell: bash
         run: .github/scripts/run-freertos-posix-ci.sh
+
+  # Phase 6 — the EMULATED Cortex-R52 lane. This is the only job that RUNS the
+  # ARMv8-R build of the controller: `freertos-s32z2` targets the same CPU but
+  # can only be linked here, because no emulator models the S32Z270 RTU. QEMU's
+  # mps3-an536 is a dual Cortex-R52 with a LAN9118, so the same image shape that
+  # will one day be flashed to silicon is booted on every push.
+  #
+  # Both tools come from the nano-ros SDK store rather than apt: the machine
+  # needs QEMU >= 9.0 (Ubuntu 22.04 ships 6.2) and the entry codegen needs
+  # arm-none-eabi-gcc 13.2 (the system 10.3 rejects its C++ designated
+  # initializers). The script provisions and resolves both, and fails loudly
+  # naming the version if either is wrong.
+  build-freertos-an536:
+    name: FreeRTOS AN536 (emulated Cortex-R52)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      options: --user 0:0 --entrypoint=
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Trust workspace (container runs as root)
+        shell: bash
+        run: git config --global --add safe.directory '*'
+
+      - name: Initialize build submodules
+        shell: bash
+        run: |
+          git submodule update --init modules/nros
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # The SDK store is cached too: re-downloading QEMU 11 and a 13.2 cross
+      # toolchain on every run is the slowest part of this job by far.
+      - name: Restore nros CLI + cargo + SDK cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.nros/sdk
+            modules/nros/packages/cli/target
+            modules/nros/packages/cli/nros-launch-resolve/target
+          key: nros-an536-${{ hashFiles('actuation_module/west.yml') }}
+          restore-keys: nros-an536-
+
+      - name: Run AN536 (emulated Cortex-R52) validation
+        shell: bash
+        run: .github/scripts/run-freertos-an536-ci.sh
