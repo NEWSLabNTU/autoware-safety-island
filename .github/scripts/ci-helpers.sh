@@ -131,13 +131,39 @@ forbid_marker() {
 require_stack_headroom() {
   local log="$1"
   local limit="$2"
-  local breach
+  local rows breach unparsed
 
   # Format: " name : STACK: unused N usage U / T (P %); CPU: C %"
-  breach=$(sed 's/\r$//' "$log" \
+  #
+  # Anchor the name capture on the " : STACK:" separator rather than taking a
+  # single token: Zephyr's idle threads are named "idle 00" .. "idle 03", with
+  # a space. The original single-token pattern never matched them, the line
+  # then reached awk unsubstituted, and `$1 >= lim` compared the STRING "idle"
+  # against "85" -- true, because 'i' sorts after '8'. Every healthy build
+  # therefore failed this assertion with garbage field values. Normalise to a
+  # fixed "OK <pct> <usage> <total> <name...>" shape so the numeric test can
+  # never see a non-numeric field.
+  rows=$(sed 's/\r$//' "$log" \
     | grep -a "STACK: unused" \
-    | sed -E 's/^ *([^ ]+) *: STACK: unused ([0-9]+) usage ([0-9]+) \/ ([0-9]+) \(([0-9]+) %\).*/\5 \1 \3 \4/' \
-    | awk -v lim="$limit" '$1 >= lim {printf "  %s: %s/%s bytes (%s%%)\n", $2, $3, $4, $1}')
+    | sed -E 's/^ *(.*[^ ]) *: STACK: unused [0-9]+ usage ([0-9]+) \/ ([0-9]+) \(([0-9]+) %\).*/OK \4 \2 \3 \1/')
+
+  # Anything the pattern did not rewrite is an analyzer format this function
+  # does not understand. Fail loudly instead of letting it fall through the
+  # numeric test, which is exactly how the bug above stayed invisible.
+  unparsed=$(printf '%s\n' "${rows}" | grep -av '^OK ' || true)
+  if [ -n "${unparsed}" ]; then
+    dump_log "$log"
+    echo "Unrecognised thread-analyzer lines in $log:" >&2
+    printf '%s\n' "${unparsed}" >&2
+    exit 1
+  fi
+
+  breach=$(printf '%s\n' "${rows}" \
+    | awk -v lim="$limit" '$2 + 0 >= lim + 0 {
+        name = $5
+        for (i = 6; i <= NF; i++) name = name " " $i
+        printf "  %s: %s/%s bytes (%s%%)\n", name, $3, $4, $2
+      }')
 
   if [ -n "${breach}" ]; then
     dump_log "$log"

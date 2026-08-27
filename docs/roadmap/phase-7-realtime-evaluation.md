@@ -18,6 +18,101 @@ Design reference: `docs/design/rt_evaluation_zephyr.rst` — mechanism survey,
 measured results, and the caveats that bound each. Upstream defects found on
 the way: `docs/design/upstream-zephyr-issues.md`.
 
+## W11 — hot-path duplicate-work audit  [x] DONE 2026-08-28
+
+W10 was found by *reading* the control cycle rather than measuring it, and it
+paid 25 %. This is the same read applied to the rest of the hot path. Result:
+**the pattern does not recur, and the remaining cost is not where W9/W10 were
+looking.**
+
+**`PidLongitudinalController` is clean.** Its `isReady()` is literally
+`return true;` — no work to duplicate. `run()` does its own `setTrajectory` /
+`setKinematicState` / `setCurrentAcceleration` / `setCurrentOperationMode`
+once. Nothing to fix.
+
+**`MPC::setReferenceTrajectory` has no internal duplication.** It is a linear
+pipeline: nearest-segment search, `convertToMPCTrajectory`, spline resample,
+`isDrivingForward`, optional smoothing, optional yaw extension,
+`calcTrajectoryYawFromXY`, `convertEulerAngleToMonotonic`,
+`calcTrajectoryCurvature`, terminal point. Each stage consumes the previous.
+
+Two of its blocks never execute here, which corrects a standing suspicion:
+
+| block | gate | compiled default |
+|---|---|---|
+| 4x `filt_vector` moving average | `enable_path_smoothing` | **false** |
+| `extendTrajectoryInYawDirection` | `extend_trajectory_for_end_yaw_control` | **false** |
+
+Neither is launch-seeded (see the parameter audit below), so the moving-average
+filter — repeatedly named as a cost suspect — is dead at runtime on this lane.
+
+**There is no change-guard on the trajectory.** `setTrajectory` reprocesses
+unconditionally every cycle, with no comparison against the previous message,
+so when the planner publishes slower than the control loop the pure-message
+stages (`isValidTrajectory`, `convertToMPCTrajectory`) redo identical work.
+That is a genuine duplicate-work pattern — and it is **not worth acting on**,
+because after W10 the whole trajectory pipeline is `in:is_ready` = 21.85 ms.
+Caching a fraction of 22 ms cannot touch a 254 ms cycle. Recorded so the next
+reader does not re-derive it.
+
+### Where the 227 ms actually is
+
+Post-W10 the split is unambiguous: trajectory pipeline 21.85 ms, MPC `run()`
+227.5 ms. The cost is the QP, not the trajectory. Sizes read from
+`generateMPCMatrix` with the default `vehicle_model_type = "kinematics"`
+(`dim_x 3, dim_u 1, dim_y 2`) and `mpc_prediction_horizon = 50`:
+
+| matrix | shape |
+|---|---|
+| `Aex` | 150 x 3 |
+| `Bex` | 150 x 50 |
+| `Cex` | 100 x 150 |
+| `Qex` | 100 x 100 |
+| `R1ex`, `R2ex` | 50 x 50 |
+
+The cost function is `H = B' C' Q C B + R`, evaluated as `CB = Cex * Bex` then
+`CB' * Qex * CB`:
+
+- `Cex * Bex` — 100 x 150 x 50 = 750k MAC
+- `CB' * Qex` — 50 x 100 x 100 = 500k MAC
+- `... * CB` — 50 x 100 x 50 = 250k MAC
+
+**~1.5M double MACs per cycle**, plus the `generateMPCMatrix` assembly loop and
+a 50 x 50 solve. `qp_solver_type` defaults to `unconstraint_fast`, i.e. the
+direct solve — the cheap path is already selected.
+
+Every one of those matrices is an Eigen `MatrixXd` — heap-allocated, per cycle,
+along with each intermediate temporary. That is the same pressure that forced
+`CONFIG_HEAP_MEM_POOL_SIZE` from 192 KiB to 4 MiB (W2), and unlike the FVP
+timing it is a real cost on silicon too.
+
+### This bounds design question 1
+
+The open question was whether 227 ms represents the MPC or is pathological.
+~1.5M MACs is not a 227 ms workload on a Cortex-R52 with an FPU; it is a
+low-single-digit-millisecond workload. `FVP_BaseR_AEMv8R` is an Arm Fast Model
+— programmer's view, instruction-accurate, **not cycle-accurate** — so its
+wall-clock is a simulation artifact and must not be read as a silicon number.
+A ~100x gap is consistent with that and with nothing else.
+
+Stated as a bound, not a measurement: the operation count is derived from the
+matrix shapes above, not timed. What would settle it is a run on S32Z hardware
+or a cycle-accurate model. **No further FVP capture can answer it** — which is
+the useful part, because it stops the campaign from spending more captures on
+a number the platform cannot produce.
+
+### Parameter audit, MPC-lateral scope
+
+`mpc_lateral_controller.cpp` makes **69** `declare_parameter` calls. The launch
+seeds **two** parameters total (`control_output`, `ctrl_period`), neither of
+them an MPC tuning value. So all 69 run on compiled defaults, including every
+lever that would change the cost above — `mpc_prediction_horizon` (50) being
+the dominant one, since the products scale as N^2 to N^3.
+
+This is consistent with the earlier parameter audit and adds nothing to the
+regression risk (defaults read identically before and after the seeding fix).
+It does mean any future retune has no runtime path on this lane.
+
 ## W10 — the duplicate setTrajectory  [x] FIXED 2026-08-28
 
 `MpcLateralController::isReady()` and `::run()` each called
@@ -72,6 +167,35 @@ higher. Verified both directions against real logs: it catches the
 
 The point is that this pattern recurred three times and each instance cost
 hours of bisection. It is now caught without anyone looking.
+
+**The assertion was broken on its first real CI run (fixed 2026-08-28).** It
+failed a healthy image whose worst thread was 70 %, reporting garbage rows like
+`00: :/STACK: bytes (idle%)`. Two bugs, one enabling the other:
+
+1. The name was captured as `([^ ]+)`, a single token. Zephyr's idle threads
+   are named `idle 00` .. `idle 03` — with a space — so the pattern never
+   matched them and the line reached `awk` unsubstituted.
+2. `awk '$1 >= lim'` then compared the *string* `idle` against `85`. awk falls
+   back to string comparison when a field is non-numeric, and `"idle" > "85"`
+   because `i` sorts after `8`. Every idle thread became a breach.
+
+Fixed by anchoring the name capture on the ` : STACK:` separator, normalising
+to a fixed `OK <pct> <usage> <total> <name...>` shape, forcing numeric
+comparison with `$2 + 0 >= lim + 0`, and — the part that matters for next time
+— failing loudly on any line the pattern does *not* rewrite, instead of letting
+it fall through a numeric test.
+
+This corrects the claim above that it was "verified both directions against
+real logs". The breach direction was verified; the healthy direction was
+verified against a log that contained no space-named threads, which is exactly
+the case that broke. Now checked against the real phase-6 `stats.log` (passes
+at 85, reports `asi_thread_stats` 55 %, `net_socket_service` 70 %, `tcp_work`
+61 % at 50), a synthetic malformed line, and an `idle 03` line in both
+directions.
+
+Worth stating plainly: a CI assertion that has only ever been exercised by
+hand-made inputs is not yet an assertion. This one's first contact with a real
+artifact was also its first failure.
 
 ## W1 — instrumentation  [x]
 
