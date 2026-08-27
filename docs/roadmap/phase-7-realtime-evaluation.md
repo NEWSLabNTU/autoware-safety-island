@@ -109,7 +109,64 @@ tracker search found no existing report for any of them.
       not neutral, it misleads by omission, and it is what produced the wrong
       W3 conclusion about the tier model.
 
-## W5 — loaded measurement  [ ]  ← the blocking gap
+## W5 — loaded measurement  [x] DONE 2026-08-27
+
+**The capture exists.** An autonomous mission with the island in the loop: MPC
+steering through the curve, PID accelerating and braking, peak 1.96 m/s,
+stopped within 0.17 m of the goal. 140 MB / 11.6 M events, 0 bytes skipped.
+
+```
+period ms:   min=7.997  p50=32.000  p90=357.000  p99=422.998  max=4666.965  n=949
+duration ms: min=1.125  p50= 1.373  p90=336.632  p99=402.980  max=4648.463  n=949
+outcomes:    commanded=327  safe_stop=622
+```
+
+**327 `commanded` cycles** — MPC and PID executed under load for the first
+time. Every earlier capture was 100 % safe-stop.
+
+**The finding is the TAIL.** Idle vs loaded, same build:
+
+| | idle | loaded |
+|---|---|---|
+| period p50 | 31.000 ms | 32.000 ms |
+| period p90 | 31.000 ms | **357 ms** |
+| period max | 32.003 ms | **4667 ms** |
+| duration p90 | 0.723 ms | **336.632 ms** |
+| duration max | 1.031 ms | **4648 ms** |
+
+The median holds; 10 % of cycles exceed 336 ms and the worst blocks 4.6 s.
+Period tracks duration almost exactly, so the CALLBACK ITSELF runs long — this
+is not preemption. Corroborated independently: the demo's host-side
+`ros2 topic hz` read **3.19 Hz** on the wire, and 1/0.32 s ~= 3 Hz.
+
+This also retires W3's orphaned 62.102 ms `main` slice: that was this same
+tail seen without load, which is why it looked anomalous against a 0.669 ms
+median.
+
+Evidence archived (gitignored): `tools/rt-eval-traces/loaded-drive.ctf.gz`,
+trimmed to the boot+mission window and verified to decode identically first.
+
+Caveats, stated because they bound the result:
+
+- `route_state` never reached ARRIVED and the demo warns the goal may be the
+  hand-probed fallback rather than map-derived, so the SCENARIO is not
+  textbook-clean even though the load is real.
+- One cycle unclosed at capture end (950 enter / 949 exit).
+- WHAT consumes the 336 ms is NOT established. The markers bracket the whole
+  callback, not its phases — see W7.
+
+### Three defects fixed to get here  [x]
+
+- [x] `run-tap-demo.sh` never started the SNTP responder, and the tap image
+      blocks on it at boot. The demo could not boot standalone at all.
+- [x] `CONFIG_HEAP_MEM_POOL_SIZE` 4 MiB -> 192 KiB (nano-ros 589a9d0): silent
+      hang after SNTP, never reached "Live".
+- [x] `CONFIG_MAIN_STACK_SIZE` 512 KiB -> 16 KiB (same pin): reached "Live",
+      then ZERO control cycles. The boot tier runs the executor on `main` and
+      Layer 1 measured `main` using 96384 bytes, so 16 KiB could not survive a
+      dispatch. Four further shrunk symbols restored as a set.
+
+## W5-superseded — the original blocking-gap list
 
 **Every number in W3 is from an idle system.** With no planner attached the
 transport never contends with the control tier, so three results are
@@ -145,6 +202,17 @@ locally and are small.
       island never goes silent, and NaN never leaves it` — it touches the MPC
       and PID controllers directly, so the W3 figures predate it.
 - [ ] Then capture under `--drive` and re-run all three questions above.
+
+## W7 — where the tail goes  [ ]
+
+- [ ] W5 shows 10 % of loaded control cycles exceeding 336 ms and a 4.6 s
+      worst case, with period tracking duration — so the callback runs long
+      rather than being preempted. WHICH PHASE is unknown: the markers bracket
+      the whole callback. `callbackTimerControl` already carries PROFILE_POINT
+      sites (`cyc_t0`, `cyc_t_ready`, `cyc_t_lat`, `cyc_t_lon`, `cyc_t_end`)
+      that split it into input handling / MPC lateral / PID longitudinal /
+      publish. Emitting those as `app_marker` phases would say whether this is
+      solver time or a blocking DDS take.
 
 ## W6 — callback-level visibility  [x]
 
