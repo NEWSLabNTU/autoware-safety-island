@@ -274,12 +274,16 @@ std::optional<trajectory_follower::InputData> Controller::createInputData()
     return {};
   }
 
+  common::diag::trace_marker(common::diag::Marker::control_phase_data_checked);
+
   trajectory_follower::InputData input_data;
   input_data.current_trajectory = current_trajectory_;
   input_data.current_odometry = current_odometry_;
   input_data.current_steering = current_steering_;
   input_data.current_accel = current_accel_;
   input_data.current_operation_mode = current_operation_mode_;
+
+  common::diag::trace_marker(common::diag::Marker::control_phase_inputs_copied);
 
   return input_data;
 }

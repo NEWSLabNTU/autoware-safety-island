@@ -320,8 +320,28 @@ Follow-ups this opens (none investigated):
 - [ ] `ctrl_period` is 30 ms but the solve needs ~250 ms. Either the period is
       aspirational for this platform or the solver needs bounding (iteration
       cap, horizon, warm start).
-- [ ] Input handling at 22.7 ms p50 deserves its own look — 8.8 KiB
-      trajectory deserialization was already suspected in phase 4.
+- [x] **Input handling split (W9, 2026-08-28) — the suspicion was WRONG.**
+      Phase 4 suspected 8.8 KiB trajectory deserialization and so did I. It
+      costs 0.169 ms. The time is in `isReady()`:
+
+      ```
+      in:process_data    0.011 ms   (flag checks)
+      in:copy_inputs     0.169 ms   <- the 8.8 KiB deep copy: NOT the problem
+      in:is_ready       33.952 ms   p90 52.670  max 4396.026
+      inputs (total)    34.124 ms
+      ```
+
+      `isReady()` on the two controllers is 99.5 % of the input phase and
+      exceeds the whole 30 ms period on its own. A readiness PREDICATE costing
+      34 ms median and 4.4 s worst case is doing substantial work.
+
+      Note its max (4396 ms) tracks the MPC max (4610 ms), so the two may be
+      blocked on something shared rather than being independent costs. Not
+      established.
+
+      Sample caveat: 141 commanded cycles (against 246 in the W7 run) and the
+      vehicle parked ~6 m in rather than reaching the goal. Percentiles agree
+      with the earlier run but the sample is smaller.
 
 ## W7-original — the question
 

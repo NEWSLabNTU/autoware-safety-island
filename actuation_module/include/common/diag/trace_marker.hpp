@@ -45,6 +45,14 @@ enum class Marker : uint32_t
   control_phase_inputs_done = 3,  ///< createInputData + readiness checks done
   control_phase_lateral_done = 4, ///< MPC lateral solve done
   control_phase_longitudinal_done = 5,  ///< PID longitudinal solve done
+
+  // Inside the input phase (phase-7 W9). The loaded capture put input handling
+  // at 22.7 ms p50 — three quarters of the 30 ms period on its own, second
+  // only to the MPC solve. processData() is flag checks and throttled logging,
+  // so the suspect is the member copies in createInputData(), which deep-copy
+  // an 8.8 KiB trajectory every cycle. These two split that apart.
+  control_phase_data_checked = 6,   ///< processData() returned ready
+  control_phase_inputs_copied = 7,  ///< createInputData() copies done
 };
 
 /// `arg` values for control_cycle_exit — why the cycle ended.

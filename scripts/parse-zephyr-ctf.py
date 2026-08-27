@@ -305,8 +305,12 @@ def report_stats(evs):
         # enter marker and the three in-cycle boundaries, so they only exist on
         # a cycle that got past the readiness checks (a safe_stop exits before
         # `inputs_done` and contributes nothing here).
-        INPUTS, LAT, LON = 3, 4, 5
-        PHASES = [("inputs", ENTER, INPUTS), ("mpc_lateral", INPUTS, LAT),
+        INPUTS, LAT, LON, CHECKED, COPIED = 3, 4, 5, 6, 7
+        PHASES = [("in:process_data", ENTER, CHECKED),
+                  ("in:copy_inputs", CHECKED, COPIED),
+                  ("in:is_ready", COPIED, INPUTS),
+                  ("inputs (total)", ENTER, INPUTS),
+                  ("mpc_lateral", INPUTS, LAT),
                   ("pid_longitudinal", LAT, LON), ("publish", LON, EXIT)]
         seen, spans = {}, {name: [] for name, _, _ in PHASES}
         for ev in marks:
