@@ -249,7 +249,12 @@ unvalidated under the conditions that matter:
       4096-byte) stack, and
       `tcp_work` at 62 %. Both unloaded, and W2 proved this thread was already
       overflowing once.
-- [ ] **Priority 5 vs 9 measured identical** — p50 6.0000 ms, p99 7.0000 ms,
+- [x] CLOSED as no longer meaningful (2026-08-28). A 298 ms MPC solve swamps
+      any effect a priority band could have: contention between the control
+      tier and the transport cannot matter when the callback alone takes 10x
+      its period. Worth revisiting only if the solve time is brought near
+      budget. Original note:
+      **Priority 5 vs 9 measured identical** — p50 6.0000 ms, p99 7.0000 ms,
       slice p50 0.6690 ms both ways. Expected on an idle transport, and NOT
       evidence the fix is inert; it means the priority relationship is never
       exercised. The W2 fix is correct by allocation and undemonstrated by
@@ -441,7 +446,11 @@ Follow-ups this opens (none investigated):
       slice recorded in
       W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
       slice is elsewhere in the executor thread.
-- [ ] nano-ros's generic pool threads are unnamed (`k_thread_name_set` is
+- [x] FILED as NEWSLabNTU/nano-ros#5 (2026-08-28): the generic pool spawns via
+      `pthread_create` with no name, while the tier path calls
+      `k_thread_name_set`; `pthread_setname_np` exists in Zephyr 3.7, so the
+      fix is a name parameter plus one call. Original note:
+      nano-ros's generic pool threads are unnamed (`k_thread_name_set` is
       called for tier threads only), so the seven transport threads appear as
       `unknown` and are separable only by thread id and stack base. Worth
       raising upstream — it would make any control-loop timeline substantially
