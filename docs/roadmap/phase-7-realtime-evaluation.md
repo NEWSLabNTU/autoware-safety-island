@@ -191,12 +191,26 @@ locally and are small.
 
 - [ ] Follow-up: `min` period is 13.997 ms in the fixed run (p50 31.000), so a
       few cycles land early. Not investigated.
-- [ ] Follow-up: every other launch parameter was equally dead before this
-      fix. `timeout_thr_sec`, the lateral/longitudinal controller modes and
-      the ~150 MPC/PID parameters all ran on compiled defaults on the Zephyr
-      lane. Worth an audit of which declared values actually differ from
-      their defaults — the control period was simply the one with a visible
-      symptom.
+- [x] **Parameter audit (2026-08-27) — the blast radius is ONE value.** An
+      earlier note here claimed "every launch parameter was equally dead ...
+      the ~150 MPC/PID parameters all ran on compiled defaults". That
+      overstated it, and the correction matters for regression risk:
+
+      | | count | effect of the fix |
+      |---|---|---|
+      | declared by the controller (`declare_parameter`) | 131 | none |
+      | declared by the launch (`<param>`, hence seeded) | 2 | the whole blast radius |
+      | `ctrl_period` | 0.03 vs compiled 0.15 | CHANGED: 151 ms -> 31 ms |
+      | `control_output` | `DDS_ONLY` vs `CONFIG_CONTROL_CMD_OUTPUT_DDS_ONLY=y` | no change, same value |
+
+      The adoption MECHANISM was broken for any seeded parameter — that part
+      of the finding stands and was worth fixing. But only two parameters are
+      ever seeded, and one already matched its compiled default. The 131
+      MPC/PID tuning values are declared with compiled defaults and are NOT
+      launch-declared, so they read identically before and after.
+
+      Consequence: the only behavioural change to validate is the control
+      period, not a broad retune.
 
 - [ ] The callback's own cost is NOT the 62.102 ms `main` slice recorded in
       W3: duration p50 is 0.721 ms and max 1.456 ms. Whatever occupies that
