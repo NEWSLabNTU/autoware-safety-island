@@ -6,101 +6,68 @@ evolved substantially while the port sat on a June pin, and that one replay
 silently clobbered upstream work (see W1). nano-ros itself moved through
 phases 248/256/263/287/291 — every wall Phase 2 recorded is closed upstream.
 
-## BLOCKER (2026-08-27): the FVP tap demo does not boot
+## RESOLVED (2026-08-27): the FVP tap demo drives again
 
-`scripts/run-tap-demo.sh --drive` cannot complete today. The Zephyr island
-boots, brings up its interface, takes its SNTP epoch — and then HANGS before
-`nros::init` returns. No further console output ever appears (the log stops at
-56 lines and never grows), while the FVP sits at **100% CPU**, so the guest is
-spinning, not idle-waiting. "Actuation Safety Island is Live" is never printed
-and the demo script times out.
+`scripts/run-tap-demo.sh --drive` completes: **ARRIVED (route_state=3)**, peak
+2.19 m/s, final position within 0.1 m of the goal, control_cmd streaming to
+Autoware at ~8 Hz. The island boots in 8 s.
 
-**This is not today's pin bump and not the demo script.** Reproduced identically
-on nano-ros `12e9b7dad` (current pin) and on `589a9d0cf` (the pin ASI carried
-before today) — same hang, same spin, same last log line. The last known-good
-FVP driving run was 2026-08-21 at pin `d1c5b3b3b`, many pins earlier, so the
-regression window is somewhere in between and has been latent since.
+**Root cause: nano-ros `3d52070ec`, "fix(zephyr): RMW snippet sizing becomes
+overridable, not absolute".** A snippet is applied as `EXTRA_CONF_FILE`, which
+Zephyr merges AFTER the board conf, so the nros-cyclonedds snippet's resource
+sizes had been BEATING every board. That commit moved them to Kconfig defaults
+a board may override — correct for hardware (the numbers are host-scale; an
+S32K344 with 320 KiB of SRAM could not argue with them), and it explicitly
+kept the numbers unchanged.
 
-Three real defects were found and fixed on the way to that conclusion. None of
-them is the hang; each was independently breaking the lane earlier in the boot,
-and each hid the next:
+What it changed for us is WHO decides. ASI had never declared these, so it had
+been silently living on the snippet's values, and lost them all at once:
 
-1. **A late SNTP reply panicked the kernel.** `sntp_simple`'s timeout is in
-   GUEST milliseconds, and the FVP's idle guest fast-forwards, so a 10 s
-   timeout expired after roughly one real second — before the responder's reply
-   arrived. The socket closed, the reply landed on a freed `net_context`, and
-   Zephyr's `NET_ASSERT(context)` took the kernel down on the rx_q thread:
+| symbol | was (forced by snippet) | became |
+| --- | --- | --- |
+| `COMMON_LIBC_MALLOC_ARENA_SIZE` | 16 MiB | **absent** |
+| `HEAP_MEM_POOL_SIZE` | 4 MiB | 192 KiB |
+| `SYSTEM_WORKQUEUE_STACK_SIZE` | 8192 | 4096 |
+| `MAIN_STACK_SIZE` | 512 KiB | 32 KiB (ASI's own `prj_actuation.conf`) |
 
-   ```
-   ASSERTION FAIL [context] @ zephyr/subsys/net/ip/net_context.c:2406
-   >>> ZEPHYR FATAL ERROR 4: Kernel panic on CPU 2
-   ```
+The image then blocked 1.16 s into boot on an allocation that never completes.
+The fix is one conf block in
+`boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_actuation.conf`: ASI now
+declares what it needs, which is exactly the freedom the upstream change was
+for.
 
-   Fixed by raising the timeout to 60 s guest (~6 s real here).
+### How it was found, and what nearly prevented it
 
-2. **Boot killed itself on a startup race.** The hook ran SNTP once,
-   milliseconds after the interface came up, and called `std::exit(1)` if it
-   failed. Observed on identical images: one boot synced at t=1.16 s, the next
-   died at t=0.26 s with a send error, not a timeout. Now retried ten times
-   before giving up (still fatal after that — a 1970 stamp means a demo that
-   looks alive and actuates nothing).
+**It was never spinning.** The FVP sat at 100% host CPU, which read as a
+livelock; attaching over the model's Iris debug server
+(`scripts/fvp-where-stuck.py`) showed all four cores at
+`zephyr/arch/arm64/core/cpu_idle.S:24` — WFI — on every resample. Fast Models
+burn a host thread while the guest idles. That one measurement turned the
+question from "what loop is this" into "what allocation never returns", and it
+cost minutes where the bisect cost hours.
 
-3. **The clock re-sync was a spin loop on this model.** It slept in KERNEL
-   time, on the reasoning — written into the file — that a racing guest would
-   then re-sync "more often exactly when drift is worst". At FVP magnitudes
-   that inverts: measured **6184 re-syncs in nine real minutes** (~11/s), each
-   stepping the clock back ~10 s. Re-pacing on `CLOCK_REALTIME` only divided
-   the problem (3609), because that clock races too between corrections. The
-   guest has no real-time reference except the SNTP server itself, so a proper
-   fix needs a control loop that learns the race factor from server-time
-   deltas. Until then the tap profile sets
-   `CONFIG_ASI_SNTP_RESYNC_INTERVAL_S=0` — boot epoch only, which is what the
-   2026-08-21 driving demo used. Silicon is unaffected (ppm drift, no
-   fast-forward).
+**The first bisect was invalid.** Run against ASI's own history it converged on
+a docs-only commit whose pin is identical on both sides. The signal was flaky
+because the clock re-sync spins on this model (7780 re-syncs in one run), so
+whether a boot won that race was luck. Disabling it made the signal
+deterministic.
 
-### Bisect attempted 2026-08-27 — and what it actually established
+**The second bisect needed an isolated checkout.** `modules/nros` is another
+session's working tree and carried uncommitted edits to `zephyr/Kconfig` and
+`zephyr/cmake/nros_rmw_zenoh.cmake` — Zephyr build inputs — so every probe run
+there silently included them. A separate clone with its own submodules gave a
+clean signal: good pins boot in 7-12 s, bad pins never do.
 
-**It is NOT spinning. It is blocked.** Attaching to the model over its Iris
-debug server (`--iris-server -p -R`, client at `$FVP/Iris/Python`) and stopping
-the target shows all four cores at
-`zephyr/arch/arm64/core/cpu_idle.S:24` — the WFI idle loop — on every resample.
-The 100% host CPU that made this look like a livelock is the Fast Model itself,
-which burns a host thread while the guest idles. So every thread is waiting on
-something that is never posted; the last thing to execute is the network hook
-returning, 1.16 s into boot.
+Three environment traps cost a step each and are worth knowing:
+`ARMFVP_BIN_PATH` and `ARMFVP_EXTRA_FLAGS` are baked at CONFIGURE time (setting
+them later gives `ARMFVP-NOTFOUND`); `build.sh` sets `AMENT_PREFIX_PATH` but
+never `PYTHONPATH`, so a fresh clone cannot import `rosidl_adapter`; and moving
+the pin makes the in-tree `nros` CLI stale by its own source-stamp gate, which
+`NROS_SKIP_STALE_CHECK=1` exists to override for exactly this experiment.
 
-**The ASI-side bisect is INVALID and its answer should not be believed.**
-`git bisect run` converged on `0393b18`, a DOCS-ONLY commit whose submodule
-pin is identical on both sides — which cannot cause a hang. The signal is
-flaky: the commit the bisect had just marked GOOD then failed 0-for-5 on a
-re-run of the same build, and failed again at a 420 s timeout.
-
-The flakiness had a real cause, now understood: **the clock re-sync spins on
-this model** (7780 re-syncs in a single run at `32441dcd`), starving boot.
-Whether a given boot won that race was luck, so the bisect was measuring my own
-re-sync bug rather than any regression. That is fixed/disabled above, which is
-what makes the HEAD signal (a frozen log, no periodic chatter) clean.
-
-**A nano-ros pin bisect is currently BLOCKED, for an environmental reason worth
-recording.** With the re-sync off, the Zephyr configs at HEAD are identical to
-the known-good commit apart from that one line, so the remaining variable is
-the pin. But `modules/nros` is a checkout another session is actively working
-in, and it currently carries UNCOMMITTED edits to `zephyr/Kconfig` and
-`zephyr/cmake/nros_rmw_zenoh.cmake` (its ISO-TP work). Those files are part of
-the Zephyr build, so **every probe run today silently included them**, and the
-submodule cannot be moved to another commit while they are there
-(`git checkout` aborts). A trustworthy pin bisect needs an ISOLATED checkout —
-a second ASI clone with its own submodules — not this one.
-
-Two further notes for whoever picks this up:
-
-* ASI HEAD cannot configure against any nano-ros before phase-385: its
-  `[deploy.an536]` has no board descriptor there, and the build fails at
-  board-facts. Removing that block (uncommitted) is what makes older pins
-  testable at all.
-* Probe the boot marker with a timeout well above 120 s. The demo script's
-  `BOOT_TIMEOUT_S` is 120; a healthy boot on this model has been seen taking
-  longer, so a too-short probe manufactures its own BAD results.
+Note the FVP takes the LAST occurrence of a duplicated `-C` parameter, not the
+first — verified with `--list-params`. An earlier note in this repo claimed the
+opposite and sent one investigation chasing a slowdown that was not there.
 
 **Goal.** One branch that (a) keeps ALL of upstream's FVP/FreeRTOS/S32Z2/CAN
 work, (b) consumes nano-ros in the current canonical shape (RFC-0048 ament
