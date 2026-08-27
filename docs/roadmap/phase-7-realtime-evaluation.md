@@ -124,6 +124,28 @@ outcomes:    commanded=327  safe_stop=622
 **327 `commanded` cycles** — MPC and PID executed under load for the first
 time. Every earlier capture was 100 % safe-stop.
 
+**CORRECTION (same day).** The block above is the first 140 MB of the capture
+— boot plus the mission — and it is the BEST-BEHAVED stretch. Re-decoding the
+settled 2.2 GB file, which covers sustained operation afterwards:
+
+```
+enter=7405  exit=7404
+period ms:   min=7.996  p50=249.000  p90=254.000  p99=378.000  max=4666.965
+duration ms: min=1.125  p50=238.095  p90=242.487  p99=358.788  max=4648.463
+outcomes:    commanded=6006  safe_stop=1398
+```
+
+So it is NOT "a healthy 32 ms median with a bad tail". Sustained, the median
+cycle is **249 ms** — the loop settles at ~4 Hz against a declared 30 ms
+period. The 3.19 Hz the demo measured on the wire matches the SUSTAINED
+figure, not the windowed one, which in hindsight was the clue.
+
+The trim was verified to decode identically, but against the file as it stood
+at that moment while the island was still running and the file still growing.
+Comparing a prefix to a moving file is not the same as comparing it to the
+finished one. Conclusions below that rest on the windowed p50 are qualified
+accordingly.
+
 **The finding is the TAIL.** Idle vs loaded, same build:
 
 | | idle | loaded |
