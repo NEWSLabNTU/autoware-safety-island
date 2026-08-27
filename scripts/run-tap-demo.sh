@@ -28,11 +28,16 @@ set -euo pipefail
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 BUILD_DIR="${ROOT}/build/zephyr-fvp-tap"
 LOG_DIR="${ROOT}/log"
+SNTP_PID_FILE="${ROOT}/log/tap-demo-sntp.pid"
 FVP_LOG="${LOG_DIR}/tap-demo-fvp.log"
 FVP_PID_FILE="${LOG_DIR}/tap-demo-fvp.pid"
 AUTOWARE_CTR="demo-safety-island-autoware-1"
 BOOT_MARKER="Actuation Safety Island is Live"
-BOOT_TIMEOUT_S=120
+# 200 s, matching .github/scripts/run-zephyr-fvp-ci.sh. The CI timeout was
+# raised from 90 s in 3ad3cdb because "the boot grew with the pin" and a slow
+# boot failed as a MISSING MARKER, which reads as a broken image rather than a
+# slow one. This script was left at 120 s and has the same failure mode.
+BOOT_TIMEOUT_S=200
 # W3 runbook seed (sample-map-planning): ego spawn + goal ~30 m along heading.
 # NOTE (2026-08-24): this pair verifies the E-STOP closed loop only — the
 # goal snaps to a crossing lane, the planner emits a goal-anchored
@@ -67,6 +72,11 @@ demo_down() {
     rm -f "${FVP_PID_FILE}"
   fi
   pkill -f FVP_BaseR_AEMv8R 2>/dev/null || true
+  if [[ -f "${SNTP_PID_FILE}" ]]; then
+    say "stopping SNTP responder…"
+    kill "$(cat "${SNTP_PID_FILE}")" 2>/dev/null || true
+    rm -f "${SNTP_PID_FILE}"
+  fi
   say "stopping compose stack…"
   ( cd "${ROOT}/demo" && docker compose down )
   say "done. tap0 left up (sudo scripts/setup-tap.sh --delete to remove)."
@@ -102,12 +112,35 @@ mkdir -p "${LOG_DIR}"
 # the model crawls ~1000x under busy code (W3 runbook). Baked at build time.
 say "building tap image (incremental)…"
 export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C cache_state_modelled=0"
-( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" ) \
+# ASI_DEMO_BUILD_ARGS — extra build.sh flags for the island image. Added for
+# the phase-7 loaded capture: `ASI_DEMO_BUILD_ARGS=--trace` builds the tracing
+# profile, so a CTF timeline can be taken WHILE the vehicle drives rather than
+# only on an idle island. Word-split on purpose (multiple flags).
+# shellcheck disable=SC2086
+( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" \
+    ${ASI_DEMO_BUILD_ARGS:-} ) \
   > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 
 # ---- compose stack ----
 say "starting demo compose stack…"
 ( cd "${ROOT}/demo" && docker compose up -d )
+
+# ---- SNTP responder ----
+# The tap image BLOCKS on SNTP at boot: the island has no RTC and no internet
+# route on tap0, and `CONFIG_SNTP_SERVER_ADDRESS="192.168.10.1:12123"` points
+# at scripts/sntp-server.py. Without a responder it gives up after ~11 s and
+# never reaches "Actuation Safety Island is Live", so the demo cannot boot —
+# observed as a 120 s boot timeout with "Cannot set time using SNTP" in the
+# island log. Unprivileged port, so no root needed.
+if ss -lunp 2>/dev/null | grep -q "192.168.10.1:12123"; then
+  say "SNTP responder already listening — leaving it alone."
+else
+  say "starting SNTP responder on 192.168.10.1:12123…"
+  nohup python3 "${ROOT}/scripts/sntp-server.py" --bind 192.168.10.1 --port 12123 \
+    > "${LOG_DIR}/tap-demo-sntp.log" 2>&1 &
+  echo "$!" > "${SNTP_PID_FILE}"
+  disown 2>/dev/null || true
+fi
 
 # ---- boot the island ----
 say "booting the island on FVP (log: ${FVP_LOG})…"
