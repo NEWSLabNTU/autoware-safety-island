@@ -91,8 +91,13 @@ Written up in `docs/design/upstream-zephyr-issues.md`;
 against `zephyrproject-rtos/zephyr@main` on 2026-08-24 and still present; a
 tracker search found no existing report for any of them.
 
-- [~] **Filing is deferred** (owner decision, 2026-08-24). One command when
-      wanted: `scripts/file-upstream-issues.sh --create`.
+- [x] **FILED 2026-08-27**: #117634 (async tracing bricks boot on USE_SWITCH),
+      #117635 (CTF socket hooks deref unchecked), #117636
+      (THREAD_ANALYZER_AUTO_STACK_SIZE 4096 vs a measured 9040), #117637
+      (k_thread_priority_set emits no CTF event). Two drafts were corrected
+      first: both had attributed crashes to the reported defect that later
+      work traced elsewhere, so they now report what is established and say
+      what is not.
 - [x] Issue 1 — `CONFIG_TRACING_ASYNC` starts a kernel timer from inside the
       arm64 context switch; the image does not boot. Worked around with
       `CONFIG_TRACING_SYNC`, at the cost of tracing in the traced context.

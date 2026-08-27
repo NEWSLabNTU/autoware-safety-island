@@ -10,7 +10,13 @@ FVP lane (`docs/design/rt_evaluation_zephyr.rst`). All three are in Zephyr
 itself, none is ASI-specific, and each reproduces on any board with the same
 properties.
 
-**All three are still present in mainline** (checked 2026-08-24 against
+**FILED 2026-08-27** as zephyrproject-rtos/zephyr
+[#117634](https://github.com/zephyrproject-rtos/zephyr/issues/117634) (async tracing),
+[#117635](https://github.com/zephyrproject-rtos/zephyr/issues/117635) (socket hooks),
+[#117636](https://github.com/zephyrproject-rtos/zephyr/issues/117636) (analyzer stack),
+[#117637](https://github.com/zephyrproject-rtos/zephyr/issues/117637) (priority_set event).
+
+**All were still present in mainline** (checked 2026-08-24 against
 `zephyrproject-rtos/zephyr@main`), and a search of the issue tracker found no
 existing report for any of them. `scripts/file-upstream-issues.sh` generates
 the issue bodies from this file and files them with `gh`.
