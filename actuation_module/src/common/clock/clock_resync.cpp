@@ -25,7 +25,9 @@ using namespace common::logger;
 // Small stack: the thread owns no application state and calls sntp_simple()
 // plus clock_settime(), both of which the boot path already exercises on the
 // (larger) network-hook stack.
-#define RESYNC_STACK_SIZE 4096
+// Was a hardcoded 4096, measured 100 % consumed (unused 0) under load — see
+// CONFIG_ASI_SNTP_RESYNC_STACK_SIZE. sntp_simple() blocks and does socket work.
+#define RESYNC_STACK_SIZE CONFIG_ASI_SNTP_RESYNC_STACK_SIZE
 // Below every application tier and below the transport band: a late re-sync is
 // harmless, a re-sync that preempts the control tier is not.
 #define RESYNC_PRIORITY   K_LOWEST_APPLICATION_THREAD_PRIO

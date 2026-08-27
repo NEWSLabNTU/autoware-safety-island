@@ -19,6 +19,24 @@ config SNTP_SERVER_ADDRESS
 	  island stamps commands from 1970 and Autoware's vehicle_cmd_gate
 	  rejects them as stale, so autonomous mode never actuates.
 
+config ASI_SNTP_RESYNC_STACK_SIZE
+	int "Stack size for the SNTP re-sync thread"
+	default 12288
+	help
+	  The thread calls sntp_simple(), which blocks and does socket work.
+
+	  MEASURED requirement is 7024 bytes, under a loaded driving mission:
+
+	    at 4096 (the old hardcoded value): unused 0, usage 4096/4096 (100 %)
+	    at 8192:                           unused 1168, usage 7024/8192 (85 %)
+
+	  So the original 4096 was overrun by 1.7x and the 100 % reading was the
+	  analyzer clamping at the stack end rather than the real figure — the
+	  thread had been overflowing into whatever sat adjacent on every loaded
+	  run. 12288 gives ~75 % headroom over the measured high-water; 8192
+	  works but leaves only 1168 bytes, which is thin for a thread that
+	  blocks in socket code.
+
 config ASI_SNTP_RESYNC_INTERVAL_S
 	int "Seconds between SNTP re-syncs (0 disables)"
 	depends on ENABLE_SNTP
