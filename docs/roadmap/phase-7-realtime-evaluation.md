@@ -335,9 +335,25 @@ Follow-ups this opens (none investigated):
       exceeds the whole 30 ms period on its own. A readiness PREDICATE costing
       34 ms median and 4.4 s worst case is doing substantial work.
 
-      Note its max (4396 ms) tracks the MPC max (4610 ms), so the two may be
-      blocked on something shared rather than being independent costs. Not
-      established.
+      **Mechanism found.** `MpcLateralController::isReady()` opens with
+
+      ```cpp
+      bool MpcLateralController::isReady(const InputData & input_data)
+      {
+        setTrajectory(input_data.current_trajectory, input_data.current_odometry);
+      ```
+
+      `setTrajectory()` resamples, filters and computes curvature over the
+      trajectory. So this is not a predicate at all — it is trajectory
+      PROCESSING behind a readiness-check name, running every cycle before
+      anything decides whether the cycle will produce a command. That also
+      explains why its max (4396 ms) tracks the MPC max (4610 ms): both are
+      trajectory-size-driven work in the same vendored MPC path.
+
+      Both consumers are in the VENDORED Autoware MPC code
+      (`src/autoware/autoware_mpc_lateral_controller/`), not in ASI's own
+      layer, so the remedy is a controller-configuration or upstream question
+      rather than an integration one.
 
       Sample caveat: 141 commanded cycles (against 246 in the W7 run) and the
       vehicle parked ~6 m in rather than reaching the goal. Percentiles agree
