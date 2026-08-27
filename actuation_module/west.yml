@@ -38,30 +38,9 @@ manifest:
     # consumed only as a leaf project whose zephyr/module.yml is auto-
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
-    #
-    # TEMPORARY: pinned to branch fix/trace-names-bind-by-handle, the top of
-    # a three-deep stack, all under review:
-    #   NEWSLabNTU/nano-ros#61 — forward NROS_ZEPHYR_HEAP_SIZE to cargo
-    #   NEWSLabNTU/nano-ros#71 — starvation says so; impossible sizes fail
-    #   NEWSLabNTU/nano-ros#75 — name chunks carry their handle
-    # (#40, the callback-tracing hooks, MERGED 2026-08-29 and is in main.)
-    #
-    # REPINNED 2026-08-30 because the previous revision, 6815e262, had been
-    # ORPHANED: that branch was rebased and force-pushed after this file was
-    # pointed at it, so the hash was no longer reachable from any remote
-    # branch and a fresh clone could not fetch it. Exactly the failure the
-    # warning below describes, caused by not re-pinning after a force-push.
-    #
-    # Anyone force-pushing a branch this file points at MUST repin in the same
-    # change. `git branch -r --contains <rev>` in modules/nros is the check;
-    # empty output means the pin is broken.
-    #
-    # MOVE TO main ONCE ALL THREE MERGE: move this revision and the
-    # modules/nros submodule pointer together (see LOCKSTEP above), delete the
-    # branches, and re-run .github/scripts/run-zephyr-fvp-ci.sh.
     - name: nano-ros
       remote: newslab
-      revision: 13eb682fe2dbf813de83ce21c344fda59dc62dd2
+      revision: 3386c1680ba2cdf21a000f8dea8584a17701bff9
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
