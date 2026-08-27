@@ -300,6 +300,37 @@ def report_stats(evs):
                   f"max={d[-1]:.3f}  n={len(d)}")
             print("  outcomes:    " + ", ".join(f"{k}={v}" for k, v in outcomes.most_common()))
 
+        # phase-7 W7 — attribute the tail. The cycle markers say a callback ran
+        # long; these say WHICH PART did. Phases are the spans between the
+        # enter marker and the three in-cycle boundaries, so they only exist on
+        # a cycle that got past the readiness checks (a safe_stop exits before
+        # `inputs_done` and contributes nothing here).
+        INPUTS, LAT, LON = 3, 4, 5
+        PHASES = [("inputs", ENTER, INPUTS), ("mpc_lateral", INPUTS, LAT),
+                  ("pid_longitudinal", LAT, LON), ("publish", LON, EXIT)]
+        seen, spans = {}, {name: [] for name, _, _ in PHASES}
+        for ev in marks:
+            mid = ev.fields.get("marker_id")
+            if ev.disc:
+                seen.clear()
+                continue
+            if mid == ENTER:
+                seen = {ENTER: ev.ts}
+            elif seen:
+                for name, a, b in PHASES:
+                    if mid == b and a in seen:
+                        spans[name].append((ev.ts - seen[a]) / 1e6)
+                seen[mid] = ev.ts
+        if any(spans.values()):
+            print("  phase breakdown (cycles that reached the controllers):")
+            print(f"    {'phase':<18} {'p50 ms':>9} {'p90 ms':>10} {'max ms':>10} {'n':>7}")
+            for name, _, _ in PHASES:
+                v = sorted(spans[name])
+                if not v:
+                    continue
+                print(f"    {name:<18} {v[len(v) // 2]:>9.3f} "
+                      f"{v[int(len(v) * 0.9)]:>10.3f} {v[-1]:>10.3f} {len(v):>7}")
+
     # Timers: `timer_start` carries the REQUESTED duration/period in ticks
     # alongside the arm time, so the requested period and the delivered
     # interval can be compared without inferring either. That pair is the

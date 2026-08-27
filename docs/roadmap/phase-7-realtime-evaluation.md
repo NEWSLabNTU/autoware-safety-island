@@ -225,7 +225,52 @@ locally and are small.
       and PID controllers directly, so the W3 figures predate it.
 - [ ] Then capture under `--drive` and re-run all three questions above.
 
-## W7 — where the tail goes  [ ]
+## W7 — where the tail goes  [x] ANSWERED 2026-08-27
+
+**MPC lateral solve is the bottleneck.** Phase markers at the existing
+PROFILE_POINT boundaries, second driving mission (peak 1.69 m/s, stopped
+~0.9 m from goal), decoded from the SETTLED file after teardown:
+
+```
+phase                 p50 ms     p90 ms     max ms       n
+inputs                22.696     49.054     81.062     246
+mpc_lateral          251.792    335.867   4645.904     245
+pid_longitudinal       3.921      6.577     22.888     245
+publish                1.882      4.135     22.031     245
+```
+
+251.8 ms median against a 30 ms budget — **8x over** — with a 4.65 s worst
+case. PID (3.9 ms) and publish (1.9 ms) are negligible. Input handling
+(22.7 ms) is second-order but not nothing: on its own it consumes three
+quarters of the period.
+
+The phases reconcile with the cycle: 22.7 + 251.8 + 3.9 + 1.9 ~= 280 ms,
+against a period p90 of 336 ms.
+
+READ THE MEDIANS CAREFULLY. Overall `duration p50` is 1.373 ms while
+`mpc_lateral p50` is 251.8 ms. Not a contradiction: 772 of 1018 cycles were
+safe_stop, which exit before the controllers at ~1.4 ms, so the all-cycle
+median IS a safe-stop cycle. The phase table covers only the 246 commanded
+cycles. Separating them is the whole point — an aggregate median hides the
+thing that matters.
+
+This closes the chain: the loop misses its period because the MPC solve does
+not fit in it, not because of scheduling, preemption, priority, or transport.
+Every one of those was suspected at some point in this phase and each was
+eliminated by measurement.
+
+Follow-ups this opens (none investigated):
+
+- [ ] Is 251.8 ms representative of the MPC configuration, or is this an
+      unconverged/ill-conditioned solve? The 4.65 s worst case suggests the
+      latter at least sometimes.
+- [ ] `ctrl_period` is 30 ms but the solve needs ~250 ms. Either the period is
+      aspirational for this platform or the solver needs bounding (iteration
+      cap, horizon, warm start).
+- [ ] Input handling at 22.7 ms p50 deserves its own look — 8.8 KiB
+      trajectory deserialization was already suspected in phase 4.
+
+## W7-original — the question
 
 - [ ] W5 shows 10 % of loaded control cycles exceeding 336 ms and a 4.6 s
       worst case, with period tracking duration — so the callback runs long

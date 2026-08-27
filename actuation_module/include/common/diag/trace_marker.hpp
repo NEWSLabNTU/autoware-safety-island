@@ -36,6 +36,15 @@ enum class Marker : uint32_t
 {
   control_cycle_enter = 1,  ///< arg: cycle counter, low 32 bits
   control_cycle_exit = 2,   ///< arg: outcome (see CycleOutcome)
+
+  // Phase boundaries INSIDE the cycle (phase-7 W7). The loaded capture showed
+  // 10 % of cycles over 336 ms and a 4.6 s worst case, with period tracking
+  // duration — so the callback runs long rather than being preempted. These
+  // split it at the same points the existing PROFILE_POINT stopwatch uses, so
+  // the tail can be attributed to a phase instead of guessed at.
+  control_phase_inputs_done = 3,  ///< createInputData + readiness checks done
+  control_phase_lateral_done = 4, ///< MPC lateral solve done
+  control_phase_longitudinal_done = 5,  ///< PID longitudinal solve done
 };
 
 /// `arg` values for control_cycle_exit — why the cycle ended.

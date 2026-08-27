@@ -332,6 +332,7 @@ void Controller::callbackTimerControl()
   log_debug("Controllers are ready");
 
   PROFILE_POINT(cyc_t_ready);
+  common::diag::trace_marker(common::diag::Marker::control_phase_inputs_done);
 
   // 3. run controllers
   stop_watch_.tic("lateral");
@@ -347,6 +348,7 @@ void Controller::callbackTimerControl()
   publishProcessingTime(stop_watch_.toc("lateral"), pub_processing_time_lat_ms_);
 
   PROFILE_POINT(cyc_t_lat);
+  common::diag::trace_marker(common::diag::Marker::control_phase_lateral_done);
 
   stop_watch_.tic("longitudinal");
   const auto lon_out = longitudinal_controller_->run(*input_data);
@@ -366,6 +368,7 @@ void Controller::callbackTimerControl()
   log_debug("Controllers ran");
 
   PROFILE_POINT(cyc_t_lon);
+  common::diag::trace_marker(common::diag::Marker::control_phase_longitudinal_done);
 
   // 4. sync with each other controllers
   longitudinal_controller_->sync(lat_out.sync_data);
