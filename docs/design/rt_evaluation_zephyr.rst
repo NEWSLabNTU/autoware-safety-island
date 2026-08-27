@@ -591,6 +591,141 @@ substantially more readable.
 0.67 ms median. Worth attention if the 30 ms period matters, though note the
 capture ran without a planner attached, so this is not a loaded-system figure.
 
+RESOLVED once markers landed: that slice is **not** the control callback. The
+callback's own duration is 0.721 ms p50, 1.456 ms max on the same lane, so
+whatever occupies the 62.1 ms is elsewhere in the executor thread. This is a
+good illustration of why thread-level tracing alone could not answer the
+question — a callback runs inside a wake as an ordinary function call, and the
+timeline cannot see its boundaries. See the loaded section below.
+
+
+What the loaded control loop costs
+==================================
+
+Everything above was captured with no planner attached. ``run-tap-demo.sh
+--drive`` runs an autonomous mission end to end, which makes the controller do
+real work, and that changes the picture completely. Application markers
+(mechanism C, extended with ``app_marker``) split the callback into phases;
+the numbers below are p50 over cycles that reached the controllers, decoded
+from a SETTLED capture after teardown.
+
+**The control loop does not meet its 30 ms period, and the reason is the MPC
+solve.** Not scheduling, not preemption, not tier priority, not the transport,
+not the port — each of those was a hypothesis and each was killed by a
+measurement rather than an argument::
+
+    phase                 p50 ms
+    in:process_data        0.011     flag checks
+    in:copy_inputs         0.169     the 8.8 KiB trajectory deep copy
+    in:is_ready           21.85      setTrajectory -> setReferenceTrajectory
+    mpc_lateral          227.5       the QP
+    pid_longitudinal       2.6
+    publish                1.9
+
+Note ``in:copy_inputs``. Phase 4 suspected trajectory deserialization, and so
+did this document's author; it costs 0.169 ms. The cost is in the solve.
+
+A duplicated call, and what it was worth
+----------------------------------------
+
+``MpcLateralController::isReady()`` and ``::run()`` each called
+``setTrajectory()`` with identical arguments, one immediately after the other,
+because the node calls ``isReady(input)`` then ``run(input)`` on the same
+object. The most expensive operation in the cycle ran twice per commanded
+cycle, and the trajectory was pushed into the shape-change detection buffer
+twice.
+
+Removed from ``run()``, not from ``isReady()`` — the latter's own
+``m_reference_trajectory.empty()`` check is *satisfied by* the call, so
+removing it there returns false forever and ``run()`` is never reached.
+Measured on the same workload: ``mpc_lateral`` 298.1 -> 227.5 ms,
+``in:is_ready`` 33.95 -> 21.85 ms, cycle ~340 -> ~254 ms, about 25 %.
+
+Reading the rest of the hot path for the same pattern found nothing more.
+``PidLongitudinalController::isReady()`` is ``return true;``.
+``MPC::setReferenceTrajectory`` is a linear pipeline with no internal
+duplication, and two of its blocks never execute here at all
+(``enable_path_smoothing`` and ``extend_trajectory_for_end_yaw_control`` both
+default false), so the moving-average filter — a recurring cost suspect — is
+dead code at runtime on this lane.
+
+The cost is the QP, and it scales with the horizon
+--------------------------------------------------
+
+With the default ``vehicle_model_type = "kinematics"`` (dim_x 3, dim_u 1,
+dim_y 2) and ``mpc_prediction_horizon = 50``, ``generateMPCMatrix`` builds
+``Cex`` 100x150, ``Qex`` 100x100, ``Bex`` 150x50. The cost function
+``H = B'C'QCB + R`` evaluates as ``Cex*Bex`` (750k MAC), ``CB'*Qex`` (500k),
+``*CB`` (250k) — about **1.5M double MACs per cycle**, every matrix a heap
+allocated Eigen ``MatrixXd`` plus temporaries. That allocation pressure is why
+``CONFIG_HEAP_MEM_POOL_SIZE`` had to go from 192 KiB to 4 MiB.
+
+Sweeping the horizon confirms it::
+
+    N     lookahead   mpc_lateral p50   commanded cycle   period p90   period max
+    50      5.0 s        226.937 ms         261.1 ms        270 ms       4560 ms
+    25      2.5 s         73.046 ms          94.5 ms        113 ms       4408 ms
+    15      1.5 s         43.886 ms          64.7 ms         81 ms        176 ms
+
+    fit: mpc_lateral = 0.0821 * N^2 + 21.75 ms   (8.4 % residual at N=15)
+    implied exponent 50 -> 25: 1.64
+
+Superlinear, as the matrix shapes predict. A data-movement bottleneck would be
+linear; an unconverged solve would not track N^2 at all, and there is no
+iteration to be unconverged in — ``qp_solver_type`` defaults to
+``unconstraint_fast``, the direct solve. The tail collapses too: the
+multi-second worst cases present at N=50 and N=25 are simply absent at N=15,
+whose worst solve is 97 ms.
+
+Two cross-checks worth keeping. The N=50 point reproduces at 226.937 ms
+against 227.5 ms measured on a different mission, so ``mpc_lateral`` is
+mission-insensitive and horizon-driven. ``in:is_ready`` is **not**: it reads
+30.6 / 16.9 / 17.1 ms across the sweep and 21.85 ms earlier, varying as much at
+constant N as across the whole sweep. Do not read a horizon dependence into it;
+the trajectory pipeline does not use the horizon.
+
+Why tuning cannot close the gap here
+------------------------------------
+
+The fit has a horizon-independent floor of 21.75 ms inside ``mpc_lateral``
+alone. Across the commanded cycle::
+
+    inputs ~17.0 + mpc floor 21.75 + pid ~2.6 + publish ~1.05  =  ~42.4 ms
+
+So **no horizon meets 30 ms on the FVP** — not N=15, not N=1. The horizon is a
+large lever (5.2x from 50 to 15) and it is not enough.
+
+.. warning::
+
+   **None of the millisecond figures on this page are silicon numbers.**
+   ``FVP_BaseR_AEMv8R`` is an Arm Fast Model: programmer's view,
+   instruction-accurate, **not cycle-accurate**. Its wall-clock is a property
+   of the simulator, not of a Cortex-R52. 1.5M double MACs is not a 227 ms
+   workload on an R52 with an FPU, and a ~100x gap is consistent with the
+   model and with nothing else.
+
+   The floor above is therefore an artifact too, which is precisely why no
+   further FVP capture can decide whether ``ctrl_period = 0.03`` is
+   achievable. That question unblocks on a run against S32Z hardware or a
+   cycle-accurate model — or, without hardware, on an instruction count for
+   the solve span (mechanism F) divided by the R52 issue rate.
+
+   What the FVP *does* establish soundly is everything relative: which phase
+   dominates, that a call was duplicated, and how cost scales with the
+   horizon. Ratios survive the model; absolute times do not.
+
+The parameters behind all of this
+---------------------------------
+
+``mpc_lateral_controller.cpp`` makes 69 ``declare_parameter`` calls. The launch
+seeds two (``control_output``, ``ctrl_period``) plus
+``mpc_prediction_horizon``, added at its compiled default of 50 so that the
+largest cost lever is owned by the deployment rather than a C++ literal.
+Everything else runs on compiled defaults with no runtime path, which is worth
+knowing before anyone plans a retune. Changing the horizon is a controls
+decision: lookahead is N * ``mpc_prediction_dt``, so N=15 trades 5.0 s of
+prediction for 1.5 s.
+
 
 Caveats read out of the source
 ==============================

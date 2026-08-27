@@ -1,8 +1,19 @@
 # Phase 7 — real-time evaluation of the Zephyr FVP lane
 
-Status: **in progress** (started 2026-08-21). Scope: measure the scheduling
-behaviour of the safety island on its production target, and build the tooling
-that makes those measurements repeatable. Distinct from phase 4's rate
+Status: **complete** (2026-08-21 → 2026-08-28), with one question DEFERRED to
+silicon (see W12) and one uninvestigated curiosity. Scope: measure the
+scheduling behaviour of the safety island on its production target, and build
+the tooling that makes those measurements repeatable.
+
+**Conclusion.** The control loop does not meet its 30 ms period, and the cause
+is the MPC solve — not scheduling, preemption, tier priority, transport, or
+the port, each of which was a hypothesis killed by a measurement. Cost is
+`0.0821 * N^2 + 21.75` ms in `mpc_prediction_horizon`, with a ~42.4 ms
+horizon-independent floor across the commanded cycle. Whether that floor is
+real is NOT decidable on this platform: the FVP is an Arm Fast Model
+(programmer's view, not cycle-accurate), so its wall-clock is a simulator
+property. Ratios survive the model; absolute times do not. The durable
+write-up is `docs/design/rt_evaluation_zephyr.rst`; this file is the work log. Distinct from phase 4's rate
 profiling, which was FreeRTOS-POSIX-side and host-measured; this track is
 target-side, on `fvp_baser_aemv8r`.
 

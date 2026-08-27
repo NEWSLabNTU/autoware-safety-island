@@ -19,6 +19,15 @@ ensure_fvp_available()
 {
   local fvp_bin
 
+  # Honour an ARMFVP_BIN_PATH the caller already set (activate-asi.sh exports
+  # one, and the licence-gated Arm download lands outside PATH). Without this
+  # the `command -v` lookup below misses a perfectly good local FVP and the
+  # CDN fallback re-downloads ~1 GB on every run.
+  if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/${FVP_BIN_NAME}" ]; then
+    export ARMFVP_BIN_PATH
+    return
+  fi
+
   fvp_bin="$(command -v "${FVP_BIN_NAME}" || true)"
   if [ -n "${fvp_bin}" ]; then
     ARMFVP_BIN_PATH="$(dirname "${fvp_bin}")"
