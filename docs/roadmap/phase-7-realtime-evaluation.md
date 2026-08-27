@@ -201,7 +201,29 @@ unvalidated under the conditions that matter:
 
 - [ ] `main`'s **62.102 ms** worst contiguous slice against a 0.669 ms median —
       real, or an artefact of an idle executor?
-- [ ] `net_socket_service` at **70 %** of its (now 4096-byte) stack, and
+- [x] **Stack headroom under load — ANSWERED 2026-08-27, and it found a third
+      overflow.** Layer 1 report from a loaded driving mission:
+
+      ```
+      asi_sntp_resync    : unused    0  usage   4096 / 4096   (100 %)  <- overflowing
+      net_socket_service : unused 1216  usage   2880 / 4096   ( 70 %)
+      main               : unused 370928 usage 153360 / 524288 ( 29 %)
+      tcp_work           : unused 1536  usage   2560 / 4096   ( 62 %)
+      ```
+
+      `asi_sntp_resync` was a hardcoded 4096 and reads 100 % — the analyzer
+      clamping at the stack end. Re-measured at 8192 it needs **7024 bytes**,
+      so it had been overrun 1.7x on every loaded run since periodic re-sync
+      landed. Fixed: CONFIG_ASI_SNTP_RESYNC_STACK_SIZE, default 12288.
+
+      The other two settle earlier questions: `main` uses 153360 under load
+      against 96384 idle, so the 16 KiB the pin cut it to was short by ~10x,
+      and 512 KiB is correctly sized at 29 %. `net_socket_service` needs 2880
+      loaded, so the 1200 default it shipped with was overrun 2.4x — worse
+      than the idle figure implied.
+
+- [ ] SUPERSEDED by the above: `net_socket_service` at 70 % of its (now
+      4096-byte) stack, and
       `tcp_work` at 62 %. Both unloaded, and W2 proved this thread was already
       overflowing once.
 - [ ] **Priority 5 vs 9 measured identical** — p50 6.0000 ms, p99 7.0000 ms,
