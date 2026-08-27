@@ -66,6 +66,18 @@ endforeach()
 list(APPEND _controller_sources
   "${CMAKE_CURRENT_SOURCE_DIR}/src/controller.cpp")
 
+# Bare-metal FreeRTOS (an536, s32z2) has NO wall clock: nano-ros's platform
+# reports none (issue 0758) and newlib's _gettimeofday stub answers with
+# garbage, so every stamped control command is garbage too and no ROS peer will
+# accept it. This TU supplies one (SNTP epoch + the monotonic platform clock).
+# The FreeRTOS POSIX simulator is excluded on purpose — there the host clock is
+# already correct, which is what platform/freertos/freertos_clock.h assumes.
+if(_asi_is_armv8r)
+  list(APPEND _controller_sources
+    "${_ACT_ROOT}/src/platform/freertos/wall_clock.cpp")
+  add_compile_definitions(ASI_FREERTOS_WALL_CLOCK=1)
+endif()
+
 set(_controller_includes "")
 foreach(_i IN LISTS APP_INCLUDE_DIRS)
   list(APPEND _controller_includes "${_ACT_ROOT}/${_i}")

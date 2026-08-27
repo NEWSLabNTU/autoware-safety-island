@@ -655,17 +655,35 @@ function build_freertos_armv8r_nros() {
   # Same sizing knobs as the other nros lanes (environment wins).
   export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
-  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  # 64 KiB, not the 16 KiB the other lanes use. A real Autoware trajectory
+  # serialises to ~13 KiB and this lane talks to a real Autoware; at 16 KiB the
+  # island reported NO trajectory at all while the same topic read a clean
+  # 10 Hz on the host (the class nano-ros issue 0749 documents: an undersized
+  # subscription buffer discards the sample silently, after Cyclone ACKed it).
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-65536}"
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
 
   ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
 
+  # ROS domain. The bringup's `[deploy.<t>].domain_id` does NOT reach this lane:
+  # nano-ros hardcodes the FreeRTOS app config's domain to 0 and the typed
+  # path's runtime domain comes from the compile-time NROS_ENTRY_DOMAIN_ID,
+  # which is fed by this cmake knob (nano-ros issue 0831). Default 0 keeps CI
+  # as-is; the demo stack bridges Autoware (domain 1) to the island on domain 2,
+  # so a demo build sets NROS_DOMAIN_ID=2.
+  local _domain_arg=()
+  if [ -n "${NROS_DOMAIN_ID:-}" ]; then
+    _domain_arg=(-DNROS_DOMAIN_ID="${NROS_DOMAIN_ID}")
+    echo -e "${GREEN}ROS domain ${NROS_DOMAIN_ID} (NROS_ENTRY_DOMAIN_ID)${NC}"
+  fi
+
   cmake -S actuation_module -B "${app_build_dir}" \
     -DNANO_ROS_PLATFORM=freertos \
     -DNANO_ROS_BOARD="${board}" \
     -DNROS_DEPLOY="${deploy}" \
+    "${_domain_arg[@]}" \
     -DNROS_RMW=cyclonedds \
     -DFREERTOS_PORT="${FREERTOS_PORT}" \
     -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \

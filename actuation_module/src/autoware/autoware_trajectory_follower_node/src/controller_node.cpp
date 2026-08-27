@@ -39,6 +39,12 @@ using namespace common::logger;
 #include <utility>
 #include <vector>
 
+#if defined(ASI_FREERTOS_WALL_CLOCK)
+// src/platform/freertos/wall_clock.cpp — only linked on the bare-metal
+// FreeRTOS lanes, which are the ones with no wall clock to stamp with.
+extern "C" void asi_start_wall_clock_sync(void);
+#endif
+
 namespace autoware::motion::control::trajectory_follower_node
 {
 // Phase 242.5 (RFC-0044) — construct-with-handle ctor. The entry hands the
@@ -48,6 +54,16 @@ namespace autoware::motion::control::trajectory_follower_node
 Controller::Controller(nros::NodeHandle handle)
   : nros::ComponentNode(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME)
 {
+#if defined(ASI_FREERTOS_WALL_CLOCK)
+  // Bare-metal FreeRTOS has no wall clock, so every command we stamp would be
+  // garbage and no ROS peer would accept it. Start the SNTP epoch sync here:
+  // the board has brought the netif up before the app runs, and the generated
+  // entry uses `run_tiers`, which — unlike `run_components` — never calls the
+  // `nros_board_network_wait()` hook the Zephyr lane syncs from.
+  // Detail: src/platform/freertos/wall_clock.cpp.
+  asi_start_wall_clock_sync();
+#endif
+
   const double ctrl_period = declare_parameter<double>("ctrl_period", 0.15);  // TODO: Orignal autoware period is 0.03 30ms
   timeout_thr_sec_ = declare_parameter<double>("timeout_thr_sec", 0.5);
 

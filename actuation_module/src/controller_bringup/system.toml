@@ -116,3 +116,15 @@ board = "s32z270-freertos"
 [deploy.an536]
 kind  = "embedded"
 board = "mps3-an536-freertos"
+# Domain 2 for the demo stack (Autoware on 1, island on 2, `domain_bridge`
+# relaying between them) — the same split the FVP lane gets from its tap conf's
+# CONFIG_NROS_CYCLONE_DOMAIN_ID=2.
+#
+# DECLARED HERE, BUT NOT WHAT APPLIES. The RFC-0004 ladder
+# ([deploy.<t>].domain_id over [system].domain_id) does not reach the FreeRTOS
+# typed path: nano-ros hardcodes the app config's domain to 0 and takes the
+# runtime domain from the compile-time NROS_ENTRY_DOMAIN_ID instead. So the
+# value that actually lands is build.sh's NROS_DOMAIN_ID knob. Filed upstream
+# as nano-ros issue 0831; when that lands, this line becomes the SSoT and the
+# build.sh knob goes back to being an override.
+domain_id = 2

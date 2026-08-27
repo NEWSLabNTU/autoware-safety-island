@@ -432,6 +432,82 @@ wanted on the R52 lane too, and only once someone writes the smsc91c111 lwIP
 driver. A non-networked FreeRTOS-on-FVP smoke would work today, but QEMU gives
 the same thing for free and in CI.
 
+## The full Autoware demo on this lane (2026-08-27)
+
+`scripts/run-tap-demo.sh --an536 --drive` runs the same campaign as the FVP
+lane: Autoware planning sim + `domain_bridge` + visualizer in compose, the ASI
+controller on QEMU `mps3-an536` over `tap1`, DDS domain 2, seeded and routed
+from the map.
+
+**What works.** The emulated Cortex-R52 joins a real Autoware graph and is
+accepted by it:
+
+* the image boots, syncs its clock, and creates its endpoints on domain 2;
+* it receives `/localization/kinematic_state` (40 Hz), steering, acceleration
+  and operation-mode state;
+* it publishes `/control/trajectory_follower/control_cmd`, which the bridge
+  relays to domain 1 and Autoware ACCEPTS — `route_state=2`, a driveable
+  trajectory streaming, and **autonomous mode ENGAGES**;
+* the safe-stop path behaves exactly as designed throughout.
+
+**What does not.** The vehicle stays at 0.0 m/s, because the one input it
+never receives is the trajectory it would follow — the only topic on the list
+bigger than a single datagram (~13 KiB, ~10 RTPS fragments against the demo's
+1400 B `MaxMessageSize`). A host subscriber on the SAME domain, interface and
+topic reads a clean 10 Hz while the island reads nothing. Filed upstream as
+nano-ros issue 0836; it is the last blocker for the closed loop here.
+
+### Four things had to be fixed to get this far
+
+Each was a real defect, not a configuration accident, and each was invisible to
+the small-message examples that had exercised this board until now.
+
+1. **QEMU never delivered host-to-guest frames** with only the NIC and the tap
+   on its net hub — nano-ros issue 0830. One flag
+   (`-netdev hubport,id=h0,hubid=0`).
+2. **Cyclone's receive thread ran on a 1 KiB stack.** ddsrt's FreeRTOS port
+   defaults to `configMINIMAL_STACK_SIZE` and only `dq.builtins` was ever
+   sized, so the first real ROS payload produced
+   `*** STACK OVERFLOW: recvUC ***` — and, since the overflow lands in the
+   adjacent heap, the same image failed `create_subscription` with a heap
+   assert when it booted into a populated graph. Fixed upstream (0836's
+   commit); note `recvUC` is not a nameable thread, so the per-socket split
+   had to be disabled to size the one that remains.
+3. **The image had no wall clock.** `nros_platform_time_now_ns()` returns 0 on
+   FreeRTOS (nano-ros issue 0758) and newlib's `_gettimeofday` stub answered
+   with garbage, so commands were stamped `sec: -1749516426` and Autoware's
+   operation-mode manager never published a state — autonomous could not
+   engage. `src/platform/freertos/wall_clock.cpp` supplies one from SNTP.
+   The timing is load-bearing: acquiring the epoch moves the clock ~56 years
+   in one step, and taking that step after the participant exists fails
+   endpoint creation nondeterministically, so it happens in
+   `nros_board_network_wait()` — before `nros_cpp_init`.
+4. **lwIP was sized for a 4 MiB MCU.** Receive mbox 8 against a ~10-datagram
+   burst. Raised per-board upstream.
+
+### And one that was not a defect at all
+
+A leftover `ros2-daemon --ros-domain-id 2` — spawned by my own `ros2 topic hz`
+— sat on domain 2 for hours and made every island boot fail at
+`create_subscription`. It was read as four different bugs before the process
+list was checked. That is the **fifth** sighting of the ghost-instance class
+this repo records; the rule stands and is worth restating: *before believing
+any multi-node result, prove the participant count.*
+
+### Reproducing
+
+```bash
+sudo scripts/setup-tap.sh                       # tap1, 192.0.3.1/24 (root; not run for you)
+scripts/run-tap-demo.sh --an536 --drive
+scripts/run-tap-demo.sh --an536 --down
+```
+
+The script starts the SNTP responder, boots the island BEFORE the compose
+stack (booting into a live graph is its own failure — see above), and pins DDS
+domain 2 to `tap1`. It needs a nano-ros pin at or past `3386c1680`; the
+submodule was left where it was because another session had it checked out on
+a feature branch.
+
 ## Acceptance
 
 1. `nros-board-mps3-an536-freertos` boots on QEMU and runs the FreeRTOS

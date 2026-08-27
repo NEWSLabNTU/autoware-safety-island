@@ -14,7 +14,11 @@
 #   scripts/run-tap-demo.sh            # build (incremental) + up + seed + verify
 #   scripts/run-tap-demo.sh --drive    # build + up + AUTONOMOUS DRIVING mission
 #   scripts/run-tap-demo.sh --no-seed  # up only; seed by hand / via rviz
-#   scripts/run-tap-demo.sh --down     # stop FVP + compose stack
+#   scripts/run-tap-demo.sh --down     # stop the island + compose stack
+#
+#   --an536  runs the EMULATED Cortex-R52 lane instead of the FVP: the same
+#            controller image built for QEMU mps3-an536, on tap1, DDS domain 2.
+#            Needs no FVP licence and no west. Combine with --drive/--down.
 #
 # Prereqs (one-time):
 #   scripts/bootstrap-asi.sh && source ./activate-asi.sh
@@ -26,18 +30,46 @@
 set -euo pipefail
 
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-BUILD_DIR="${ROOT}/build/zephyr-fvp-tap"
 LOG_DIR="${ROOT}/log"
-SNTP_PID_FILE="${ROOT}/log/tap-demo-sntp.pid"
-FVP_LOG="${LOG_DIR}/tap-demo-fvp.log"
-FVP_PID_FILE="${LOG_DIR}/tap-demo-fvp.pid"
+# Lane: "fvp" (Zephyr on ARM FVP, tap0) or "an536" (FreeRTOS on QEMU
+# mps3-an536, tap1). Set by --an536; every per-lane value is resolved in
+# select_lane() below, and nothing after the island boots depends on it.
+LANE="fvp"
+BUILD_DIR=""
+ISLAND_LOG=""
+ISLAND_PID_FILE=""
+TAP_IF=""
+TAP_HOST_IP=""
+SNTP_PORT=""
+COMPOSE_FILES=()
+
+select_lane() {
+  if [[ "${LANE}" == "an536" ]]; then
+    BUILD_DIR="${ROOT}/build/freertos-an536"
+    ISLAND_LOG="${LOG_DIR}/tap-demo-an536.log"
+    ISLAND_PID_FILE="${LOG_DIR}/tap-demo-an536.pid"
+    TAP_IF="tap1"
+    # Must match ASI_SNTP_SERVER_IP/PORT baked into the image
+    # (src/platform/freertos/wall_clock.cpp) — the image's gateway.
+    TAP_HOST_IP="192.0.3.1"
+    SNTP_PORT="12123"
+    # docker-compose.posix.yaml is misnamed for this use — what it actually
+    # does is parameterise which interface DDS domain 2 is pinned to
+    # (SAFETY_ISLAND_DDS_INTERFACE), which is exactly what a non-tap0 island
+    # needs. The default file hardcodes tap0.
+    COMPOSE_FILES=(-f docker-compose.yaml -f docker-compose.posix.yaml)
+    export SAFETY_ISLAND_DDS_INTERFACE="${TAP_IF}"
+  else
+    BUILD_DIR="${ROOT}/build/zephyr-fvp-tap"
+    ISLAND_LOG="${LOG_DIR}/tap-demo-fvp.log"
+    ISLAND_PID_FILE="${LOG_DIR}/tap-demo-fvp.pid"
+    TAP_IF="tap0"
+    COMPOSE_FILES=(-f docker-compose.yaml)
+  fi
+}
 AUTOWARE_CTR="demo-safety-island-autoware-1"
 BOOT_MARKER="Actuation Safety Island is Live"
-# 200 s, matching .github/scripts/run-zephyr-fvp-ci.sh. The CI timeout was
-# raised from 90 s in 3ad3cdb because "the boot grew with the pin" and a slow
-# boot failed as a MISSING MARKER, which reads as a broken image rather than a
-# slow one. This script was left at 120 s and has the same failure mode.
-BOOT_TIMEOUT_S=200
+BOOT_TIMEOUT_S=120
 # W3 runbook seed (sample-map-planning): ego spawn + goal ~30 m along heading.
 # NOTE (2026-08-24): this pair verifies the E-STOP closed loop only — the
 # goal snaps to a crossing lane, the planner emits a goal-anchored
@@ -66,100 +98,197 @@ in_autoware() {
 }
 
 demo_down() {
-  say "stopping FVP…"
-  if [[ -f "${FVP_PID_FILE}" ]]; then
-    kill "$(cat "${FVP_PID_FILE}")" 2>/dev/null || true
-    rm -f "${FVP_PID_FILE}"
+  say "stopping the island…"
+  if [[ -f "${ISLAND_PID_FILE}" ]]; then
+    kill "$(cat "${ISLAND_PID_FILE}")" 2>/dev/null || true
+    rm -f "${ISLAND_PID_FILE}"
   fi
-  pkill -f FVP_BaseR_AEMv8R 2>/dev/null || true
-  if [[ -f "${SNTP_PID_FILE}" ]]; then
-    say "stopping SNTP responder…"
-    kill "$(cat "${SNTP_PID_FILE}")" 2>/dev/null || true
-    rm -f "${SNTP_PID_FILE}"
+  if [[ "${LANE}" == "an536" ]]; then
+    # A leftover QEMU keeps the tap open, and the NEXT run then exits with
+    # "could not configure /dev/net/tun: Device or resource busy" while the
+    # surrounding script keeps going — a clean-looking failure with no island.
+    pkill -f "qemu-system-arm -machine mps3-an536" 2>/dev/null || true
+    pkill -f "sntp-server.py --bind ${TAP_HOST_IP}" 2>/dev/null || true
+  else
+    pkill -f FVP_BaseR_AEMv8R 2>/dev/null || true
   fi
   say "stopping compose stack…"
-  ( cd "${ROOT}/demo" && docker compose down )
-  say "done. tap0 left up (sudo scripts/setup-tap.sh --delete to remove)."
+  ( cd "${ROOT}/demo" && docker compose "${COMPOSE_FILES[@]}" down )
+  say "done. ${TAP_IF} left up (sudo scripts/setup-tap.sh --delete to remove)."
 }
 
 DO_SEED=1
 DO_DRIVE=0
-case "${1:-}" in
-  --down)    demo_down; exit 0 ;;
-  --no-seed) DO_SEED=0 ;;
-  --drive)   DO_SEED=0; DO_DRIVE=1 ;;
-  "")        ;;
-  *) die "unknown arg '$1' (usage: run-tap-demo.sh [--drive|--no-seed|--down])" ;;
-esac
+DO_DOWN=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --an536)   LANE="an536" ;;
+    --down)    DO_DOWN=1 ;;
+    --no-seed) DO_SEED=0 ;;
+    --drive)   DO_SEED=0; DO_DRIVE=1 ;;
+    *) die "unknown arg '$1' (usage: run-tap-demo.sh [--an536] [--drive|--no-seed|--down])" ;;
+  esac
+  shift
+done
+select_lane
+LANE_FLAG=""; [[ "${LANE}" == "an536" ]] && LANE_FLAG="--an536"
+((DO_DOWN)) && { demo_down; exit 0; }
 
 # ---- preflight ----
-ip link show tap0 >/dev/null 2>&1 || \
-  die "no tap0 — run: sudo scripts/setup-tap.sh   (root; not run for you)"
+ip link show "${TAP_IF}" >/dev/null 2>&1 || \
+  die "no ${TAP_IF} — run: sudo scripts/setup-tap.sh   (root; not run for you)"
 docker info >/dev/null 2>&1 || die "docker not available."
-command -v west >/dev/null 2>&1 || {
-  [[ -f "${ROOT}/activate-asi.sh" ]] && source "${ROOT}/activate-asi.sh"
-  command -v west >/dev/null 2>&1 || die "west not on PATH — source ./activate-asi.sh first."
-}
-if [[ -z "${ARMFVP_BIN_PATH:-}" ]]; then
-  [[ -x "${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin/FVP_BaseR_AEMv8R" ]] || \
-    die "FVP not found — set ARMFVP_BIN_PATH or install under tools/fvp/ (see tools/README.md)."
-  export ARMFVP_BIN_PATH="${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin"
+if [[ "${LANE}" == "an536" ]]; then
+  QEMU_BIN="${QEMU_BIN:-${NROS_HOME:-${HOME}/.nros}/sdk/qemu/11.0.0-nros2/bin/qemu-system-arm}"
+  [[ -x "${QEMU_BIN}" ]] || QEMU_BIN="$(command -v qemu-system-arm || true)"
+  [[ -x "${QEMU_BIN}" ]] || \
+    die "qemu-system-arm not found — (cd modules/nros && nros setup --tool qemu) or set QEMU_BIN."
+  "${QEMU_BIN}" -machine help 2>/dev/null | grep -q mps3-an536 || \
+    die "${QEMU_BIN} does not know -machine mps3-an536 (needs QEMU >= 9.0)."
+else
+  command -v west >/dev/null 2>&1 || {
+    [[ -f "${ROOT}/activate-asi.sh" ]] && source "${ROOT}/activate-asi.sh"
+    command -v west >/dev/null 2>&1 || die "west not on PATH — source ./activate-asi.sh first."
+  }
+  if [[ -z "${ARMFVP_BIN_PATH:-}" ]]; then
+    [[ -x "${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin/FVP_BaseR_AEMv8R" ]] || \
+      die "FVP not found — set ARMFVP_BIN_PATH or install under tools/fvp/ (see tools/README.md)."
+    export ARMFVP_BIN_PATH="${ROOT}/tools/fvp/FVP_Base_AEMv8R_11.31_28/bin"
+  fi
 fi
 mkdir -p "${LOG_DIR}"
 
 # ---- build (incremental; no-op when up to date) ----
 # cache_state_modelled=0 is REQUIRED for interactive runs: with the default =1
 # the model crawls ~1000x under busy code (W3 runbook). Baked at build time.
-say "building tap image (incremental)…"
-export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C cache_state_modelled=0"
-# ASI_DEMO_BUILD_ARGS — extra build.sh flags for the island image. Added for
-# the phase-7 loaded capture: `ASI_DEMO_BUILD_ARGS=--trace` builds the tracing
-# profile, so a CTF timeline can be taken WHILE the vehicle drives rather than
-# only on an idle island. Word-split on purpose (multiple flags).
-# shellcheck disable=SC2086
-( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" \
-    ${ASI_DEMO_BUILD_ARGS:-} ) \
-  > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
-
-# ---- compose stack ----
-say "starting demo compose stack…"
-( cd "${ROOT}/demo" && docker compose up -d )
-
-# ---- SNTP responder ----
-# The tap image BLOCKS on SNTP at boot: the island has no RTC and no internet
-# route on tap0, and `CONFIG_SNTP_SERVER_ADDRESS="192.168.10.1:12123"` points
-# at scripts/sntp-server.py. Without a responder it gives up after ~11 s and
-# never reaches "Actuation Safety Island is Live", so the demo cannot boot —
-# observed as a 120 s boot timeout with "Cannot set time using SNTP" in the
-# island log. Unprivileged port, so no root needed.
-if ss -lunp 2>/dev/null | grep -q "192.168.10.1:12123"; then
-  say "SNTP responder already listening — leaving it alone."
+say "building the ${LANE} island image (incremental)…"
+if [[ "${LANE}" == "an536" ]]; then
+  # NROS_DOMAIN_ID=2 is load-bearing: the demo bridges Autoware (domain 1) to
+  # the island (domain 2), and the bringup's [deploy.an536].domain_id does not
+  # reach this lane (nano-ros issue 0831) — this knob is what actually bakes it.
+  ( cd "${ROOT}" && NROS_DOMAIN_ID=2 ./build.sh --platform freertos-an536 ) \
+    > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 else
-  say "starting SNTP responder on 192.168.10.1:12123…"
-  nohup python3 "${ROOT}/scripts/sntp-server.py" --bind 192.168.10.1 --port 12123 \
-    > "${LOG_DIR}/tap-demo-sntp.log" 2>&1 &
-  echo "$!" > "${SNTP_PID_FILE}"
-  disown 2>/dev/null || true
+  export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C cache_state_modelled=0"
+  ( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" ) \
+    > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 fi
 
-# ---- boot the island ----
-say "booting the island on FVP (log: ${FVP_LOG})…"
-rm -f "${FVP_LOG}"
+# ---- island + compose, in the order the lane needs ----
+# an536 boots the island FIRST. Booting the ASI image into an ALREADY RUNNING
+# domain-2 graph fails at create_subscription ("rmw_ret error", code=-100) and
+# then trips a heap_4 assert; the same image boots clean with no peer and
+# survives a peer joining later. So: island, then stack. (ASI issue: see
+# docs/roadmap/phase-6, "boot into an existing graph".)
+start_compose() {
+  say "starting demo compose stack (DDS domain 2 on ${TAP_IF})…"
+  ( cd "${ROOT}/demo" && docker compose "${COMPOSE_FILES[@]}" up -d )
+}
+
+# Reuse an island that is already up and past its boot marker — iterating on a
+# mission should not cost a reboot, and on an536 a reboot into a live graph is
+# exactly the thing that fails.
+island_already_up() {
+  [[ "${LANE}" == "an536" ]] || return 1
+  pgrep -f "qemu-system-arm -machine mps3-an536" >/dev/null 2>&1 || return 1
+  grep -q "${BOOT_MARKER}" "${ISLAND_LOG}" 2>/dev/null || return 1
+  return 0
+}
+
+# The island has no RTC and no route off the tap, so its wall clock comes from
+# this responder on the tap host. Without it every control command is stamped
+# boot-relative, Autoware's operation-mode manager publishes no state, and
+# autonomous mode can never be engaged (the FVP lane needs the same thing).
+start_sntp() {
+  [[ "${LANE}" == "an536" ]] || return 0
+  if pgrep -f "sntp-server.py --bind ${TAP_HOST_IP}" >/dev/null 2>&1; then
+    say "SNTP responder already running on ${TAP_HOST_IP}:${SNTP_PORT}."
+    return 0
+  fi
+  say "starting SNTP responder on ${TAP_HOST_IP}:${SNTP_PORT}…"
+  nohup python3 "${ROOT}/scripts/sntp-server.py" \
+    --bind "${TAP_HOST_IP}" --port "${SNTP_PORT}" > "${LOG_DIR}/tap-demo-sntp.log" 2>&1 &
+  disown $! 2>/dev/null || true
+}
+
+if [[ "${LANE}" == "an536" ]]; then
+  start_sntp
+  if island_already_up; then
+    say "reusing the island already running (log: ${ISLAND_LOG})."
+  else
+    # ---- boot the island ----
+say "booting the island on ${LANE} (log: ${ISLAND_LOG})…"
+rm -f "${ISLAND_LOG}"
 # Plain background + disown — a `( cmd & echo $! )` subshell here once left
 # west as a FOREGROUND child (bash subshell fork optimization: `$!` was the
 # script's own pid) and the script sat in wait() forever.
-nohup west build -d "${BUILD_DIR}" --target run > "${FVP_LOG}" 2>&1 &
-FVP_PID=$!
-disown "${FVP_PID}" 2>/dev/null || true
-echo "${FVP_PID}" > "${FVP_PID_FILE}"
+if [[ "${LANE}" == "an536" ]]; then
+  ISLAND_ELF="${BUILD_DIR}/src/freertos_an536_entry/actuation_an536_entry"
+  [[ -f "${ISLAND_ELF}" ]] || die "no image at ${ISLAND_ELF} — build failed?"
+  if pgrep -f "qemu-system-arm -machine mps3-an536" >/dev/null 2>&1; then
+    die "a QEMU already holds ${TAP_IF} — run: scripts/run-tap-demo.sh --an536 --down"
+  fi
+  # -netdev hubport is NOT optional. With only the NIC and the tap on QEMU's
+  # hub, host-to-guest frames are never delivered: the island publishes and
+  # never receives, so Autoware sees control commands while the island holds
+  # safe stop forever (nano-ros issue 0830).
+  nohup "${QEMU_BIN}" -machine mps3-an536 -nographic \
+    -semihosting-config enable=on,target=native -kernel "${ISLAND_ELF}" \
+    -net nic -net tap,ifname="${TAP_IF}",script=no,downscript=no \
+    -netdev hubport,id=h0,hubid=0 > "${ISLAND_LOG}" 2>&1 &
+else
+  nohup west build -d "${BUILD_DIR}" --target run > "${ISLAND_LOG}" 2>&1 &
+fi
+ISLAND_PID=$!
+disown "${ISLAND_PID}" 2>/dev/null || true
+echo "${ISLAND_PID}" > "${ISLAND_PID_FILE}"
 for ((i = 0; i < BOOT_TIMEOUT_S; i++)); do
-  grep -q "${BOOT_MARKER}" "${FVP_LOG}" 2>/dev/null && break
-  kill -0 "${FVP_PID}" 2>/dev/null || die "FVP exited early — see ${FVP_LOG}"
+  grep -q "${BOOT_MARKER}" "${ISLAND_LOG}" 2>/dev/null && break
+  kill -0 "${ISLAND_PID}" 2>/dev/null || die "island exited early — see ${ISLAND_LOG}"
   sleep 1
 done
-grep -q "${BOOT_MARKER}" "${FVP_LOG}" 2>/dev/null || \
-  die "no '${BOOT_MARKER}' within ${BOOT_TIMEOUT_S}s — see ${FVP_LOG}"
+grep -q "${BOOT_MARKER}" "${ISLAND_LOG}" 2>/dev/null || \
+  die "no '${BOOT_MARKER}' within ${BOOT_TIMEOUT_S}s — see ${ISLAND_LOG}"
 say "island is live."
+  fi
+  start_compose
+else
+  start_compose
+  # ---- boot the island ----
+say "booting the island on ${LANE} (log: ${ISLAND_LOG})…"
+rm -f "${ISLAND_LOG}"
+# Plain background + disown — a `( cmd & echo $! )` subshell here once left
+# west as a FOREGROUND child (bash subshell fork optimization: `$!` was the
+# script's own pid) and the script sat in wait() forever.
+if [[ "${LANE}" == "an536" ]]; then
+  ISLAND_ELF="${BUILD_DIR}/src/freertos_an536_entry/actuation_an536_entry"
+  [[ -f "${ISLAND_ELF}" ]] || die "no image at ${ISLAND_ELF} — build failed?"
+  if pgrep -f "qemu-system-arm -machine mps3-an536" >/dev/null 2>&1; then
+    die "a QEMU already holds ${TAP_IF} — run: scripts/run-tap-demo.sh --an536 --down"
+  fi
+  # -netdev hubport is NOT optional. With only the NIC and the tap on QEMU's
+  # hub, host-to-guest frames are never delivered: the island publishes and
+  # never receives, so Autoware sees control commands while the island holds
+  # safe stop forever (nano-ros issue 0830).
+  nohup "${QEMU_BIN}" -machine mps3-an536 -nographic \
+    -semihosting-config enable=on,target=native -kernel "${ISLAND_ELF}" \
+    -net nic -net tap,ifname="${TAP_IF}",script=no,downscript=no \
+    -netdev hubport,id=h0,hubid=0 > "${ISLAND_LOG}" 2>&1 &
+else
+  nohup west build -d "${BUILD_DIR}" --target run > "${ISLAND_LOG}" 2>&1 &
+fi
+ISLAND_PID=$!
+disown "${ISLAND_PID}" 2>/dev/null || true
+echo "${ISLAND_PID}" > "${ISLAND_PID_FILE}"
+for ((i = 0; i < BOOT_TIMEOUT_S; i++)); do
+  grep -q "${BOOT_MARKER}" "${ISLAND_LOG}" 2>/dev/null && break
+  kill -0 "${ISLAND_PID}" 2>/dev/null || die "island exited early — see ${ISLAND_LOG}"
+  sleep 1
+done
+grep -q "${BOOT_MARKER}" "${ISLAND_LOG}" 2>/dev/null || \
+  die "no '${BOOT_MARKER}' within ${BOOT_TIMEOUT_S}s — see ${ISLAND_LOG}"
+say "island is live."
+fi
 
 # ---- seed ego + goal ----
 # Seeding is FEEDBACK-DRIVEN (fix shared with run-posix-demo.sh): a pose
@@ -395,7 +524,7 @@ drive_mission() {
       say "  Check whether derivation fell back to the hand-probed poses above."
     fi
   else
-    die "vehicle never moved — island log: ${FVP_LOG}"
+    die "vehicle never moved — island log: ${ISLAND_LOG}"
   fi
 }
 if ((DO_DRIVE)); then
@@ -408,8 +537,8 @@ HZ_OUT="$(in_autoware "timeout 25 ros2 topic hz /control/trajectory_follower/con
 echo "${HZ_OUT}"
 if echo "${HZ_OUT}" | grep -q "average rate"; then
   say "CLOSED LOOP OK — healthy is ~19 Hz+ (faster in the emergency-stop state). Island keeps running;"
-  say "  stop everything:  scripts/run-tap-demo.sh --down"
-  say "  island log:       tail -f ${FVP_LOG}"
+  say "  stop everything:  scripts/run-tap-demo.sh ${LANE_FLAG} --down"
+  say "  island log:       tail -f ${ISLAND_LOG}"
 else
-  die "no control_cmd traffic — island log: ${FVP_LOG}; bridge: docker logs demo-safety-island-bridge-1"
+  die "no control_cmd traffic — island log: ${ISLAND_LOG}; bridge: docker logs demo-safety-island-bridge-1"
 fi
