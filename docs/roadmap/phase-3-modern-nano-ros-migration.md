@@ -58,11 +58,49 @@ and each hid the next:
    2026-08-21 driving demo used. Silicon is unaffected (ppm drift, no
    fast-forward).
 
-**Next step for the hang:** it is upstream of ASI code — the last ASI statement
-to execute is the network hook returning. Bisect nano-ros between `d1c5b3b3b`
-(known good) and `589a9d0cf` (known bad) on this lane, or attach a debugger to
-the spinning FVP and read the PC. Note the an536 lane boots the SAME controller
-fine, so this is specific to the Zephyr/FVP path.
+### Bisect attempted 2026-08-27 — and what it actually established
+
+**It is NOT spinning. It is blocked.** Attaching to the model over its Iris
+debug server (`--iris-server -p -R`, client at `$FVP/Iris/Python`) and stopping
+the target shows all four cores at
+`zephyr/arch/arm64/core/cpu_idle.S:24` — the WFI idle loop — on every resample.
+The 100% host CPU that made this look like a livelock is the Fast Model itself,
+which burns a host thread while the guest idles. So every thread is waiting on
+something that is never posted; the last thing to execute is the network hook
+returning, 1.16 s into boot.
+
+**The ASI-side bisect is INVALID and its answer should not be believed.**
+`git bisect run` converged on `0393b18`, a DOCS-ONLY commit whose submodule
+pin is identical on both sides — which cannot cause a hang. The signal is
+flaky: the commit the bisect had just marked GOOD then failed 0-for-5 on a
+re-run of the same build, and failed again at a 420 s timeout.
+
+The flakiness had a real cause, now understood: **the clock re-sync spins on
+this model** (7780 re-syncs in a single run at `32441dcd`), starving boot.
+Whether a given boot won that race was luck, so the bisect was measuring my own
+re-sync bug rather than any regression. That is fixed/disabled above, which is
+what makes the HEAD signal (a frozen log, no periodic chatter) clean.
+
+**A nano-ros pin bisect is currently BLOCKED, for an environmental reason worth
+recording.** With the re-sync off, the Zephyr configs at HEAD are identical to
+the known-good commit apart from that one line, so the remaining variable is
+the pin. But `modules/nros` is a checkout another session is actively working
+in, and it currently carries UNCOMMITTED edits to `zephyr/Kconfig` and
+`zephyr/cmake/nros_rmw_zenoh.cmake` (its ISO-TP work). Those files are part of
+the Zephyr build, so **every probe run today silently included them**, and the
+submodule cannot be moved to another commit while they are there
+(`git checkout` aborts). A trustworthy pin bisect needs an ISOLATED checkout —
+a second ASI clone with its own submodules — not this one.
+
+Two further notes for whoever picks this up:
+
+* ASI HEAD cannot configure against any nano-ros before phase-385: its
+  `[deploy.an536]` has no board descriptor there, and the build fails at
+  board-facts. Removing that block (uncommitted) is what makes older pins
+  testable at all.
+* Probe the boot marker with a timeout well above 120 s. The demo script's
+  `BOOT_TIMEOUT_S` is 120; a healthy boot on this model has been seen taking
+  longer, so a too-short probe manufactures its own BAD results.
 
 **Goal.** One branch that (a) keeps ALL of upstream's FVP/FreeRTOS/S32Z2/CAN
 work, (b) consumes nano-ros in the current canonical shape (RFC-0048 ament
