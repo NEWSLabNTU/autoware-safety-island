@@ -18,6 +18,86 @@ Design reference: `docs/design/rt_evaluation_zephyr.rst` — mechanism survey,
 measured results, and the caveats that bound each. Upstream defects found on
 the way: `docs/design/upstream-zephyr-issues.md`.
 
+## W12 — the horizon sweep  [x] DONE 2026-08-28
+
+W11 argued from matrix shapes that the residual 227 ms is the QP and scales
+with `mpc_prediction_horizon`. That was an estimate. This measures it.
+
+Method: seed `mpc_prediction_horizon` from the launch (it was one of the 67
+parameters with no runtime path — see below), rebuild, and run
+`ASI_DEMO_BUILD_ARGS=--trace scripts/run-tap-demo.sh --drive` per point,
+decoding the SETTLED trace after teardown. Seeding was verified at build time
+in `actuation_entry_nros_main_generated.cpp` (`mpc_prediction_horizon", "25"`)
+rather than assumed.
+
+| N | lookahead | `mpc_lateral` p50 | p90 | max | commanded cycle | period p90 | period max |
+|---|---|---|---|---|---|---|---|
+| 50 | 5.0 s | **226.937 ms** | 306.2 | 4521.4 | 261.1 ms | 270 ms | 4560 ms |
+| 25 | 2.5 s | **73.046 ms** | 90.2 | 4366.0 | 94.5 ms | 113 ms | 4408 ms |
+| 15 | 1.5 s | **43.886 ms** | 67.5 | 97.4 | 64.7 ms | 81 ms | 176 ms |
+
+**The cost model is confirmed.** A two-parameter fit on the outer points:
+
+```
+mpc_lateral = 0.0821 * N^2 + 21.75 ms
+  N=50  measured 226.937  model 226.937
+  N=25  measured  73.046  model  73.046
+  N=15  measured  43.886  model  40.216   (+8.4 %)
+```
+
+The quadratic term is the matrix products W11 identified; 8.4 % residual at
+N=15 is the O(N) assembly the two-parameter form does not carry. Halving N
+from 50 costs 3.11x, an implied exponent of 1.64 — superlinear, as predicted,
+and nothing like the linear scaling a data-movement bottleneck would show.
+
+**The N=50 baseline reproduces across missions.** 226.937 ms here against
+227.5 ms in W10, on a different mission (peak 2.57 vs 1.69 m/s). `mpc_lateral`
+is mission-insensitive and N-driven. `in:is_ready` is NOT — it reads 30.6 /
+16.9 / 17.1 ms across these three runs and 21.85 ms in W10, i.e. it varies as
+much at constant N as across the sweep. Do not read an N-dependence into it;
+the trajectory pipeline does not use the horizon.
+
+**The tail collapses.** Period p90 goes 270 -> 113 -> 81 ms. The multi-second
+outliers (4.5 s at N=50, 4.4 s at N=25) are simply absent at N=15, whose worst
+`mpc_lateral` is 97 ms. Whatever produces them needs a long solve to land on.
+
+### What this does NOT do: meet the 30 ms period
+
+The fit has an N-independent floor of **21.75 ms inside `mpc_lateral` alone**.
+Adding the rest of the commanded cycle at their measured values:
+
+```
+inputs ~17.0  +  mpc floor 21.75  +  pid ~2.6  +  publish ~1.05  =  ~42.4 ms
+```
+
+So on the FVP **no horizon meets 30 ms** — not N=15 (64.7 ms), not N=1. The
+horizon is a real and large lever (5.2x from 50 to 15) and it cannot close
+this gap. That is consistent with W11 rather than a surprise: if the FVP
+wall-clock is a simulation artifact, the floor is an artifact too, and no
+amount of tuning inside the guest removes it. It does mean the sweep cannot be
+used to argue that some N is "fast enough" — that argument still needs silicon.
+
+### Observation, n=1, not a claim
+
+N=25 and N=15 both reached the goal (`route_state=3`, ARRIVED). N=50 parked
+~4.6 m short with `route_state` never reaching 3, on a map-derived goal, which
+`run-tap-demo.sh` documents as the case that normally arrives within ~0.1 m.
+A 4.4 Hz control loop tracking worse than a 15 Hz one is plausible, but this is
+one run per configuration with no repeats and no control over planner
+variation. Recorded because it is the only control-QUALITY signal in the
+campaign so far; it is not evidence.
+
+### The knob now exists
+
+`mpc_prediction_horizon` is seeded from `system.launch.xml` **at its compiled
+default of 50**, so this lands as a no-op. It is left in place because W11
+noted all 69 MPC parameters had no runtime path, and a lever this large should
+be owned by the deployment rather than a C++ literal. Changing it is a controls
+decision: N * `mpc_prediction_dt` is the prediction lookahead, so N=15 buys the
+speed above by giving up 5.0 s of lookahead for 1.5 s.
+
+Evidence: `tools/rt-eval-traces/phase7-w12-n{50,25,15}-decode.txt` (gitignored).
+
 ## W11 — hot-path duplicate-work audit  [x] DONE 2026-08-28
 
 W10 was found by *reading* the control cycle rather than measuring it, and it
@@ -476,12 +556,23 @@ eliminated by measurement.
 
 Follow-ups this opens (none investigated):
 
-- [ ] Is 251.8 ms representative of the MPC configuration, or is this an
-      unconverged/ill-conditioned solve? The 4.65 s worst case suggests the
-      latter at least sometimes.
-- [ ] `ctrl_period` is 30 ms but the solve needs ~250 ms. Either the period is
-      aspirational for this platform or the solver needs bounding (iteration
-      cap, horizon, warm start).
+- [x] **ANSWERED by W11 + W12: representative, and not ill-conditioned.** The
+      cost is `0.0821 * N^2 + 21.75` ms across N = 50/25/15, a clean fit to the
+      QP's matrix products. An unconverged or ill-conditioned solve would not
+      track the horizon quadratically. `qp_solver_type` is already
+      `unconstraint_fast` (direct solve, no iteration to cap), so there is no
+      iteration count to be unconverged in. The multi-second worst cases are a
+      separate tail — they vanish at N=15 (max 97 ms), so they need a long
+      solve to land on rather than being a distinct pathology.
+- [~] **PARTLY ANSWERED — deferred to silicon.** W12 measured the horizon
+      lever end to end: 5.2x from N=50 to N=15. It is not enough. The
+      N-independent floor is ~42.4 ms of commanded cycle, so **no horizon meets
+      30 ms on the FVP**, and bounding the solver further cannot either. Per
+      W11 the FVP wall-clock is a Fast Model artifact (programmer's view, not
+      cycle-accurate), which makes the floor an artifact too. Unblocks on: a
+      run on S32Z hardware or a cycle-accurate model. Until then this is a
+      controls decision that the FVP cannot inform — the campaign should stop
+      spending captures on it.
 - [x] **Input handling split (W9, 2026-08-28) — the suspicion was WRONG.**
       Phase 4 suspected 8.8 KiB trajectory deserialization and so did I. It
       costs 0.169 ms. The time is in `isReady()`:

@@ -40,6 +40,15 @@
          0.15 (a TODO from the port; stock Autoware runs 0.03). Declared here
          so the deployment, not a C++ literal, owns the control rate. -->
     <param name="ctrl_period" value="0.03"/>
+    <!-- phase-7 W12 — MPC prediction horizon (steps; lookahead is
+         N * mpc_prediction_dt, so 50 * 0.1 = 5.0 s). Compiled default is 50.
+         Seeded here because W11 identified it as the dominant cost lever:
+         the QP builds Cex (dim_y*N x dim_x*N) and Qex (dim_y*N square), and
+         H = B'C'QCB + R costs ~1.5M double MACs at N=50, which is where the
+         227.5 ms mpc_lateral phase goes. Declared so the sweep can vary it
+         without editing vendored Autoware, and so the value is owned by the
+         deployment rather than a C++ literal. -->
+    <param name="mpc_prediction_horizon" value="50"/>
 
     <!-- I3 subscriptions (5) — from= MUST match node_identity.hpp exactly. -->
     <remap from="/vehicle/status/steering_status" to="/vehicle/status/steering_status"/>
