@@ -133,9 +133,18 @@ does *not* enable the switch instrumentation — and it boots.
 
 ### What happens
 
-With CTF tracing enabled on a networked application, the image faults in the
-`net_socket_service` thread. The last event in the captured stream is
-`socket_getsockname_enter`.
+Four CTF socket hooks dereference the caller's `sockaddr` and `addrlen`
+without a NULL check and without consulting the call's return value. A socket
+call that fails — where those out-parameters need not be valid or filled in —
+therefore faults inside the tracer, on a path the untraced application handles
+fine.
+
+**Reported from code inspection, not from a reproduction.** I hit a crash in
+`net_socket_service` on a traced image and initially attributed it here, but
+that turned out to be an unrelated stack overflow in that thread; disabling
+`CONFIG_TRACING_NETWORKING` did not prevent it. So this is a latent defect
+found while reading the file, not one I have a failing test for. The
+inconsistency below is what makes it worth reporting anyway.
 
 ### Why
 
@@ -210,8 +219,19 @@ enabling `CONFIG_THREAD_ANALYZER_AUTO` with no other tuning is enough.
 
 ### What happens
 
-With `CONFIG_THREAD_ANALYZER=y` and `CONFIG_THREAD_ANALYZER_AUTO=y`, the
-analyzer prints a few threads and then dies:
+`CONFIG_THREAD_ANALYZER_AUTO_STACK_SIZE` defaults to 4096, and the analyzer
+needs more than twice that. Running the same walk from an application thread
+with a 16384-byte stack, the analyzer's own high-water mark is:
+
+```
+ asi_thread_stats    : STACK: unused 7344 usage 9040 / 16384 (55 %); CPU: 0 %
+```
+
+**9040 bytes against a 4096 default.** That is the report, and it is
+arithmetic rather than inference.
+
+It was found because the analyzer died mid-walk at the default, having just
+printed its own line at 95 % of 4096:
 
 ```
 Thread analyze:
@@ -225,8 +245,11 @@ Thread analyze:
 <err> os: Halting system
 ```
 
-The analyzer's report on *itself* is the diagnosis: **3920 of 4096 bytes used,
-95 %**, and it still has threads left to walk.
+**Caveat on that crash specifically:** the image also had an unrelated stack
+overflow in another thread at the time, which was corrupting memory, so I
+cannot claim in isolation that the fault was the analyzer's own overflow. The
+95 %-and-still-walking reading, and the 9040-byte measurement above, are what
+the report rests on — the crash is context, not proof.
 
 ### Measurement
 
