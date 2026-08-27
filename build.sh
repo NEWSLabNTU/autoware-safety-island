@@ -386,6 +386,20 @@ function build_zephyr_actuation_module() {
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
   export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-458752}"
+  # Zephyr heap for the nros allocator funnel. nano-ros phase-391 W3 moved
+  # Zephyr allocation onto an rlsf-backed funnel and turned COMMON_LIBC_MALLOC
+  # OFF, which retires CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE — the 16 MiB arena
+  # this image used to get. The funnel's own default is 64 KiB (sized for the
+  # zenoh examples); Cyclone plus the MPC/PID controller need far more, and
+  # without this the image hangs at boot on an allocation that never returns,
+  # with every core parked in WFI.
+  #
+  # NECESSARY BUT NOT SUFFICIENT, measured: at pin ea592285e the lane still
+  # hangs with this set, so something else in that wave also has to be sized or
+  # configured. Kept because 64 KiB is unarguably wrong for this image and the
+  # next person to attempt the bump should not have to rediscover the knob.
+  # Inert at the current pin, which predates the funnel.
+  export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-16777216}"
 
   # Application heap. nano-ros 60b4e0c1e ("the Zephyr funnel is rlsf-backed")
   # moved z_malloc AND __rust_alloc off Zephyr's kernel heap onto an rlsf arena
