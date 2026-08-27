@@ -17,8 +17,21 @@ nros: tier priority set tier=`control` prio=7
 
 Every marker the POSIX lane asserts, plus the launch-seeded `control_output`
 param and the `[tiers.control]` real-time model reaching the board's scheduler —
-on the ARMv8-R code path that could previously only be LINKED. Remaining:
-N4's runtime matrix cell and N6 (delivery out of the guest), both upstream.
+on the ARMv8-R code path that could previously only be LINKED.
+
+**N6 is also done** (2026-08-27, nano-ros `085bb274d`): two AN536 guests on a
+shared virtual LAN exchange CycloneDDS samples both ways (A published 37 /
+received 69, B published 32 / received 64 — each `Received: N` twice, so each
+node gets its own samples plus the peer's). The "stall" reported the day before
+was NOT a defect: leftover QEMU instances from earlier runs were still joined to
+the same multicast group, replaying the same image and therefore the same IP and
+MAC. That is the third sighting of the ghost-instance class this repo already
+records twice (the orphaned FVP on tap0, and issue 0746's stale island
+processes) — the rule is now upstream too: prove the participant count before
+believing a multi-node result.
+
+Remaining upstream: N4's runtime matrix cell, and a HOST DDS peer (needs tap,
+which needs root). Guest-to-guest was W6's acceptance and is met.
 
 **Upstream half: nano-ros phase-385**
 (`docs/roadmap/phase-385-mps3-an536-freertos-board.md`), filed 2026-08-26.
@@ -278,10 +291,13 @@ Original plan:
 - **A5.** `build.sh`: a `freertos-an536` lane mirroring
   `build_freertos_s32z2_nros()` (nros sync, cross toolchain, the same sizing
   knobs; kernel from the nros pin, no NXP provisioning).
-- **A6.** A CI phase that boots the image under QEMU and asserts the
-  controller markers plus the control-loop period — the same markers the
-  posix lane asserts. With N6, extend to a closed loop against the demo
-  stack.
+- **A6. DONE.** `.github/scripts/run-freertos-an536-ci.sh` builds, boots under
+  QEMU and asserts the markers, and `build-ci.yml`'s `build-freertos-an536`
+  job runs it on every push. The script provisions its own tools from the
+  nano-ros SDK store — QEMU >= 9.0 (Ubuntu 22.04 ships 6.2, and the machine
+  does not exist before 9.0) and arm-none-eabi-gcc 13.2 (the system 10.3
+  rejects the entry codegen's designated initializers) — and fails loudly
+  naming the version, because the alternative is an image that looks dead.
 
 ## Work breakdown
 
