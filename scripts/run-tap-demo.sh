@@ -64,6 +64,12 @@ select_lane() {
     ISLAND_LOG="${LOG_DIR}/tap-demo-fvp.log"
     ISLAND_PID_FILE="${LOG_DIR}/tap-demo-fvp.pid"
     TAP_IF="tap0"
+    # Must match CONFIG_SNTP_SERVER_ADDRESS in
+    # boards/fvp_baser_aemv8r_..._tap_network.conf — without an epoch the
+    # island stamps from 1970 and vehicle_cmd_gate rejects the commands as
+    # stale, so autonomous mode never actuates.
+    TAP_HOST_IP="192.168.10.1"
+    SNTP_PORT="12123"
     COMPOSE_FILES=(-f docker-compose.yaml)
   fi
 }
@@ -200,7 +206,6 @@ island_already_up() {
 # boot-relative, Autoware's operation-mode manager publishes no state, and
 # autonomous mode can never be engaged (the FVP lane needs the same thing).
 start_sntp() {
-  [[ "${LANE}" == "an536" ]] || return 0
   if pgrep -f "sntp-server.py --bind ${TAP_HOST_IP}" >/dev/null 2>&1; then
     say "SNTP responder already running on ${TAP_HOST_IP}:${SNTP_PORT}."
     return 0
@@ -253,6 +258,7 @@ say "island is live."
   fi
   start_compose
 else
+  start_sntp
   start_compose
   # ---- boot the island ----
 say "booting the island on ${LANE} (log: ${ISLAND_LOG})…"

@@ -24,10 +24,20 @@
 // common/clock/clock_resync.hpp: a one-shot epoch is unbounded-error, because
 // whatever advances it afterwards — on FVP a fast-forwarded idle guest, on
 // silicon an oscillator — is never exactly real time).
+// Timeout is in GUEST milliseconds, and on the FVP the guest clock races the
+// host (~10.5x while idle — the very drift the re-sync exists to correct). At
+// 10 s guest the wait expired after roughly ONE second of real time, before the
+// responder's reply could arrive; `sntp_simple` then closed its socket, the
+// reply landed on a freed net_context, and Zephyr's
+// `NET_ASSERT(context)` in net_context_packet_received() panicked the kernel
+// on the rx_q thread — a boot that never reached "Actuation Safety Island is
+// Live". 60 s guest is ~6 s real here, comfortably longer than the round trip,
+// and still bounded. The re-sync thread is the lowest priority in the image,
+// so waiting longer costs nothing.
 static inline int platform_sync_clock_via_sntp(double * correction_s) {
     struct sntp_time ts;
     struct timespec tspec;
-    int res = sntp_simple(CONFIG_SNTP_SERVER_ADDRESS, 10000, &ts);
+    int res = sntp_simple(CONFIG_SNTP_SERVER_ADDRESS, 60000, &ts);
 
     if (res < 0) {
         return res;

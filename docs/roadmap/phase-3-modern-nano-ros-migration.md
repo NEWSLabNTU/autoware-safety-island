@@ -6,6 +6,64 @@ evolved substantially while the port sat on a June pin, and that one replay
 silently clobbered upstream work (see W1). nano-ros itself moved through
 phases 248/256/263/287/291 — every wall Phase 2 recorded is closed upstream.
 
+## BLOCKER (2026-08-27): the FVP tap demo does not boot
+
+`scripts/run-tap-demo.sh --drive` cannot complete today. The Zephyr island
+boots, brings up its interface, takes its SNTP epoch — and then HANGS before
+`nros::init` returns. No further console output ever appears (the log stops at
+56 lines and never grows), while the FVP sits at **100% CPU**, so the guest is
+spinning, not idle-waiting. "Actuation Safety Island is Live" is never printed
+and the demo script times out.
+
+**This is not today's pin bump and not the demo script.** Reproduced identically
+on nano-ros `12e9b7dad` (current pin) and on `589a9d0cf` (the pin ASI carried
+before today) — same hang, same spin, same last log line. The last known-good
+FVP driving run was 2026-08-21 at pin `d1c5b3b3b`, many pins earlier, so the
+regression window is somewhere in between and has been latent since.
+
+Three real defects were found and fixed on the way to that conclusion. None of
+them is the hang; each was independently breaking the lane earlier in the boot,
+and each hid the next:
+
+1. **A late SNTP reply panicked the kernel.** `sntp_simple`'s timeout is in
+   GUEST milliseconds, and the FVP's idle guest fast-forwards, so a 10 s
+   timeout expired after roughly one real second — before the responder's reply
+   arrived. The socket closed, the reply landed on a freed `net_context`, and
+   Zephyr's `NET_ASSERT(context)` took the kernel down on the rx_q thread:
+
+   ```
+   ASSERTION FAIL [context] @ zephyr/subsys/net/ip/net_context.c:2406
+   >>> ZEPHYR FATAL ERROR 4: Kernel panic on CPU 2
+   ```
+
+   Fixed by raising the timeout to 60 s guest (~6 s real here).
+
+2. **Boot killed itself on a startup race.** The hook ran SNTP once,
+   milliseconds after the interface came up, and called `std::exit(1)` if it
+   failed. Observed on identical images: one boot synced at t=1.16 s, the next
+   died at t=0.26 s with a send error, not a timeout. Now retried ten times
+   before giving up (still fatal after that — a 1970 stamp means a demo that
+   looks alive and actuates nothing).
+
+3. **The clock re-sync was a spin loop on this model.** It slept in KERNEL
+   time, on the reasoning — written into the file — that a racing guest would
+   then re-sync "more often exactly when drift is worst". At FVP magnitudes
+   that inverts: measured **6184 re-syncs in nine real minutes** (~11/s), each
+   stepping the clock back ~10 s. Re-pacing on `CLOCK_REALTIME` only divided
+   the problem (3609), because that clock races too between corrections. The
+   guest has no real-time reference except the SNTP server itself, so a proper
+   fix needs a control loop that learns the race factor from server-time
+   deltas. Until then the tap profile sets
+   `CONFIG_ASI_SNTP_RESYNC_INTERVAL_S=0` — boot epoch only, which is what the
+   2026-08-21 driving demo used. Silicon is unaffected (ppm drift, no
+   fast-forward).
+
+**Next step for the hang:** it is upstream of ASI code — the last ASI statement
+to execute is the network hook returning. Bisect nano-ros between `d1c5b3b3b`
+(known good) and `589a9d0cf` (known bad) on this lane, or attach a debugger to
+the spinning FVP and read the PC. Note the an536 lane boots the SAME controller
+fine, so this is specific to the Zephyr/FVP path.
+
 **Goal.** One branch that (a) keeps ALL of upstream's FVP/FreeRTOS/S32Z2/CAN
 work, (b) consumes nano-ros in the current canonical shape (RFC-0048 ament
 verbs, Entry pkg, `nros setup` provisioning), and (c) scopes the nano-ros RMW

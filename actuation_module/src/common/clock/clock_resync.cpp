@@ -10,6 +10,8 @@
 
 #include <zephyr/kernel.h>
 
+#include <time.h>   // clock_gettime — the loop paces on CLOCK_REALTIME
+
 #include "common/clock/clock_resync.hpp"
 #include "common/logger/logger.hpp"
 #include "platform/platform_clock.h"
@@ -43,13 +45,41 @@ static constexpr double REPORT_CORRECTION_S = 0.25;
 
 static void resync_thread(void *, void *, void *)
 {
-    // Sleeps in KERNEL time on purpose: when the guest clock races (the FVP
-    // fast-forwards an idle guest), the same interval elapses sooner in real
-    // time, so re-syncs land more often exactly when drift is worst.
-    const k_timeout_t interval = K_SECONDS(CONFIG_ASI_SNTP_RESYNC_INTERVAL_S);
+    // Paced by the CORRECTED WALL CLOCK, not by kernel time.
+    //
+    // This used to sleep in kernel time, on the theory that a racing guest
+    // clock would then re-sync more often in real time — "more often exactly
+    // when drift is worst". At FVP magnitudes that reasoning inverts: the
+    // guest fast-forwards so hard that a 10 s kernel sleep is ~0.1 s of real
+    // time, so the loop became a spin. Measured on the tap lane: 6184 re-syncs
+    // in nine real minutes (~11/s), each one stepping the clock back ~10 s,
+    // and the boot thread never got far enough to print
+    // "Actuation Safety Island is Live".
+    //
+    // CLOCK_REALTIME is the one clock here that tracks real time, because SNTP
+    // keeps correcting it. Pacing on it gives a real interval on any guest, and
+    // costs nothing on silicon where the two agree.
+    const double interval_s = (double)CONFIG_ASI_SNTP_RESYNC_INTERVAL_S;
+    // Kernel-time granularity of the wait. Small enough to stay responsive,
+    // large enough that a racing guest does not spin through it.
+    const k_timeout_t poll = K_MSEC(200);
 
     for (;;) {
-        k_sleep(interval);
+        struct timespec start;
+        clock_gettime(CLOCK_REALTIME, &start);
+        for (;;) {
+            k_sleep(poll);
+            struct timespec now;
+            clock_gettime(CLOCK_REALTIME, &now);
+            const double elapsed = (double)(now.tv_sec - start.tv_sec) +
+                                   (double)(now.tv_nsec - start.tv_nsec) / 1e9;
+            // A re-sync that steps the clock BACKWARD makes `elapsed` go
+            // negative; treat that as "wait the full interval again" rather
+            // than looping forever on a moving start point.
+            if (elapsed >= interval_s || elapsed < 0.0) {
+                break;
+            }
+        }
 
         double correction_s = 0.0;
         const int res = platform_sync_clock_via_sntp(&correction_s);
