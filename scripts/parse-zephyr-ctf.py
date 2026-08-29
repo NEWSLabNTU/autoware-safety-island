@@ -264,10 +264,23 @@ def report_stats(evs):
     OUTCOME = {0: "commanded", 1: "safe_stop", 2: "not_ready"}
     ENTER, EXIT = 1, 2
     marks = [e for e in evs if e.name == "app_marker"]
-    if marks:
+
+    # Marker ids 1..7 are the hand-placed control-cycle markers
+    # (common/diag/trace_marker.hpp); 16..19 are the phase-8 callback dispatch
+    # hooks, reported in their own section below. Split them here so the two
+    # never pair with each other: the duration walk below pairs an ENTER with
+    # the NEXT marker of any other id, so an interleaved callback marker would
+    # be read as a cycle exit and silently truncate every cycle.
+    #
+    # Discontinuity events are kept whatever their id -- both walks below test
+    # `ev.disc` before the id, so carrying them through preserves exactly the
+    # WFI handling that was here before.
+    cycle_marks = [e for e in marks
+                   if e.disc or 1 <= e.fields.get("marker_id", 0) <= 7]
+    if any(1 <= e.fields.get("marker_id", 0) <= 7 for e in cycle_marks):
         print("\n=== control cycles (app markers) " + "=" * 31)
-        enters = [e for e in marks if e.fields.get("marker_id") == ENTER]
-        exits = [e for e in marks if e.fields.get("marker_id") == EXIT]
+        enters = [e for e in cycle_marks if e.fields.get("marker_id") == ENTER]
+        exits = [e for e in cycle_marks if e.fields.get("marker_id") == EXIT]
         print(f"  enter={len(enters)}  exit={len(exits)}")
 
         # Cycle PERIOD: enter-to-enter. This is the number the 30 ms
@@ -283,16 +296,24 @@ def report_stats(evs):
         # an unmatched marker (a capture that starts or ends mid-cycle) is
         # dropped rather than silently pairing across cycles.
         durs, outcomes, pending = [], Counter(), None
-        for ev in marks:
+        for ev in cycle_marks:
             if ev.disc:
                 pending = None
                 continue
-            if ev.fields.get("marker_id") == ENTER:
+            mid = ev.fields.get("marker_id")
+            if mid == ENTER:
                 pending = ev
-            elif pending is not None:
+            elif mid == EXIT and pending is not None:
                 durs.append((ev.ts - pending.ts) / 1e6)
                 outcomes[OUTCOME.get(ev.fields.get("arg"), ev.fields.get("arg"))] += 1
                 pending = None
+            # Any OTHER marker id is a PHASE boundary inside the cycle and must
+            # be stepped over. Pairing ENTER with "the next marker of any id"
+            # -- which this loop did until 2026-08-29 -- closed the cycle at the
+            # first phase marker instead of at EXIT, so `duration` measured
+            # ENTER->data_checked rather than the cycle. The tell was in the
+            # output all along: n was 1143 against exit=1142, and you cannot
+            # build 1143 enter->exit pairs out of 1142 exits.
         if durs:
             d = sorted(durs)
             print(f"  duration ms: min={d[0]:.3f} p50={d[len(d) // 2]:.3f} "
@@ -313,7 +334,7 @@ def report_stats(evs):
                   ("mpc_lateral", INPUTS, LAT),
                   ("pid_longitudinal", LAT, LON), ("publish", LON, EXIT)]
         seen, spans = {}, {name: [] for name, _, _ in PHASES}
-        for ev in marks:
+        for ev in cycle_marks:
             mid = ev.fields.get("marker_id")
             if ev.disc:
                 seen.clear()
@@ -334,6 +355,160 @@ def report_stats(evs):
                     continue
                 print(f"    {name:<18} {v[len(v) // 2]:>9.3f} "
                       f"{v[int(len(v) * 0.9)]:>10.3f} {v[-1]:>10.3f} {len(v):>7}")
+
+    # phase-8 W5 — per-callback statistics from the executor dispatch hooks.
+    # Design: docs/design/callback_tracing.rst. The schema there is three
+    # events -- nros_callback_register(handle, kind, name), callback_start(
+    # handle), callback_end(handle) -- and this is where they are read back.
+    #
+    # ENCODING. Zephyr 3.7 has no user-event facility, so the transport is the
+    # same out-of-tree `app_marker` event the phase-7 markers use, whose
+    # payload is exactly two uint32 fields, (marker_id, arg). Three events with
+    # a variable-length string have to fit through that. The scheme:
+    #
+    #   16  register   arg = handle << 8 | kind   (kind per CB_KINDS)
+    #   17  name       arg = the next 4 name bytes, little-endian: byte i of
+    #                  the chunk in bits 8*i. Repeat until the name is spent;
+    #                  the final chunk is NUL-padded. Belongs to the register
+    #                  event it FOLLOWS.
+    #   18  start      arg = handle
+    #   19  end        arg = handle
+    #
+    # Marker ids 1..7 are taken and must never be reused -- captured traces
+    # carry them, and the header that defines them warns that renumbering
+    # silently reinterprets every trace taken before it. The block starts at 16
+    # rather than 8 so the phase markers keep room to grow contiguously.
+    #
+    # TRADE-OFF, stated honestly. Streaming the name positionally is the
+    # simplest thing that works through a fixed two-word payload, and it costs
+    # three things:
+    #
+    #   * The name is bound to the register event by ADJACENCY, not by handle.
+    #     A dropped or interleaved event inside a registration burst
+    #     mis-attributes a name. This is tolerable only because registration is
+    #     init-time, once per callback, on one thread, before the traffic that
+    #     is worth measuring -- and because a wrong NAME can never corrupt a
+    #     DURATION, which is keyed on the handle in the runtime events alone.
+    #   * A capture that starts after init has no registration events at all,
+    #     so callbacks fall back to a `handle N` label. Numbers are unaffected.
+    #   * The handle is 24 bits, not 32, because the kind shares the word.
+    #
+    # Rejected alternatives: widening the CTF event (needs a new Zephyr patch,
+    # which phase-8 W4 exists specifically to avoid), and a compiled-in name
+    # table keyed by handle (that is the hand-maintained registry this phase is
+    # removing -- see the acceptance criteria).
+    CB_REGISTER, CB_NAME, CB_START, CB_END = 16, 17, 18, 19
+    CB_IDS = (CB_REGISTER, CB_NAME, CB_START, CB_END)
+    CB_KINDS = {0: "timer", 1: "subscription", 2: "service", 3: "action"}
+    CB_NAME_MAX = 64   # bytes; longer names are truncated at the emitter
+
+    if any(e.fields.get("marker_id") in CB_IDS for e in marks):
+        # Walk the FULL stream, not just the app markers: a WFI counter jump
+        # can land on any event, including one inside a callback, and a span
+        # that contains one is unmeasurable rather than long.
+        stream = [e for e in evs
+                  if e.disc or (e.name == "app_marker"
+                                and e.fields.get("marker_id") in CB_IDS)]
+
+        kinds = {}                  # handle -> kind string; presence == registered
+        names = {}                  # handle -> name, only when one was streamed
+        durs = defaultdict(list)    # handle -> [ms]
+        naming, chars = None, bytearray()
+        # Open spans are keyed by HANDLE rather than held in a single slot.
+        # `app_marker` carries no thread id, and phase-8 W1 found dispatch
+        # paths that run on a worker thread (`os_priority.rs`) as well as on
+        # the executor's own, so two different callbacks can legitimately be
+        # open at once and their markers interleave. A single slot would score
+        # every one of those as unbalanced. Two dispatches of the SAME handle
+        # overlapping is still treated as a lost end -- if the leaf hooks W1
+        # settles on turn out to nest a handle inside itself, this needs to
+        # become a stack per handle.
+        pending = {}                # handle -> the open callback_start event
+        crossed = set()             # handles whose open span met a WFI jump
+        unbalanced = spanned = reordered = 0
+
+        def finish_name(handle, raw):
+            """Record a streamed name, or discard it if it is not printable.
+
+            A garbled name is dropped rather than shown: the same stance the
+            decoder already takes on thread names, and the handle still gets a
+            `handle N` label so its numbers are not lost with it.
+            """
+            raw = bytes(raw).split(b"\x00", 1)[0]
+            if raw and all(0x20 <= b <= 0x7E for b in raw):
+                names[handle] = raw.decode("ascii")
+
+        for ev in stream:
+            if ev.disc:
+                crossed |= set(pending)   # every open span straddles the jump
+                if ev.name != "app_marker":
+                    continue
+            mid = ev.fields.get("marker_id")
+            arg = ev.fields.get("arg", 0)
+
+            if mid == CB_NAME:
+                if naming is not None and len(chars) < CB_NAME_MAX:
+                    chars += struct.pack("<I", arg)
+                continue
+            if naming is not None:       # any other marker ends the name
+                finish_name(naming, chars)
+                naming, chars = None, bytearray()
+
+            if mid == CB_REGISTER:
+                naming, chars = arg >> 8, bytearray()
+                kinds[naming] = CB_KINDS.get(arg & 0xFF, f"kind {arg & 0xFF}")
+            elif mid == CB_START:
+                # A second start for a handle that is still open means its end
+                # was lost. The open span is not a measurement; drop it and
+                # count it rather than pairing across two dispatches.
+                if arg in pending:
+                    unbalanced += 1
+                pending[arg] = ev
+                crossed.discard(arg)
+            elif mid == CB_END:
+                start = pending.pop(arg, None)
+                spanned_here = arg in crossed
+                crossed.discard(arg)
+                if start is None:
+                    unbalanced += 1     # end with no start open for this handle
+                elif spanned_here:
+                    spanned += 1        # gap is unmeasurable, not zero
+                elif ev.ts < start.ts:
+                    # The event header carries no CPU id, so on an SMP image a
+                    # later event can arrive with an earlier timestamp. A
+                    # negative span is that, not a fast callback; the
+                    # per-thread accounting above discards them for the same
+                    # reason.
+                    reordered += 1
+                else:
+                    durs[arg].append((ev.ts - start.ts) / 1e6)
+        if naming is not None:           # capture ended mid-registration
+            finish_name(naming, chars)
+        unbalanced += len(pending)       # capture ended mid-dispatch
+
+        print("\n=== callbacks (dispatch hooks) " + "=" * 33)
+        paired = sum(len(v) for v in durs.values())
+        print(f"  {len(kinds)} callbacks registered, {paired} dispatches paired")
+        print(f"  dropped: {unbalanced} unbalanced, {spanned} spanning a WFI "
+              f"counter jump, {reordered} out of order")
+        if not kinds:
+            print("  no registration events in this capture -- the names below")
+            print("  are handles; re-capture from boot to resolve them.")
+        print(f"  {'callback':<26} {'kind':<12} {'n':>7} {'total ms':>10} "
+              f"{'p50 ms':>9} {'p90 ms':>9} {'max ms':>10}")
+        # Registered-but-never-dispatched callbacks are listed too: "this one
+        # never ran" is a finding, and dropping the row would hide it.
+        for h in sorted(set(kinds) | set(durs), key=lambda h: -sum(durs[h])):
+            v = sorted(durs[h])
+            label = names.get(h, f"handle {h}")
+            kind = kinds.get(h, "unregistered")
+            if not v:
+                print(f"  {label:<26} {kind:<12} {0:>7} "
+                      f"{'-':>10} {'-':>9} {'-':>9} {'-':>10}")
+                continue
+            print(f"  {label:<26} {kind:<12} {len(v):>7} {sum(v):>10.3f} "
+                  f"{v[len(v) // 2]:>9.3f} {v[int(len(v) * 0.9)]:>9.3f} "
+                  f"{v[-1]:>10.3f}")
 
     # Timers: `timer_start` carries the REQUESTED duration/period in ticks
     # alongside the arm time, so the requested period and the delivered

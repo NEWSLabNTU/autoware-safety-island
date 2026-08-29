@@ -593,10 +593,24 @@ capture ran without a planner attached, so this is not a loaded-system figure.
 
 RESOLVED once markers landed: that slice is **not** the control callback. The
 callback's own duration is 0.721 ms p50, 1.456 ms max on the same lane, so
-whatever occupies the 62.1 ms is elsewhere in the executor thread. This is a
-good illustration of why thread-level tracing alone could not answer the
-question — a callback runs inside a wake as an ordinary function call, and the
-timeline cannot see its boundaries. See the loaded section below.
+whatever occupies the 62.1 ms is elsewhere in the executor thread.
+
+.. note::
+
+   A decoder bug found on 2026-08-29 mis-paired cycle durations — the walk
+   closed a cycle at the first *phase* marker rather than at EXIT. It does
+   **not** invalidate the two figures above, and the reason is worth recording
+   rather than asserting. Mis-pairing only affects cycles that emit a phase
+   marker, i.e. cycles that reached the controllers. This lane logged
+   "Control is skipped since input data is not ready" throughout: every cycle
+   was a safe stop, which returns from ``createInputData`` before any phase
+   marker is emitted, so ENTER paired with EXIT correctly here. On the loaded
+   lane, where commanded cycles do exist, the same bug understated the maximum
+   by two orders of magnitude (20.8 ms reported against 4545.7 ms actual).
+
+This is a good illustration of why thread-level tracing alone could not answer
+the question — a callback runs inside a wake as an ordinary function call, and
+the timeline cannot see its boundaries. See the loaded section below.
 
 
 What the loaded control loop costs

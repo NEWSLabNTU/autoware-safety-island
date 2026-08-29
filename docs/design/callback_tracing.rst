@@ -135,26 +135,157 @@ Where the hooks go
 ------------------
 
 nano-ros has **no tracing hooks of any kind** today — verified by search across
-``modules/nros/packages``. The dispatch boundary is already a single, narrow
-surface, which is what makes this cheap:
+``modules/nros/packages``.
 
-* ``executor/dispatcher.rs`` declares the trait — 22 lines, one method::
+.. warning::
 
-     /// Drain `ready` and fire each callback. Returns aggregate counts
-     fn dispatch<R: ReadySet>(&mut self, ready: &mut R, delta_ms: u64)
-         -> SpinOnceResult;
+   An earlier revision of this document named ``executor/dispatcher.rs`` as the
+   hook site and described the boundary as "a single, narrow surface". Phase-8
+   W1 investigated and **that was wrong on three counts.** Corrected below;
+   recorded rather than quietly deleted, because the wrong version was pushed
+   and someone may have read it.
 
-* ``executor/spin.rs`` implements it, and already carries a per-callback
-  identity: ``dispatch_callback(&mut self, cb_id: &str, ctx: *mut c_void)``
-  alongside a ``DispatchSlot`` type.
-* ``nros-c/src/executor.rs`` is a thin wrapper that "delegates all dispatch
-  logic to an internal" executor, and already maintains an ``in_dispatch``
-  reentrancy flag across ``spin_once`` — i.e. the boundary is already a
-  meaningful, named concept in the code.
+   1. The ``Dispatcher`` trait in ``dispatcher.rs`` **has no implementation.**
+      It carries ``#[allow(dead_code)]`` and a comment referring to a
+      "110.A.b spin_once rewire" that never landed. There is no
+      ``impl Dispatcher for`` anywhere in the tree. Hooking it would compile
+      and trace nothing.
+   2. ``dispatch_callback(cb_id, ctx)`` (``spin.rs:3344``) is **not** on the
+      dispatch path. It is the Phase-216 framework seam for interrupt-driven
+      runtimes (RTIC / Embassy), fanning a name-keyed call out to registered
+      ``DispatchSlot``s. ``spin_once`` never calls it. It covers **zero**
+      timer / subscription / service / action dispatches.
+   3. **One hook pair does not cover all kinds.** See below.
 
-So the hook is a pair of calls around the per-callback fire inside the
-``Dispatch`` implementation, keyed on the identity that is already threaded
-through it. No new bookkeeping.
+The real dispatch is open-coded inside ``Executor::spin_once``
+(``executor/spin.rs:5368``). Every callback kind — timer, subscription,
+service, client, action server, action client, guard condition — is invoked
+through one type-erased function pointer per arena entry::
+
+    CallbackMeta::try_process:
+        unsafe fn(*mut u8, u64) -> Result<bool, TransportError>   // arena.rs:53
+
+Why a single pair around that pointer is not enough:
+
+* **Granularity is wrong.** One ``try_process`` for an action server fires up
+  to three distinct user callbacks (cancel, goal, accepted). A ring-buffered
+  subscription fires the user callback in a ``while`` loop, once per queued
+  message. Both would collapse into one start/end pair.
+* **It over-reports.** ``Ok(false)`` — "ran, fired nothing" — is the common
+  outcome for a timer that is not yet due. A hook at the pointer records a
+  callback invocation for entries that never invoked one.
+* **It under-covers.** Callback-firing paths that bypass the normal drain:
+  ``spin.rs:5618`` (timers on a spin where the executor trigger does not pass),
+  ``os_priority.rs:140`` (entries routed to a worker task — a *different
+  thread*), ``spin.rs:6230``/``5645`` (lifecycle-service C callbacks), and
+  ``spin.rs:6253`` (component tick).
+
+Settled by W1 / W2: hook the leaves, key on the slot index
+-----------------------------------------------------------
+
+**All three dispatch paths funnel through the same leaf functions.** Verified:
+the normal drain (``spin.rs:5968``), the trigger-fail timer path
+(``spin.rs:5618``) and the OS-priority worker (``os_priority.rs:140``) all call
+the *identical* ``CallbackMeta::try_process`` pointer with the same
+``arena_base + offset`` data pointer. Every one of the 19 registered
+``try_process`` symbols is defined in ``arena.rs`` — none lives anywhere else.
+
+So hooking the leaf ``(entry.callback)(...)`` invocations inside ``arena.rs``
+covers all three paths with no extra sites, and gives what the ``try_process``
+boundary cannot:
+
+* **True per-callback granularity.** An action server's cancel / goal /
+  accepted callbacks are counted separately; a ring-buffered subscription's
+  N queued messages are counted as N.
+* **No false positives.** ``Ok(false)`` — "ran, fired nothing", the common
+  outcome for a timer that is not yet due — emits nothing.
+
+**Cost, honestly: 33 leaf sites, not the handful first estimated.** Sixteen are
+subscription variants (triple-buffered, ring, borrowed, raw, raw+info,
+raw+safety, C-FFI, LET pre-sampled), six action-client, five action-server, two
+service, two service-client, one timer, one guard condition. Guard condition is
+a fifth ``EntryKind`` that the four-kind framing above omits.
+
+Identity
+~~~~~~~~
+
+``HandleId(usize)`` already exists (``executor/types.rs:669``) and *is* the
+entry slot index. It is:
+
+* **stable** — no code path writes ``entries[i] = None`` after registration;
+  ``cancel_timer`` only sets a ``cancelled`` flag, so slots are never recycled
+* **unique across all kinds** — one flat ``entries[]`` table, all 24
+  registration sites draw from the same ``next_entry_slot()``
+* **one byte** — ``MAX_CALLBACK_SLOTS = 64``, enforced by a ``u64`` ready-set
+  bitmask; internally already typed ``DescIdx = u8``
+* **already plumbed to C/C++** via ``set_handle_id``
+
+The catch: inside a leaf, the only identity in scope is the *address*
+``arena_base + meta.offset``. Unique and stable, but an address, not an index,
+and ``arena_base`` is not reachable from the leaf. Two ways to close that, and
+the second is preferred:
+
+1. Publish an ``offset -> index`` map once at registration and resolve offline.
+2. **Thread the index into** ``try_process`` — extend the pointer signature to
+   ``unsafe fn(*mut u8, u64, u8)``. All three producers already have the index
+   or can cheaply recover it (the drain has ``i``; the trigger-fail loop needs
+   ``.enumerate()``; ``WorkItem`` needs a ``desc_idx: u8`` field). This removes
+   the map entirely and makes attribution exact at the point of use.
+
+One leaf needs a signature change either way: ``dispatch_feedback``
+(``arena.rs:1768``) takes ``(data, offset, on_feedback)`` and has **no**
+identity at all. Hook inside it, not at its two call sites — it returns without
+firing when the payload is short, which would re-introduce the false positive.
+
+Registration is exhaustive; instrumentation is staged
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+33 sites is more than one change should land at once, and a partially hooked
+set is exactly the "looks like coverage and isn't" hazard this design exists to
+avoid. Resolve it by separating the two halves:
+
+* **Registration events cover every kind, from the start.** All 24 sites funnel
+  through ``next_entry_slot()``, so refactoring that into an
+  ``emplace(slot, meta, name)`` helper gives one choke point rather than 24
+  edits.
+* **Leaf hooks land in stages**, beginning with the kinds this repo actually
+  runs — one timer plus the C-FFI subscription path.
+* **The decoder reports the difference.** A callback that was registered but
+  never observed is printed as ``registered, not instrumented`` rather than
+  omitted or shown as zero.
+
+That way an incomplete hook set announces itself in the output instead of
+looking like a measurement.
+
+Out of scope, explicitly
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Three paths fire user code without touching the arena, and leaf hooks will
+never see them. Named here so their absence is a decision rather than an
+oversight:
+
+* **Lifecycle transition callbacks** — ``lifecycle.rs:339`` (raw C fn pointer)
+  and ``lifecycle.rs:202``, reached via ``spin.rs:6230`` / ``5645``.
+* **Component tick** — ``spin.rs:6253``, reaching user code at
+  ``node_runtime.rs:538``.
+* **Framework** ``dispatch_callback`` — ``spin.rs:3358``, the RTIC/Embassy
+  seam. A disjoint boundary; worth its own hooks only if those runtimes come
+  into scope.
+
+Resolved along the way: ``parameter_services.rs`` reaches **no** user callback
+(2205 lines, zero occurrences of ``callback``, zero ``extern "C"``), so
+``spin.rs:6211`` and ``5631`` need no hook. That had been an open question.
+
+Concurrency is mandatory, not optional
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Because leaf hooks also fire from the OS-priority worker thread
+(``os_priority.rs:140``), hook state must be thread-safe from day one — a
+depth counter or per-thread stack, atomic or thread-local, never a bare
+boolean. Dispatch can also nest: the component tick hands ``*mut Executor`` to
+user code. The ``in_dispatch`` flag in ``nros-c`` is **not** a nesting guard —
+it is a cooperative flag that blocking helpers poll in order to return
+``NROS_RET_REENTRANT``, and the native Rust ``spin_once`` has no equivalent.
 
 Event schema
 ------------
@@ -197,6 +328,102 @@ call site is eliminated entirely when disabled.
 Transport on Zephyr reuses what already exists: the out-of-tree ``app_marker``
 CTF event (``patches/zephyr/0002``), which ``scripts/parse-zephyr-ctf.py``
 already decodes. No new patch is required.
+
+**Core must not name Zephyr**, and the binding does not go where an earlier
+revision of this document said it did. Three corrections from phase-8 W3/W4
+investigation:
+
+* ``nros-board-zephyr``'s **Rust half is not in the ASI link graph.** Only its
+  ``c/zephyr_run_tiers.c`` is compiled in (``zephyr/CMakeLists.txt:118``); the
+  crate sits outside the Cargo workspace and is consumed only by pure-Rust
+  Zephyr entry crates. A Rust backend placed there would be unreachable from
+  this image.
+* ``sys_trace_app_marker`` is an **ASI-local Zephyr patch**, absent from
+  ``modules/nros/zephyr/patches/``. nano-ros must therefore never reference the
+  symbol, or a non-ASI image fails to link.
+* ``nros-node/Cargo.toml`` states the policy outright: the core executor is
+  platform-agnostic, "never via a compile-time ``#[cfg(feature =
+  "platform-*")]`` branch". A ``zephyr`` feature in core would violate it.
+
+The seam that satisfies all three already exists in the tree as
+``wake_probe.rs`` — a probe with hot-path hooks that must vanish in production.
+Copy it structurally: a runtime-installed function pointer in an ``AtomicPtr``,
+whose C ABI is chosen to *be* the target signature::
+
+    pub type TraceSink = unsafe extern "C" fn(u32, u32);   // == sys_trace_app_marker
+    pub fn set_trace_sink(sink: Option<TraceSink>);
+
+Core calls the sink if installed and knows nothing about Zephyr. The Zephyr
+side provides a shim in ``modules/nros/zephyr/nros_platform_zephyr_shims.c``
+— an unconditional symbol with a Kconfig-gated body, the established idiom
+there (cf. ``nros_zephyr_epoch_acquire_configured``)::
+
+    void nros_zephyr_trace_marker(uint32_t marker_id, uint32_t arg) {
+    #ifdef CONFIG_TRACING_CTF
+            extern void sys_trace_app_marker(uint32_t, uint32_t);
+            sys_trace_app_marker(marker_id, arg);
+    #endif
+    }
+
+That file is already compiled into every Zephyr image, so no CMake source-list
+edit is needed. The entry path installs the sink. The dependency stays
+one-directional: nano-ros never names an ASI patch.
+
+Feature gating follows the house convention exactly — ``trace-callbacks``,
+kebab-case and capability-named, declared ``= []`` in ``nros-node`` and
+forwarded through ``nros`` / ``nros-c`` / ``nros-cpp``, each declaration
+carrying the mandatory rationale comment. Reaching a Zephyr build is a Kconfig
+symbol (``NROS_TRACE_CALLBACKS``) appended to the feature string in
+``modules/nros/zephyr/CMakeLists.txt``, with ``CONFIG_NROS_TRACE_CALLBACKS=y``
+in this repo's ``tracing.conf`` — which ``build.sh --trace`` already layers, so
+no ``build.sh`` change is required.
+
+Confirmed while checking: nano-ros does not use the ``tracing`` crate anywhere
+first-party (every hit is in vendored Dust DDS), so adopting the facade would
+*introduce* a dependency rather than follow one. The warning above stands
+uncontested.
+
+Wire encoding on Zephyr 3.7
+---------------------------
+
+``app_marker``'s payload is exactly two ``uint32`` fields, ``(marker_id,
+arg)``. Three events, one of them carrying a variable-length name, have to fit
+through that. This is the contract between the nano-ros emitter (W4) and the
+decoder (W5); the decoder carries the same table in a comment beside the code
+that reads it.
+
+=========  ==============  ==================================================
+marker_id  event           ``arg``
+=========  ==============  ==================================================
+16         register        ``handle << 8 | kind``
+17         name            the next 4 name bytes, little-endian: byte *i* of
+                           the chunk in bits ``8*i``. Repeated until the name
+                           is spent, NUL-padded; belongs to the register event
+                           it *follows*.
+18         start           ``handle``
+19         end             ``handle``
+=========  ==============  ==================================================
+
+``kind`` is ``0`` timer, ``1`` subscription, ``2`` service, ``3`` action.
+Names are truncated at 64 bytes.
+
+Marker ids 1..7 belong to the phase-7 markers and must never be reused —
+captured traces carry them, and ``trace_marker.hpp`` warns that renumbering
+silently reinterprets every trace taken before it. The block starts at 16
+rather than 8 so the phase markers keep room to grow contiguously.
+
+The cost of streaming the name positionally, stated plainly: the name is bound
+to its register event by **adjacency, not by handle**, so a dropped or
+interleaved event inside a registration burst mis-attributes a name. That is
+tolerable only because registration is init-time, once per callback, on one
+thread, before any traffic worth measuring — and because a wrong name can never
+corrupt a duration, which is keyed on the handle in the runtime events alone. A
+capture that starts after init simply has no names, and the decoder falls back
+to ``handle N`` labels with the numbers intact.
+
+The alternatives were widening the CTF event, which needs a new Zephyr patch
+that W4 exists to avoid, and a compiled-in name table keyed by handle, which is
+the hand-maintained registry this phase is removing.
 
 Relationship to the phase markers
 ---------------------------------
