@@ -21,3 +21,4 @@ Runtime design, DDS topic contracts, and forward-looking design work.
    nano_ros_migration
    workspace_mode
    rt_evaluation_zephyr
+   callback_tracing

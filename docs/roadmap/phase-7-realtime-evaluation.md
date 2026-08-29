@@ -5,6 +5,13 @@ silicon (see W12) and one uninvestigated curiosity. Scope: measure the
 scheduling behaviour of the safety island on its production target, and build
 the tooling that makes those measurements repeatable.
 
+**Follow-on.** The markers this phase hand-placed are the wrong long-term
+shape — only the control timer was ever instrumented, so the subscription
+callbacks remain unmeasured. Phase 8
+(`phase-8-callback-tracing.md`, design in `docs/design/callback_tracing.rst`)
+moves the boundary instrumentation into nano-ros's executor dispatch so every
+callback is covered without hand placement.
+
 **Conclusion.** The control loop does not meet its 30 ms period, and the cause
 is the MPC solve — not scheduling, preemption, tier priority, transport, or
 the port, each of which was a hypothesis killed by a measurement. Cost is
