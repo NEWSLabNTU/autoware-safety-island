@@ -233,35 +233,39 @@ bool Controller::processData()
 {
   bool is_ready = true;
 
-  const auto & logData = [this](const std::string & data_type) {
-    log_info_throttle(("Waiting for " + data_type + " data").c_str());
-  };
-
+  // Each wait gets its OWN log_info_throttle call site. That is not style: the
+  // throttle keys on (__FILE__, __LINE__), so routing all five through one
+  // shared lambda gave them a single throttle slot — the first missing input
+  // in this if-chain printed and the other four were silently dropped. The
+  // island then reported "Waiting for acceleration data" while it was in fact
+  // missing everything, which is exactly the reading an operator uses to
+  // conclude the other topics ARE arriving (issue 0836 was investigated on
+  // that inference). One line per input, one slot per line.
   if (!has_accel_) {
-    logData("acceleration");
+    log_info_throttle("Waiting for acceleration data");
     is_ready = false;
   }
   if (!has_steering_) {
-    logData("steering");
+    log_info_throttle("Waiting for steering data");
     is_ready = false;
   }
   if (!has_trajectory_) {
-    logData("trajectory");
+    log_info_throttle("Waiting for trajectory data");
     is_ready = false;
   } else if ((Clock::now() - last_trajectory_time_) > timeout_thr_sec_) {
     // ASI safety hardening (2026-08-24): a silent planner must not leave the
     // island tracking its last sample forever (degenerate arrival slivers
     // included). Withhold commands; the vehicle gate's own timeout then owns
     // the stop.
-    logData("fresh trajectory");
+    log_info_throttle("Waiting for fresh trajectory data");
     is_ready = false;
   }
   if (!has_odometry_) {
-    logData("odometry");
+    log_info_throttle("Waiting for odometry data");
     is_ready = false;
   }
   if (!has_operation_mode_) {
-    logData("operation mode");
+    log_info_throttle("Waiting for operation mode data");
     is_ready = false;
   }
 
