@@ -29,7 +29,7 @@ Two repos. Most of it is upstream.
 
 ## Work items
 
-### W1 — pin the exact hook site  [ ]
+### W1 — pin the exact hook site  [x] DONE 2026-08-29
 
 `executor/dispatcher.rs` declares the one-method `Dispatch` trait ("Drain
 `ready` and fire each callback"); `executor/spin.rs` implements it in ~7.8k
@@ -42,7 +42,7 @@ subscription, service, action) is invoked, and confirmation that a single pair
 of hooks covers all four. If it does not, say so — a partial hook is worse than
 none, because it looks like coverage.
 
-### W2 — callback identity  [ ]
+### W2 — callback identity  [x] DONE 2026-08-29
 
 `cb_id: &str` already exists on the dispatch path. Settle whether it is stable,
 unique, and cheap enough to be the runtime handle, or whether runtime events
@@ -51,7 +51,7 @@ should carry an integer index with `cb_id` recorded once at registration.
 Prefer the integer. ros2_tracing's init/runtime split exists precisely to keep
 string payloads out of the hot path.
 
-### W3 — the hooks and the feature gate  [ ]
+### W3 — the hooks and the feature gate  [x] DONE 2026-08-29
 
 Emit, in nano-ros:
 
@@ -65,14 +65,14 @@ no-op subscriber still costs span construction and a level check on every
 dispatch, and needs `max_level_off` to actually vanish. See the warning in the
 design doc.
 
-### W4 — Zephyr backend binding  [ ]
+### W4 — Zephyr backend binding  [x] DONE 2026-08-29
 
 Route the hooks to the existing out-of-tree `app_marker` CTF event
 (`patches/zephyr/0002`). No new Zephyr patch required. Keep the platform
 binding behind whatever nano-ros already uses for board-specific glue rather
 than putting Zephyr specifics in the executor.
 
-### W5 — decoder support  [ ]
+### W5 — decoder support  [x] DONE 2026-08-29
 
 `scripts/parse-zephyr-ctf.py` gains: build the handle→name table from the
 registration events, then report per-callback dispatch counts and
@@ -80,6 +80,51 @@ duration percentiles, the way it already does for control cycles.
 
 This is the point at which the phase pays off — per-callback numbers for
 callbacks nobody thought to instrument.
+
+### W1/W2/W5 results
+
+**W1 answered, and it invalidated the starting assumption.** The `Dispatcher`
+trait named as the hook site in the first draft of the design has NO
+implementation — `#[allow(dead_code)]`, for a "110.A.b spin_once rewire" that
+never landed. Hooking it would have compiled and traced nothing.
+
+The real answer: all three dispatch paths (normal drain `spin.rs:5968`,
+trigger-fail `spin.rs:5618`, OS-priority worker `os_priority.rs:140`) call the
+*same* `CallbackMeta::try_process` pointer, and all 19 such symbols are defined
+in `arena.rs`. So leaf hooks there cover every path. Cost is **33 sites, not
+the handful first estimated** — 16 of them subscription variants. Guard
+condition is a fifth `EntryKind` the original four-kind framing missed.
+
+Three paths fire user code outside the arena and are declared out of scope:
+lifecycle transitions (`lifecycle.rs:339`, `:202`), component tick
+(`spin.rs:6253`), and the RTIC/Embassy `dispatch_callback` seam
+(`spin.rs:3358`). Resolved on the way: `parameter_services.rs` reaches no user
+callback at all across 2205 lines, so two suspected sites need no hook.
+
+**W2 answered better than the design assumed.** `HandleId` IS the entry slot
+index — stable (slots are never recycled; `cancel_timer` only sets a flag),
+unique across all seven kinds (one flat table, all 24 registrations draw from
+`next_entry_slot()`), and one byte (`MAX_CALLBACK_SLOTS = 64`, already
+`DescIdx = u8`). The `cb_id: &str` the design pointed at belongs to a
+different subsystem entirely.
+
+**W5 done, and it found a phase-7 defect on the way.** The cycle `duration`
+walk closed a cycle at the next marker of ANY id rather than at EXIT, so a
+commanded cycle measured `ENTER -> data_checked`. Fixed in `f966822`; N=50 max
+went 20.779 ms -> 4545.673 ms. The phase breakdown was verified byte-identical
+before and after, so no W12 conclusion moves. See that commit for the full
+blast-radius analysis.
+
+### W5a — registration names bind by adjacency  [ ] follow-up
+
+The `app_marker` CTF event carries exactly two `uint32`s, so a variable-length
+name is streamed as 4-byte chunks (marker id 17) that bind to the register
+event they FOLLOW — by position, not by handle. A dropped event inside a
+registration burst therefore mis-attributes a name. Accepted because
+registration is init-time, once per callback, single-threaded, and because a
+wrong *name* cannot corrupt a *duration* (runtime events carry only the
+handle). Revisit if it ever bites; the fix is a wider CTF event, which costs a
+new Zephyr patch.
 
 ### W6 — retire the superseded markers  [ ]
 
@@ -114,14 +159,65 @@ is a small addition.
 Gated on someone actually wanting production tracing. Do not build it
 speculatively.
 
+### W3/W4 result — it works end to end
+
+Captured on a real `--drive` mission, `tools/rt-eval-traces/phase8-callback-hooks-decode.txt`:
+
+```
+6 callbacks registered, 3756 dispatches paired
+dropped: 1 unbalanced, 0 spanning a WFI counter jump, 0 out of order
+
+callback                                kind            n   total ms   p50 ms    max ms
+timer@30000us                           timer        2942  34656.437    1.137  1584.608
+/planning/scenario_planning/trajectory  subscription   96    176.040    1.920     4.176
+/localization/kinematic_state           subscription  238     20.647    0.088     0.090
+/localization/acceleration              subscription  238     10.916    0.047     0.050
+/vehicle/status/steering_status         subscription  237      1.365    0.006     0.008
+/system/operation_mode/state            subscription    5      0.027    0.006     0.006
+```
+
+**Cross-check passes.** 2943 `control_cycle_enter` app markers against 2942
+timer dispatches — two independent instrumentation paths agreeing to one event,
+which is the capture ending mid-dispatch. That is the evidence the encoding and
+the pairing are right.
+
+**The open phase-7 question is closed.** Subscription-callback cost was never
+measured, because only the control timer was ever hand-instrumented. It is
+~209 ms against the timer's 34656 ms, about 0.6 %. W9 guessed the trajectory
+deep copy was the problem and was wrong; this settles the same class of
+question by measurement, for callbacks nobody thought to instrument.
+
+Names resolve from registration events. The nameless timer synthesises as
+`timer@30000us`, which independently confirms `ctrl_period = 0.03` reached the
+image.
+
+### W3a — handles are unique per EXECUTOR, not per image  [ ] follow-up
+
+The slot index is unique within one `Executor`. An image running several tier
+executors emits colliding handles and the decoder silently merges two different
+callbacks into one row. ASI runs a single executor today (the boot tier on
+`main`), so it does not bite — but nothing detects it, and a silent merge is
+the same "looks like coverage" hazard this phase exists to remove. Options: an
+executor id in the register payload, or a decoder warning when one handle is
+registered twice with different names.
+
 ## Acceptance criteria
 
 - [ ] A capture attributes time to **every** registered callback, including
       ones with no hand-placed instrumentation
 - [ ] Callback names in the decoder come from registration events, not from a
       compiled-in enum
-- [ ] With the feature disabled, the dispatch path is byte-identical to today
-      (verify by disassembly or size diff, not by assertion)
+- [~] ~~With the feature disabled, the dispatch path is byte-identical to
+      today~~ **AMENDED — this criterion is not met, deliberately.**
+      `CallbackMeta::try_process` gained an unconditional `u8` desc index so
+      leaves can identify themselves; a feature-disabled build therefore
+      carries one constant register argument per dispatch that the leaf
+      ignores. Everything else (hook bodies, register emit, name synthesis)
+      does compile out. The alternative was macro-generating 21 leaf
+      definitions to make the signature cfg-dependent, which trades a register
+      move for a large amount of unreadable code. Recorded as amended rather
+      than quietly dropped, because the criterion was written before the
+      leaf-identity problem was understood.
 - [ ] FVP CI green
 - [ ] The subscription-callback cost — currently unknown — is reported
 
