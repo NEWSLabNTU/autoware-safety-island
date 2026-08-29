@@ -6,6 +6,52 @@ evolved substantially while the port sat on a June pin, and that one replay
 silently clobbered upstream work (see W1). nano-ros itself moved through
 phases 248/256/263/287/291 — every wall Phase 2 recorded is closed upstream.
 
+## Pin bump still BLOCKED (2026-08-29) — and what is now known
+
+The pin stays at `875850bc6`, where the driving mission passes (re-verified:
+ARRIVED, peak 2.37 m/s). Latest main is ~180 commits ahead and two of its
+changes are understood; a third is not.
+
+**Understood and fixed here.**
+
+* The rlsf funnel wave (`60b4e0c1e`) retires
+  `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` — this image's 16 MiB arena — in favour
+  of `NROS_ZEPHYR_HEAP_SIZE`, whose default is 64 KiB. **16 MiB is not a legal
+  value**: `FreeListHeap<N, FLLEN = 18>` asserts at COMPILE time that
+  `N <= 1 << (GRANULARITY_LOG2 + FLLEN)`, i.e. 8 MiB on this 64-bit target
+  (4 MiB on a 32-bit one). `build.sh` now asks for 8 MiB, the ceiling. If this
+  image genuinely needs more, `FLLEN` has to rise upstream — each +1 doubles
+  the bound for ~66 B of `.bss`.
+* The in-tree `nros` CLI reports STALE after any pin move, which fails the
+  build at codegen with no hint that a pin bump caused it. Neither
+  `cargo build` nor `cargo clean -p nros-cli` fixes it: the stamp covers
+  `cli-source-dirs.txt` dirs that `nros sync` WRITES INTO after the CLI is
+  built, so it has already moved by the time codegen checks. `build.sh` now
+  skips that gate only when `modules/nros` is CLEAN — the one case the gate
+  cannot be protecting, since we have edited nothing.
+
+**Not understood, and the reason the bump is still blocked.** At latest main
+the island boots fine under a bare probe — `Actuation Safety Island is Live`
+in 10-11 s, reaching `Inputs not ready — commanding safe stop` at 4.25 s guest
+time — and never boots when the same image is launched by
+`scripts/run-tap-demo.sh`. Ruled out by direct comparison:
+
+| suspected difference | result |
+| --- | --- |
+| resolved Kconfig (`.config`) | byte-identical between the two builds |
+| baked FVP flags (`cache_state_modelled`, `interfaceName`) | identical |
+| incremental vs fresh build dir | fails fresh too |
+| 120 s boot timeout too short | fails at 400 s |
+| compose stack present during boot | probe boots GOOD with it up |
+| island-vs-compose ordering | fails island-first as well |
+
+Probe GOOD at 10 s and demo dead were measured minutes apart on the same
+machine and the same commit, so this is not drift. Something in the demo
+script's environment differs from the probe's in a way none of the above
+captures. The probe is
+`scratchpad/probe_pin2.sh` in the session log; reproducing the difference is
+the next step, and it is cheap — both sides are one command.
+
 ## RESOLVED (2026-08-27): the FVP tap demo drives again
 
 `scripts/run-tap-demo.sh --drive` completes: **ARRIVED (route_state=3)**, peak

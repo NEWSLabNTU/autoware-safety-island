@@ -274,6 +274,36 @@ function require_nros_checkout() {
 # /opt/autoware/<ver>, which is the devcontainer layout too), then verify the
 # packages the codegen needs actually resolve so the failure is one clear
 # message here instead of a cmake FATAL_ERROR four levels down.
+# Build the in-tree nros CLI, and decide honestly whether its staleness gate
+# applies to us.
+#
+# The gate compares a SOURCE STAMP embedded at build time against one recomputed
+# at use time, over `cli-source-dirs.txt` plus all of packages/cli. It exists to
+# stop a nano-ros DEVELOPER running a CLI older than sources they just edited.
+#
+# It misfires on a CONSUMER, because our own build mutates the stamped tree:
+# `nros sync` writes into it AFTER the CLI is built, so the stamp has already
+# moved by the time codegen checks it. Neither `cargo build` nor
+# `cargo clean -p nros-cli` fixes that — both were measured, and both still end
+# in "in-tree nros CLI is STALE" (it is what broke the FVP demo immediately
+# after the 2026-08-29 pin move, presenting as a build failure with no clue).
+#
+# So: skip the gate ONLY when modules/nros is CLEAN, which is exactly the case
+# the gate cannot be protecting — we are consuming a pinned upstream and have
+# edited nothing. If the submodule is dirty, someone IS developing nano-ros
+# here, the gate is doing its job, and we leave it alone.
+function build_nros_cli() {
+  local manifest="$1"
+  echo -e "${GREEN}Building host nros CLI...${NC}"
+  cargo build --release --manifest-path "${manifest}" -p nros-cli
+
+  if [ -z "$(git -C "${ROOT_DIR}/modules/nros" status --porcelain 2>/dev/null)" ]; then
+    export NROS_SKIP_STALE_CHECK=1
+  else
+    echo -e "${YELLOW}modules/nros has local changes — leaving the CLI staleness gate ON.${NC}"
+  fi
+}
+
 function resolve_ament_env() {
   if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
     local rungs=()
@@ -325,8 +355,7 @@ function build_zephyr_actuation_module() {
   # the cli-source-dirs.txt dirs OUTSIDE packages/cli too — an mtime probe on
   # packages/cli alone let a pin bump through to a "CLI is STALE" codegen
   # failure, 2026-08-23).
-  echo -e "${GREEN}Building host nros CLI...${NC}"
-  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  build_nros_cli "${nros_cli_manifest}"
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
   # resolution (phase-5 W1) and resolved/validated here.
@@ -399,7 +428,7 @@ function build_zephyr_actuation_module() {
   # configured. Kept because 64 KiB is unarguably wrong for this image and the
   # next person to attempt the bump should not have to rediscover the knob.
   # Inert at the current pin, which predates the funnel.
-  export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-16777216}"
+  export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-8388608}"
 
   # Application heap. nano-ros 60b4e0c1e ("the Zephyr funnel is rlsf-backed")
   # moved z_malloc AND __rust_alloc off Zephyr's kernel heap onto an rlsf arena
@@ -568,8 +597,7 @@ function build_freertos_posix() {
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
   local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
   # Always run cargo (no-op when fresh; see the zephyr lane note).
-  echo -e "${GREEN}Building host nros CLI...${NC}"
-  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  build_nros_cli "${nros_cli_manifest}"
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
   # resolution (phase-5 W1) and resolved/validated here.
@@ -635,8 +663,7 @@ function build_freertos_armv8r_nros() {
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
   local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
   # Always run cargo (no-op when fresh; see the zephyr lane note).
-  echo -e "${GREEN}Building host nros CLI...${NC}"
-  cargo build --release --manifest-path "${nros_cli_manifest}" -p nros-cli
+  build_nros_cli "${nros_cli_manifest}"
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
