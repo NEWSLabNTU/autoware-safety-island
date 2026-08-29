@@ -39,18 +39,28 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # TEMPORARY: pinned to the head of NEWSLabNTU/nano-ros#40
-    # (feat/callback-tracing), which carries the phase-8 callback-tracing
-    # hooks ASI's tracing profile depends on. The branch is based on
-    # nano-ros main, so this pin also advances 359 upstream commits past the
-    # previous 589a9d0cf.
+    # TEMPORARY: pinned to branch phase-8-callback-tracing, which is the
+    # previous pin (589a9d0cf) plus the phase-8 callback-tracing hooks that
+    # ASI's tracing profile needs. This is NOT the branch under review.
     #
-    # MOVE THIS TO main ONCE #40 MERGES. A PR head is not a stable pin: the
-    # branch can be rebased or deleted, and this revision would then be
-    # unfetchable for anyone cloning fresh.
+    # The review branch is feat/callback-tracing (NEWSLabNTU/nano-ros#40),
+    # correctly based on nano-ros main. ASI cannot pin there yet: nano-ros
+    # main does not boot on fvp_baser_aemv8r. It hangs after
+    # "Network interfaces found: 1", never reaching SNTP or the controller,
+    # so FVP CI phase 1 fails on a missing "Starting Controller Node".
+    # Established by bisection, not inference: plain main WITHOUT the
+    # callback-tracing commit fails identically, so the regression is
+    # upstream and #40 is not implicated.
+    #
+    # SEQUENCE TO UNWIND THIS, in order:
+    #   1. upstream fixes the main-branch boot regression
+    #   2. #40 merges
+    #   3. move this revision AND the modules/nros submodule pointer to the
+    #      merged main commit, together (see LOCKSTEP above), drop this
+    #      comment, and re-run .github/scripts/run-zephyr-fvp-ci.sh
     - name: nano-ros
       remote: newslab
-      revision: 54b9d9cbe9d2a2c730bc655b10aff37f0bbc2955
+      revision: 3707663a10379fd170630d2eb68e77be2ab90ba3
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
