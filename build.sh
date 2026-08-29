@@ -378,6 +378,44 @@ function build_zephyr_actuation_module() {
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
   export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-458752}"
 
+  # Application heap. nano-ros 60b4e0c1e ("the Zephyr funnel is rlsf-backed")
+  # moved z_malloc AND __rust_alloc off Zephyr's kernel heap onto an rlsf arena
+  # in nros-platform, sized by THIS env var (compile-time `option_env!`,
+  # default 64 KiB).
+  #
+  # So `CONFIG_HEAP_MEM_POOL_SIZE` no longer governs application allocation.
+  # It is still set to 4 MiB in the board conf, still looks authoritative, and
+  # after that commit controls nothing on this path. Crossing it with the 64
+  # KiB default hangs the image between "Network interfaces found: 1" and
+  # "Starting Controller Node", with no fault, no log and no error code —
+  # found by a 9-step bisect, filed as NEWSLabNTU/nano-ros#41.
+  #
+  # 4 MiB matches the figure phase 7 measured for this application; see
+  # docs/roadmap/phase-7-realtime-evaluation.md W2. Keep the two in step: if
+  # the heap requirement changes, BOTH this and the board conf's
+  # CONFIG_HEAP_MEM_POOL_SIZE need looking at, since which one bites depends on
+  # the nano-ros pin.
+  #
+  # This export only reaches cargo because the nano-ros pin now REGISTERS the
+  # knob (`_nros_resolve_knob` in zephyr/cmake/nros_cargo_build.cmake). Before
+  # that it was documented in the Rust source and absent from the generated
+  # cargo command, so exporting it did nothing at all — verified by grepping
+  # build.ninja, after several wrong diagnoses that each looked plausible.
+  export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-4194304}"
+  # ...and force cargo to actually honour it. `HEAP_SIZE` is read with
+  # `option_env!`, which cargo bakes at compile time, but nros-platform has NO
+  # build.rs and so emits no `cargo:rerun-if-env-changed=NROS_ZEPHYR_HEAP_SIZE`.
+  # Cargo therefore does NOT invalidate on a change to this variable: an
+  # already-built rlib is reused with the previous size compiled in, and the
+  # image hangs exactly as if the variable had never been set.
+  #
+  # That is not hypothetical. It is why FVP CI kept failing after this export
+  # landed: build.sh exported 4194304 (verified by probe), and the ELF still
+  # carried a 0x10b38 (64 KiB) `zephyr_heap::HEAP` because the rlib was served
+  # from cache. Standalone builds passed only because they happened to compile
+  # it fresh.
+  #
+
   # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
   # resolves the codegen tool from `_NANO_ROS_CODEGEN_TOOL` (then $NROS_CLI,
   # then PATH); see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.

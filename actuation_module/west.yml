@@ -39,28 +39,24 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # TEMPORARY: pinned to branch phase-8-callback-tracing, which is the
-    # previous pin (589a9d0cf) plus the phase-8 callback-tracing hooks that
-    # ASI's tracing profile needs. This is NOT the branch under review.
+    # TEMPORARY: pinned to branch asi/phase-8-integration, which is nano-ros
+    # main plus the two changes ASI needs, each under review separately:
+    #   NEWSLabNTU/nano-ros#40 — callback-tracing hooks (phase 8)
+    #   NEWSLabNTU/nano-ros#61 — forward NROS_ZEPHYR_HEAP_SIZE to cargo
     #
-    # The review branch is feat/callback-tracing (NEWSLabNTU/nano-ros#40),
-    # correctly based on nano-ros main. ASI cannot pin there yet: nano-ros
-    # main does not boot on fvp_baser_aemv8r. It hangs after
-    # "Network interfaces found: 1", never reaching SNTP or the controller,
-    # so FVP CI phase 1 fails on a missing "Starting Controller Node".
-    # Established by bisection, not inference: plain main WITHOUT the
-    # callback-tracing commit fails identically, so the regression is
-    # upstream and #40 is not implicated.
+    # #61 is not optional here. Since 60b4e0c1e, application allocation runs
+    # on an rlsf arena rather than the kernel heap, so CONFIG_HEAP_MEM_POOL_SIZE
+    # no longer governs it; without #61 the arena knob is unreachable from a
+    # Zephyr build and this image hangs at boot with no diagnostic.
     #
-    # SEQUENCE TO UNWIND THIS, in order:
-    #   1. upstream fixes the main-branch boot regression
-    #   2. #40 merges
-    #   3. move this revision AND the modules/nros submodule pointer to the
-    #      merged main commit, together (see LOCKSTEP above), drop this
-    #      comment, and re-run .github/scripts/run-zephyr-fvp-ci.sh
+    # MOVE TO main ONCE BOTH MERGE, and delete the integration branch. A branch
+    # head is not a stable pin: it can be rebased or deleted, and this hash
+    # then becomes unfetchable for a fresh clone. Move BOTH this revision and
+    # the modules/nros submodule pointer together (see LOCKSTEP above), then
+    # re-run .github/scripts/run-zephyr-fvp-ci.sh.
     - name: nano-ros
       remote: newslab
-      revision: 3707663a10379fd170630d2eb68e77be2ab90ba3
+      revision: 9656c2e35a6d5b08eeb2d6b1c320b445938bc81a
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
