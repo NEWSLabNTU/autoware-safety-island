@@ -38,9 +38,19 @@ manifest:
     # consumed only as a leaf project whose zephyr/module.yml is auto-
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
+    #
+    # TEMPORARY: pinned to the head of NEWSLabNTU/nano-ros#40
+    # (feat/callback-tracing), which carries the phase-8 callback-tracing
+    # hooks ASI's tracing profile depends on. The branch is based on
+    # nano-ros main, so this pin also advances 359 upstream commits past the
+    # previous 589a9d0cf.
+    #
+    # MOVE THIS TO main ONCE #40 MERGES. A PR head is not a stable pin: the
+    # branch can be rebased or deleted, and this revision would then be
+    # unfetchable for anyone cloning fresh.
     - name: nano-ros
       remote: newslab
-      revision: 589a9d0cf29aa33a1a15cc70f020ff1b9474f253
+      revision: 54b9d9cbe9d2a2c730bc655b10aff37f0bbc2955
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
