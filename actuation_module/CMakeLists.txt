@@ -278,6 +278,16 @@ if(CONFIG_ASI_THREAD_STATS_REPORT)
   target_sources(app PRIVATE src/common/diag/thread_stats_report.c)
 endif()
 
+# phase-8 W8 — the overwrite-oldest tracing backend. Independent of the stats
+# reporter above; it registers itself with TRACING_BACKEND_DEFINE(), whose
+# header lives in Zephyr's PRIVATE tracing include dir rather than the public
+# tree, so the path has to be added by hand. There is no public header for
+# defining a tracing backend out of tree.
+if(CONFIG_ASI_TRACE_RING)
+  target_sources(app PRIVATE src/common/diag/trace_ring_backend.c)
+  target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/tracing/include)
+endif()
+
 message("=== Build Summary ===")
 message("App sources: ${APP_SOURCES}")
 message("App headers: ${APP_INCLUDE_DIRS}")

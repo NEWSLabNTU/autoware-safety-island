@@ -247,7 +247,7 @@ Two caveats, both load-bearing:
 * It is an **FVP** number. Per W12 of phase 7, ratios survive the model and
   absolute times do not.
 
-### W8 — overwrite-oldest RAM backend  [ ] (only if production tracing is wanted)
+### W8 — overwrite-oldest RAM backend  [x] DONE 2026-08-30
 
 `CONFIG_TRACING_BACKEND_RAM` exists on the 3.7 pin but is **fill-once, not a
 ring**: it stops at `buffer_full` and goes silent permanently. Useless as a
@@ -299,6 +299,51 @@ callbacks into one row. ASI runs a single executor today (the boot tier on
 the same "looks like coverage" hazard this phase exists to remove. Options: an
 executor id in the register payload, or a decoder warning when one handle is
 registered twice with different names.
+
+### W8 result
+
+Built as `src/common/diag/trace_ring_backend.c`, selected with
+`./build.sh --trace-ring`.
+
+**The framing is the substance, not the ring.** Zephyr's CTF stream has no
+packet header — it is a bare sequence of events — so a ring of raw bytes cannot
+be decoded from an arbitrary start: nothing marks where an event begins.
+Records are therefore length-prefixed, and WHOLE records are evicted before a
+write clobbers them. In sync mode each `output()` call carries exactly one
+event (`tracing_format_sync.c` calls `tracing_buffer_handle` once, under
+`TRACING_LOCK`), which is what makes that exact rather than approximate.
+
+`asi_trace_ring_dump()` linearises oldest-first onto the tracing UART, so what
+leaves the device is an ordinary stream the existing decoder reads unchanged.
+
+Verified end to end on the FVP, with the ring deliberately overflowed many
+times over:
+
+```
+asi: trace ring: dumped 4544 records, 65536 bytes retained, 321763 evicted
+decoded:  4544 events    skipped: 0 B    trailing: 0 B
+```
+
+321763 evictions with 0 skipped and 0 trailing bytes is the result that
+matters: framing survived heavy wrapping. A raw byte ring would have left a
+partial event at the read start and garbage after it.
+
+**A Zephyr patch was needed, and it is not the one expected.**
+`TRACING_BACKEND_DEFINE()` is public, so a backend can be registered out of
+tree — but not SELECTED: `tracing_core.c` resolves the name through a
+compile-time `#elif` chain over in-tree symbols and otherwise defines it as
+`""`, which matches nothing. The registration macro is reachable API with no
+way to use it. `patches/zephyr/0003` adds a `TRACING_BACKEND_CUSTOM` choice
+member and one `#elif` arm: two hunks, additive, no in-tree backend affected.
+
+Both defects deserve an upstream report — the missing selection hook, and
+`TRACING_BACKEND_RAM` being fill-once without saying so in its Kconfig help.
+
+Not wired to a fatal-error hook. `CONFIG_ASI_TRACE_RING_AUTODUMP_S` exists so
+the ring can be exercised without a debugger; on a real target the dump belongs
+in `k_sys_fatal_error_handler`, where it would capture the events leading up to
+the fault. That is the obvious next step and is deliberately not done here,
+since nothing yet asks for production tracing.
 
 ## Acceptance criteria
 

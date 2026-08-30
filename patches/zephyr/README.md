@@ -45,3 +45,35 @@ The call is placed AFTER `z_thread_prio_set()` because the hook reads
 `thread->base.prio`; tracing before the store would record the old priority.
 
 Filed upstream as issue 4 in `docs/design/upstream-zephyr-issues.md`.
+
+## 0003 — allow an out-of-tree tracing backend
+
+`TRACING_BACKEND_DEFINE()` is available to an application, so a backend can be
+*registered* out of tree. It cannot be *selected*: `tracing_core.c` picks one
+with a compile-time `#elif` chain over the in-tree `CONFIG_TRACING_BACKEND_*`
+symbols, and falls back to
+
+```c
+#define TRACING_BACKEND_NAME ""
+```
+
+`tracing_backend_get("")` then matches nothing, so the registered backend is
+never used and tracing silently produces no output. The registration macro is
+public API with no way to reach it.
+
+The patch adds `TRACING_BACKEND_CUSTOM` plus a `TRACING_BACKEND_CUSTOM_NAME`
+string to the existing choice, and one `#elif` arm. Two hunks, additive: no
+in-tree backend changes behaviour.
+
+Needed by phase-8 W8, which routes CTF into an overwrite-oldest RAM ring
+(`src/common/diag/trace_ring_backend.c`) so the LAST events survive rather
+than the first. Zephyr's own `TRACING_BACKEND_RAM` is fill-once — it stops at
+`buffer_full` and goes silent — which is the wrong trade for a recorder meant
+to explain a fault, since the interesting events are exactly the ones it drops.
+
+Both of those are worth reporting upstream: the missing selection hook, and
+the RAM backend's fill-once behaviour being undocumented at the Kconfig level.
+
+EXIT PLAN: drop this patch if upstream gains a selection hook. Unlike 0002 it
+is not superseded by the 4.3 instrumentation subsystem — that is a different
+mechanism, and a custom *tracing backend* would still have no way to be chosen.

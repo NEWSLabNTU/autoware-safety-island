@@ -219,6 +219,48 @@ config ASI_THREAD_STATS_MAX_REPORTS
 	  once the workload finishes and the system idles, guest time races
 	  ahead of host time and an uncapped reporter floods the log.
 
+config ASI_TRACE_RING
+	bool "Overwrite-oldest tracing backend (flight recorder)"
+	help
+	  Keep the LAST N bytes of the CTF stream in RAM instead of the first.
+
+	  Zephyr's own TRACING_BACKEND_RAM is fill-once: it stops at
+	  buffer_full and goes silent permanently. That is the wrong trade for
+	  a recorder meant to explain a fault, because the interesting events
+	  are the last ones and those are exactly the ones it drops.
+
+	  Records are length-prefixed and whole records are evicted, so the
+	  ring always holds complete events -- Zephyr's CTF stream has no
+	  packet header, so a ring of raw bytes could not be decoded from an
+	  arbitrary start. `asi_trace_ring_dump()` linearises oldest-first
+	  onto the tracing UART, producing an ordinary stream.
+
+	  Selecting this does NOT enable tracing; it chooses where the stream
+	  goes. Pair with CONFIG_TRACING_CTF, and set
+	  CONFIG_TRACING_BACKEND_CUSTOM=y plus
+	  CONFIG_TRACING_BACKEND_CUSTOM_NAME="asi_trace_ring" -- the backend
+	  is a Kconfig CHOICE member, and `select` has no effect on choice
+	  symbols, so it has to be chosen in the .conf. See tracing_ring.conf.
+
+config ASI_TRACE_RING_SIZE
+	int "Trace ring size in bytes"
+	default 65536
+	depends on ASI_TRACE_RING
+	help
+	  Sized against how much history a fault needs, not against total
+	  event volume: the ring discards the oldest events continuously, so a
+	  bigger ring buys a longer window rather than fewer drops.
+
+config ASI_TRACE_RING_AUTODUMP_S
+	int "Seconds after boot to auto-dump the ring (0 = never)"
+	default 0
+	depends on ASI_TRACE_RING
+	help
+	  Exists so the ring can be exercised end to end without a debugger:
+	  let it wrap, dump, decode. On a real target the dump belongs in a
+	  fatal-error hook instead, where it can capture the events leading up
+	  to the fault. Zero leaves the ring readable only through memory.
+
 config ASI_THREAD_STATS_STACK_SIZE
 	int "Stack size for the reporting thread"
 	default 16384

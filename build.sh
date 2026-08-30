@@ -31,6 +31,7 @@ BUILD_PLATFORM_SET=0
 NETWORK_PROFILE="default"
 TRACE_ENABLED=0
 TRACE_STATS_ENABLED=0
+TRACE_RING_ENABLED=0
 RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-an536")
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
@@ -46,6 +47,7 @@ function usage() {
   echo -e "${GREEN}                         default: ${ZEPHYR_TARGET_LIST[0]}.${NC}"
   echo -e "${GREEN}    -d                 ${NC}Build directory. Default: ${BUILD_DIR}."
   echo -e "${GREEN}    --trace-stats      ${NC}Thread runtime scheduling statistics only (no CTF)."
+  echo -e "${GREEN}    --trace-ring       ${NC}CTF into an overwrite-oldest RAM ring (flight recorder)."
   echo -e "${GREEN}    --trace            ${NC}Zephyr FVP only: build with CTF tracing + thread runtime"
   echo -e "${GREEN}                         stats, streaming the trace to uart1. See"
   echo -e "${GREEN}                         docs/design/rt_evaluation_zephyr.rst.${NC}"
@@ -134,6 +136,13 @@ function parse_args() {
         ;;
       --trace)
         TRACE_ENABLED=1
+        shift
+        ;;
+      --trace-ring)
+        # Implies --trace: the ring chooses WHERE the stream goes, it does not
+        # turn tracing on.
+        TRACE_ENABLED=1
+        TRACE_RING_ENABLED=1
         shift
         ;;
       --trace-stats)
@@ -495,6 +504,12 @@ function build_zephyr_actuation_module() {
       exit 1
     fi
     extra_conf_files+=("${tracing_conf}")
+    # AFTER tracing.conf, because it must override CONFIG_TRACING_BACKEND_UART.
+    # Zephyr selects the backend with an #elif chain that tests UART first, so
+    # leaving it enabled silently wins and the ring is never chosen.
+    if [ "${TRACE_RING_ENABLED}" = "1" ]; then
+      extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_ring.conf")
+    fi
     extra_dtc_overlays+=("${tracing_overlay}")
     # -d may be given as either a relative or an absolute path, so resolve
     # rather than prefixing ROOT_DIR blindly.
