@@ -61,6 +61,10 @@ def main():
     ap.add_argument("--points", type=int, default=0)
     ap.add_argument("--seconds", type=float, default=15.0)
     ap.add_argument("--small-only", action="store_true")
+    ap.add_argument("--depth", type=int, default=1,
+                    help="writer history depth. At 1 the writer keeps only "
+                         "the newest sample, so one a reader is still "
+                         "reassembling can vanish before repair finishes.")
     ap.add_argument("--traj-rate", type=float, default=0.1,
                     help="seconds between trajectory publishes")
     ap.add_argument("--with-trajectory", type=int, default=0,
@@ -79,7 +83,7 @@ def main():
     # QoS::default_profile). A publisher that does not match is not a smaller
     # experiment, it is no experiment.
     qos = QoSProfile(
-        depth=1,
+        depth=args.depth,
         history=HistoryPolicy.KEEP_LAST,
         reliability=ReliabilityPolicy.RELIABLE,
         durability=DurabilityPolicy.VOLATILE,
