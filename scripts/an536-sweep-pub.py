@@ -61,6 +61,11 @@ def main():
     ap.add_argument("--points", type=int, default=0)
     ap.add_argument("--seconds", type=float, default=15.0)
     ap.add_argument("--small-only", action="store_true")
+    ap.add_argument("--traj-rate", type=float, default=0.1,
+                    help="seconds between trajectory publishes")
+    ap.add_argument("--with-trajectory", type=int, default=0,
+                    help="also publish an N-point Trajectory at 10 Hz "
+                         "from THIS node (one participant)")
     ap.add_argument("--rate", type=float, default=0.025,
                     help="seconds between small-topic publishes")
     ap.add_argument("--stagger", type=float, default=0.0,
@@ -119,9 +124,25 @@ def main():
         # Report match counts periodically. Whether the island's readers were
         # ever discovered is a precondition for any statement about delivery,
         # and it is the one number a publish-only loop otherwise never shows.
+        traj_pub = None
+        traj_msg = None
+        traj_next = 0.0
+        if args.with_trajectory > 0:
+            traj_pub = node.create_publisher(
+                Trajectory, "/planning/scenario_planning/trajectory", qos)
+            traj_msg = make_trajectory(args.with_trajectory,
+                                       node.get_clock().now().to_msg())
+            print("trajectory points=%d serialized=%d"
+                  % (args.with_trajectory, len(serialize_message(traj_msg))),
+                  flush=True)
+
         names = ["kinematic_state", "acceleration", "steering_status"]
         next_report = 0.0
         while rclpy.ok():
+            if traj_pub is not None and time.time() >= traj_next:
+                traj_msg.header.stamp = node.get_clock().now().to_msg()
+                traj_pub.publish(traj_msg)
+                traj_next = time.time() + args.traj_rate
             if time.time() >= next_report:
                 counts = " ".join(
                     "%s=%d" % (n, pub.get_subscription_count())
