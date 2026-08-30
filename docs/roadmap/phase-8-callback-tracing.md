@@ -403,10 +403,15 @@ no ISR.
 
 ## Acceptance criteria
 
-- [ ] A capture attributes time to **every** registered callback, including
-      ones with no hand-placed instrumentation
-- [ ] Callback names in the decoder come from registration events, not from a
-      compiled-in enum
+- [x] A capture attributes time to **every** registered callback, including
+      ones with no hand-placed instrumentation. Six on the loaded run: one
+      timer and five subscriptions, none of which had ever been instrumented
+      by hand.
+- [x] Callback names in the decoder come from registration events, not from a
+      compiled-in enum. Real topic names resolve (`/planning/.../trajectory`,
+      `/localization/kinematic_state`, ...), and the nameless timer synthesises
+      as `timer@30000us` — which independently confirmed `ctrl_period = 0.03`
+      reached the image.
 - [~] ~~With the feature disabled, the dispatch path is byte-identical to
       today~~ **AMENDED — this criterion is not met, deliberately.**
       `CallbackMeta::try_process` gained an unconditional `u8` desc index so
@@ -418,8 +423,18 @@ no ISR.
       move for a large amount of unreadable code. Recorded as amended rather
       than quietly dropped, because the criterion was written before the
       leaf-identity problem was understood.
-- [ ] FVP CI green
-- [ ] The subscription-callback cost — currently unknown — is reported
+- [x] FVP CI green. All six phases on the current pin (2026-08-30): controller
+      smoke, unit tests, DDS loopback, CAN loopback, TAP networking, scheduling
+      statistics. Note an earlier run of this same gate was INVALID rather than
+      failing — the submodule tree was edited underneath it mid-build, which
+      staled `build.ninja` and triggered a reconfigure outside `build.sh` with
+      no ament environment. A CI result taken while its own inputs are moving
+      is not a result.
+- [x] The subscription-callback cost — unknown for the whole of phase 7 — is
+      reported: ~209 ms against the timer's 34656 ms, about 0.6 %. W9 had
+      *guessed* the trajectory deep copy was the bottleneck and was wrong; this
+      answers the same class of question by measurement, for callbacks nobody
+      thought to instrument.
 
 ## Risks
 

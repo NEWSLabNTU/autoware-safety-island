@@ -685,8 +685,35 @@ Follow-ups this opens (none investigated):
       Callback duration is unchanged (p50 0.721 ms), confirming the callback
       itself was never implicated.
 
-- [ ] Follow-up: `min` period is 13.997 ms in the fixed run (p50 31.000), so a
-      few cycles land early. Not investigated.
+- [~] Follow-up: `min` period is 13.997 ms in the fixed run (p50 31.000), so a
+      few cycles land early. PARTIALLY investigated 2026-08-30, not settled.
+
+      Hypothesis: the executor paces itself against a deadline, so a cycle that
+      overruns leaves the next one already due; it fires immediately and the
+      gap is short. That predicts short gaps FOLLOW long cycles.
+
+      Measured on the phase-8 callback capture (2943 cycles):
+
+      ```
+      short gaps (<20 ms):                            4 of 2942
+      shortest:                                      11.000 ms
+      duration of the cycle preceding a short gap:    2.560 ms median (n=4)
+      duration of all cycles:                         1.128 ms median
+      ```
+
+      The direction is right — the preceding cycles are 2.3x typical — but this
+      does NOT settle it. n=4 is far too small, and a 2.6 ms "long" cycle is
+      nowhere near a 30 ms overrun, so the mechanism that would produce a
+      13.997 ms gap is not demonstrated.
+
+      That capture is also the wrong workload: 2849 of its cycles are safe
+      stops and only 93 are commanded, whereas the original observation came
+      from a loaded run whose trace has since been overwritten.
+
+      What would settle it: a loaded `--drive` capture with the preceding-cycle
+      correlation computed over commanded cycles. The analysis is nine lines
+      against `parse-zephyr-ctf.py`'s `decode()`; it is the capture that costs
+      something, not the arithmetic.
 - [x] **Parameter audit (2026-08-27) — the blast radius is ONE value.** An
       earlier note here claimed "every launch parameter was equally dead ...
       the ~150 MPC/PID parameters all ran on compiled defaults". That
