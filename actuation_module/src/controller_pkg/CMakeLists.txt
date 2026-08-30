@@ -78,6 +78,15 @@ if(_asi_is_armv8r)
   add_compile_definitions(ASI_FREERTOS_WALL_CLOCK=1)
 endif()
 
+# Per-topic delivery counters in the controller callbacks, for answering "at
+# what RATE is this topic reaching the app?" — a question the controller's own
+# log cannot answer, because it only reports presence. Off unless asked for;
+# they compile to nothing otherwise. See scripts/an536-rx-counters.py.
+if(DEFINED ENV{ASI_RX_COUNTERS} OR ASI_RX_COUNTERS)
+  add_compile_definitions(ASI_RX_COUNTERS=1)
+  message(STATUS "controller_pkg: ASI_RX_COUNTERS enabled (gdb-readable rx counters)")
+endif()
+
 set(_controller_includes "")
 foreach(_i IN LISTS APP_INCLUDE_DIRS)
   list(APPEND _controller_includes "${_ACT_ROOT}/${_i}")

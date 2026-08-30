@@ -170,18 +170,48 @@ Controller::Controller(nros::NodeHandle handle)
 // SUBSCRIBER CALLBACKS — RFC-0044 typed member callbacks. The executor
 // deserializes the wire message and dispatches `const Msg&` directly to `this`
 // (no `void* arg` re-cast). Logic is otherwise verbatim from the legacy shim.
+// Per-topic delivery counters, off unless ASI_RX_COUNTERS is defined.
+//
+// The controller's own log is a boolean — "waiting for X" or silence — and
+// that cannot tell "arriving at 10 Hz" from "arrived once, a minute ago".
+// Every freshness question is a rate question, so the rate has to be
+// observable. These sit in the APPLICATION callbacks deliberately: they count
+// what the controller actually consumed, not what any layer below believes it
+// delivered, which is the difference that made the an536 receive-path work
+// tractable (nano-ros issue 0917 — published 40/40/40/10 Hz arrived as
+// 10.7/8.2/10.6/0.1 Hz, and only the last of those was visible in the log).
+//
+// Read them from a paused image:
+//   gdb-multiarch -q -batch -ex 'set arch arm' -ex 'file <elf>' \
+//     -ex 'target remote :1234' -x scripts/an536-rx-counters.py
+#if defined(ASI_RX_COUNTERS)
+extern "C" {
+volatile unsigned int asi_rx_traj;
+volatile unsigned int asi_rx_odom;
+volatile unsigned int asi_rx_accel;
+volatile unsigned int asi_rx_steer;
+volatile unsigned int asi_rx_opmode;
+}
+#define ASI_COUNT_RX(name) (++(name))
+#else
+#define ASI_COUNT_RX(name) ((void)0)
+#endif
+
 void Controller::on_steering_status(const SteeringReportMsg& msg) {
   current_steering_ = msg;
+  ASI_COUNT_RX(asi_rx_steer);
   has_steering_ = true;
 }
 
 void Controller::on_operation_mode_state(const OperationModeStateMsg& msg) {
   current_operation_mode_ = msg;
+  ASI_COUNT_RX(asi_rx_opmode);
   has_operation_mode_ = true;
 }
 
 void Controller::on_odometry(const OdometryMsg& msg) {
   current_odometry_ = msg;
+  ASI_COUNT_RX(asi_rx_odom);
   // `msg` is a deserialized sample whose char* members (header.frame_id,
   // child_frame_id) point into storage the subscriber may reclaim once this
   // callback returns. The controller only consumes the numeric pose/twist
@@ -194,6 +224,7 @@ void Controller::on_odometry(const OdometryMsg& msg) {
 
 void Controller::on_acceleration(const AccelWithCovarianceStampedMsg& msg) {
   current_accel_ = msg;
+  ASI_COUNT_RX(asi_rx_accel);
   // Drop the loaned char* string (header.frame_id) — see on_odometry; only the
   // numeric accel fields are consumed.
   current_accel_.header.frame_id = nullptr;
@@ -201,6 +232,7 @@ void Controller::on_acceleration(const AccelWithCovarianceStampedMsg& msg) {
 }
 
 void Controller::on_trajectory(const TrajectoryMsg_Raw& msg) {
+  ASI_COUNT_RX(asi_rx_traj);
   // Copy the data instead of storing the pointer
   current_trajectory_ = TrajectoryMsg(&msg);  // Copy the entire message
   // TrajectoryMsg deep-copies points but its `header = msg.header` shallow-copies
