@@ -85,11 +85,28 @@ backport need only, and it retires when the Zephyr pin moves.
 That is the status of ALL THREE patches here, which is worth stating in one
 place:
 
-| patch | upstream status |
+| patch | upstream status (checked 2026-08-30 against `main`) |
 |---|---|
-| 0001 priority event | still absent on `main`; the one-line mapping is upstreamable — zephyrproject-rtos/zephyr#117637 |
+| 0001 priority event | ALREADY FIXED on `main`; backport only |
 | 0002 app marker | superseded by the 4.3 instrumentation subsystem; retire, do not upstream |
-| 0003 backend selection | already fixed on `main`; backport only |
+| 0003 backend selection | ALREADY FIXED on `main`; backport only |
+
+**Nothing here is upstreamable.** All three are v3.7.0 LTS backports and all
+three retire when the Zephyr pin moves. That is worth stating plainly because
+the opposite was assumed twice in one day: 0003's exit plan said "drop if
+upstream gains a selection hook" when it already had one, and 0001 was drafted
+as an upstream contribution before `main` was read.
+
+For 0001 specifically, `main` carries exactly the mapping this patch adds, in a
+better form:
+
+```c
+#define sys_port_trace_k_thread_sched_priority_set(thread, prio)  \
+	sys_trace_k_thread_sched_priority_set(thread, prio)
+```
+
+It passes `prio` through rather than dropping it, and `ctf_top.c` implements
+both that and the `thread`-only variant.
 
 Also checked: of the four issues filed on 2026-08-27, #117636 (thread-analyzer
 stack default) is now CLOSED upstream. #117634, #117635 and #117637 remain
