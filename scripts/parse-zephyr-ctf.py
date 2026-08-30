@@ -556,8 +556,9 @@ def report_stats(evs):
             print("     each executor its own id before trusting them.")
         print(f"  {'callback':<26} {'kind':<12} {'n':>7} {'total ms':>10} "
               f"{'p50 ms':>9} {'p90 ms':>9} {'max ms':>10}")
-        # Registered-but-never-dispatched callbacks are listed too: "this one
-        # never ran" is a finding, and dropping the row would hide it.
+        # Registered callbacks with no observed dispatch are listed too, and
+        # the note printed after the table says why they are AMBIGUOUS rather
+        # than letting a reader take n=0 for "never ran".
         for h in sorted(set(kinds) | set(durs), key=lambda h: -sum(durs[h])):
             v = sorted(durs[h])
             label = names.get(h, f"handle {h}")
@@ -569,6 +570,29 @@ def report_stats(evs):
             print(f"  {label:<26} {kind:<12} {len(v):>7} {sum(v):>10.3f} "
                   f"{v[len(v) // 2]:>9.3f} {v[int(len(v) * 0.9)]:>9.3f} "
                   f"{v[-1]:>10.3f}")
+
+        silent = sorted(h for h in kinds if not durs.get(h))
+        if silent:
+            # phase-8: leaf hooks are STAGED. Only the timer and the C-FFI
+            # subscription path emit start/end today; 30 of the 33 leaf sites
+            # in arena.rs carry a TODO instead. So an empty row has two
+            # possible causes and the trace cannot tell them apart:
+            #
+            #   the callback genuinely never fired, or
+            #   it fired and its leaf has no hook yet.
+            #
+            # Printing n=0 without saying this would let a reader conclude
+            # "that callback never ran", which may be flatly untrue -- the
+            # exact false-confidence this instrumentation exists to remove.
+            print()
+            print(f"  {len(silent)} registered callback(s) produced no dispatch"
+                  " events:")
+            for h in silent:
+                print(f"       {names.get(h, f'handle {h}')} "
+                      f"({kinds.get(h, '?')})")
+            print("     AMBIGUOUS: either they never fired, or their leaf is")
+            print("     one of the un-hooked sites (phase-8 staged 30 of 33).")
+            print("     The trace cannot distinguish these two.")
 
     # Timers: `timer_start` carries the REQUESTED duration/period in ticks
     # alongside the arm time, so the requested period and the delivered

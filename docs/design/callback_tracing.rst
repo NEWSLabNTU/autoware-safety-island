@@ -250,9 +250,18 @@ avoid. Resolve it by separating the two halves:
   edits.
 * **Leaf hooks land in stages**, beginning with the kinds this repo actually
   runs — one timer plus the C-FFI subscription path.
-* **The decoder reports the difference.** A callback that was registered but
-  never observed is printed as ``registered, not instrumented`` rather than
-  omitted or shown as zero.
+* **The decoder reports the gap, and reports it as AMBIGUOUS.** A registered
+  callback with no dispatch events gets a row with ``n = 0`` and dashes, plus a
+  note naming it. That note matters: an empty row has two possible causes and
+  the trace cannot tell them apart -- the callback genuinely never fired, or it
+  fired and its leaf is one of the un-hooked sites. Printing ``n = 0`` alone
+  would invite the reader to conclude "that callback never ran", which may be
+  flatly untrue.
+
+  An earlier revision of this document claimed the decoder prints
+  ``registered, not instrumented``. It cannot: nothing in the stream
+  distinguishes the two causes, and no such label was ever implemented. Fixed
+  in the decoder by stating the ambiguity instead of resolving it falsely.
 
 That way an incomplete hook set announces itself in the output instead of
 looking like a measurement.
