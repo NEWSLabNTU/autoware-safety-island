@@ -39,28 +39,29 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # TEMPORARY: pinned to branch fix/heap-starvation-is-silent = nano-ros
-    # main plus the two changes still under review, stacked:
+    # TEMPORARY: pinned to branch fix/trace-names-bind-by-handle, the top of
+    # a three-deep stack, all under review:
     #   NEWSLabNTU/nano-ros#61 — forward NROS_ZEPHYR_HEAP_SIZE to cargo
     #   NEWSLabNTU/nano-ros#71 — starvation says so; impossible sizes fail
-    #                            the build  (stacked on #61)
+    #   NEWSLabNTU/nano-ros#75 — name chunks carry their handle
+    # (#40, the callback-tracing hooks, MERGED 2026-08-29 and is in main.)
     #
-    # The phase-8 callback-tracing hooks (#40) MERGED 2026-08-29 and are in
-    # main, so no branch is needed for those any more.
+    # REPINNED 2026-08-30 because the previous revision, 6815e262, had been
+    # ORPHANED: that branch was rebased and force-pushed after this file was
+    # pointed at it, so the hash was no longer reachable from any remote
+    # branch and a fresh clone could not fetch it. Exactly the failure the
+    # warning below describes, caused by not re-pinning after a force-push.
     #
-    # #61 is not optional: since 60b4e0c1e, z_malloc and __rust_alloc run on an
-    # rlsf arena rather than Zephyr's kernel heap, so CONFIG_HEAP_MEM_POOL_SIZE
-    # no longer governs application allocation, and without #61 the arena knob
-    # is unreachable from a Zephyr build. #71 is what makes that failure
-    # visible: this image's executor arena (458752) exceeds the 64 KiB default
-    # by 7.2x, and before #71 that combination built, linked, and hung.
+    # Anyone force-pushing a branch this file points at MUST repin in the same
+    # change. `git branch -r --contains <rev>` in modules/nros is the check;
+    # empty output means the pin is broken.
     #
-    # MOVE TO main ONCE BOTH MERGE: move this revision and the modules/nros
-    # submodule pointer together (see LOCKSTEP above), delete both branches,
-    # and re-run .github/scripts/run-zephyr-fvp-ci.sh.
+    # MOVE TO main ONCE ALL THREE MERGE: move this revision and the
+    # modules/nros submodule pointer together (see LOCKSTEP above), delete the
+    # branches, and re-run .github/scripts/run-zephyr-fvp-ci.sh.
     - name: nano-ros
       remote: newslab
-      revision: 6815e262028974cdcbef8ded492e8c45d238b260
+      revision: 13eb682fe2dbf813de83ce21c344fda59dc62dd2
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
