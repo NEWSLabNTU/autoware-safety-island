@@ -397,8 +397,12 @@ def report_stats(evs):
     # which phase-8 W4 exists specifically to avoid), and a compiled-in name
     # table keyed by handle (that is the hand-maintained registry this phase is
     # removing -- see the acceptance criteria).
-    CB_REGISTER, CB_NAME, CB_START, CB_END = 16, 17, 18, 19
-    CB_IDS = (CB_REGISTER, CB_NAME, CB_START, CB_END)
+    # 17 is the LEGACY untagged name chunk: 4 bytes, bound to the register
+    # event it followed. 20 is the tagged form, `handle << 24 | 3 bytes`,
+    # which binds by handle. Both are decoded — a new id was minted rather
+    # than 17 redefined, so captures taken either way still read correctly.
+    CB_REGISTER, CB_NAME_LEGACY, CB_START, CB_END, CB_NAME = 16, 17, 18, 19, 20
+    CB_IDS = (CB_REGISTER, CB_NAME_LEGACY, CB_START, CB_END, CB_NAME)
     CB_KINDS = {0: "timer", 1: "subscription", 2: "service", 3: "action"}
     CB_NAME_MAX = 64   # bytes; longer names are truncated at the emitter
 
@@ -413,7 +417,6 @@ def report_stats(evs):
         kinds = {}                  # handle -> kind string; presence == registered
         names = {}                  # handle -> name, only when one was streamed
         durs = defaultdict(list)    # handle -> [ms]
-        naming, chars = None, bytearray()
         # Open spans are keyed by HANDLE rather than held in a single slot.
         # `app_marker` carries no thread id, and phase-8 W1 found dispatch
         # paths that run on a worker thread (`os_priority.rs`) as well as on
@@ -423,6 +426,8 @@ def report_stats(evs):
         # overlapping is still treated as a lost end -- if the leaf hooks W1
         # settles on turn out to nest a handle inside itself, this needs to
         # become a stack per handle.
+        chunks = {}                 # handle -> accumulated name bytes (W5a)
+        legacy_open = None          # last register seen, for the legacy chunks
         collisions = {}             # handle -> [names] when one handle is reused
         pending = {}                # handle -> the open callback_start event
         crossed = set()             # handles whose open span met a WFI jump
@@ -462,17 +467,42 @@ def report_stats(evs):
             mid = ev.fields.get("marker_id")
             arg = ev.fields.get("arg", 0)
 
-            if mid == CB_NAME:
-                if naming is not None and len(chars) < CB_NAME_MAX:
-                    chars += struct.pack("<I", arg)
+            if mid == CB_NAME_LEGACY:
+                # Legacy: no handle in the payload, so it binds to the last
+                # register event seen. Retained only to read old captures.
+                if legacy_open is not None:
+                    buf = chunks.setdefault(legacy_open, bytearray())
+                    if len(buf) < CB_NAME_MAX:
+                        buf += struct.pack("<I", arg)
                 continue
-            if naming is not None:       # any other marker ends the name
-                finish_name(naming, chars)
-                naming, chars = None, bytearray()
+
+            if mid == CB_NAME:
+                # phase-8 W5a — the chunk carries its own handle in the top
+                # byte, so a name binds to the callback it NAMES rather than to
+                # whichever register event it happened to follow. A dropped
+                # event inside a registration burst used to shift every
+                # subsequent name onto the wrong callback, silently.
+                h = (arg >> 24) & 0xFF
+                buf = chunks.setdefault(h, bytearray())
+                if len(buf) < CB_NAME_MAX:
+                    buf += struct.pack("<I", arg & 0x00FF_FFFF)[:3]
+                continue
 
             if mid == CB_REGISTER:
-                naming, chars = arg >> 8, bytearray()
-                kinds[naming] = CB_KINDS.get(arg & 0xFF, f"kind {arg & 0xFF}")
+                # Register carries handle + kind only. The NAME arrives in
+                # self-describing chunks (W5a) and is resolved after the
+                # stream, so this no longer has to stay "open".
+                h = arg >> 8
+                # A SECOND register for a handle already carrying name bytes
+                # means the slot is being reused -- finalise what we have so
+                # the collision guard (W3a) sees two distinct names rather than
+                # one concatenated buffer. Without this the legacy path
+                # appends, `finish_name` truncates at the first NUL, and the
+                # collision becomes invisible.
+                if h in chunks:
+                    finish_name(h, chunks.pop(h))
+                legacy_open = h          # only used by the legacy name path
+                kinds[h] = CB_KINDS.get(arg & 0xFF, f"kind {arg & 0xFF}")
             elif mid == CB_START:
                 # A second start for a handle that is still open means its end
                 # was lost. The open span is not a measurement; drop it and
@@ -498,8 +528,12 @@ def report_stats(evs):
                     reordered += 1
                 else:
                     durs[arg].append((ev.ts - start.ts) / 1e6)
-        if naming is not None:           # capture ended mid-registration
-            finish_name(naming, chars)
+        # Resolve every accumulated name once, keyed by handle. Order in the
+        # stream no longer matters, so a capture that starts or ends inside a
+        # registration burst loses at most the names it never saw -- it cannot
+        # attach one callback's name to another.
+        for h, buf in sorted(chunks.items()):
+            finish_name(h, buf)
         unbalanced += len(pending)       # capture ended mid-dispatch
 
         print("\n=== callbacks (dispatch hooks) " + "=" * 33)

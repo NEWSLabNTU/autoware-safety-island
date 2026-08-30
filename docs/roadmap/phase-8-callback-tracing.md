@@ -137,7 +137,7 @@ The upstream fix (an executor id in the register payload) is still the better
 answer if multi-executor images become normal; this makes the failure visible
 in the meantime, which is the property that matters.
 
-### W5a — registration names bind by adjacency  [ ] follow-up
+### W5a — registration names bind by adjacency  [x] DONE 2026-08-30
 
 The `app_marker` CTF event carries exactly two `uint32`s, so a variable-length
 name is streamed as 4-byte chunks (marker id 17) that bind to the register
@@ -176,7 +176,7 @@ looked like proof.
 Kept as a WITHDRAWN entry rather than deleted: the reasoning that produced it is
 worth having on the record next to the reasoning that killed it.
 
-### W7 — measure the overhead properly  [ ]
+### W7 — measure the overhead properly  [x] DONE 2026-08-30
 
 The design doc quotes 0.0788 % as a **count** share and says plainly that it is
 not a time share and has never been measured in isolation. Close that gap:
@@ -185,6 +185,67 @@ UART/`TRACING_SYNC` measurement rig.
 
 Acceptance: a number with a stated method, or an explicit statement that it
 could not be isolated. Not an extrapolation.
+
+### W5a/W7 results
+
+**W5a — names now bind by handle, not by position.** Chunks carry the handle in
+the top byte (`handle << 24 | 3 bytes`), so a dropped event inside a
+registration burst can no longer shift every subsequent name onto the wrong
+callback. Three bytes per event instead of four costs nothing: registration is
+init-time, once per callback.
+
+Emitted under a **new marker id (20)**, with 17 reserved and still decoded as
+the legacy positional form. Redefining what 17 means would have silently
+reinterpreted every capture already taken with it — the exact failure this
+instrumentation exists to prevent, and one this phase nearly committed: the
+first version of the change reused 17, and the archived capture decoded with
+garbled names while every number stayed plausible.
+
+Verified on four cases, not by inspection: tagged names arriving out of order
+bind correctly; the W3a collision guard fires in the tagged form; it fires in
+the legacy form; and the archived real capture decodes byte-identical.
+
+That third case was a regression this change introduced and the synthetics
+caught: accumulating name bytes per handle meant a re-registration APPENDED
+rather than replaced, `finish_name` truncated at the first NUL, and the
+collision became invisible. Fixed by finalising the previous name when a handle
+is registered again.
+
+**W7 — per-event cost is 3.86 us on this backend.** Measured with two images
+identical except that one emits 100 extra events per control cycle, same
+workload, same wall-clock:
+
+```
+                 baseline (N=0)   treatment (N=100)   delta
+  min                0.720 ms          1.106 ms       0.386
+  p50                0.722 ms          1.108 ms       0.386
+  p90                0.722 ms          1.109 ms       0.387
+
+  markers/cycle       4.007            104.0          +100  (manipulation check)
+```
+
+The delta is stable across percentiles, which is what makes it a measurement
+rather than a coincidence. 0.386 ms / 100 = **3.86 us per event**.
+
+What that settles: the 0.0788 % figure quoted in the design doc is a COUNT
+share, and it does understate the time share — but not for our markers.
+
+| | per cycle | share of a 254 ms loaded cycle |
+|---|---|---|
+| this phase's app markers (3.5 ev) | 13.5 us | 0.005 % |
+| the whole tracer (4437 ev) | 17.1 ms | 6.7 % |
+
+So the instrumentation added here is genuinely negligible, and the tracer's
+real cost is dominated by mutex events — 4400 of the 4437. Anyone wanting a
+cheaper capture should filter those, not these.
+
+Two caveats, both load-bearing:
+
+* This is `CONFIG_TRACING_SYNC` with the UART backend, which writes inline at
+  the event site. It is the measurement rig, not a production configuration. A
+  RAM backend would be far cheaper and has not been measured.
+* It is an **FVP** number. Per W12 of phase 7, ratios survive the model and
+  absolute times do not.
 
 ### W8 — overwrite-oldest RAM backend  [ ] (only if production tracing is wanted)
 
