@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import re
+import bisect
 import struct
 import sys
 from collections import Counter, defaultdict
@@ -196,6 +197,31 @@ def thread_label(ev):
     return name or tid or "?"
 
 
+CONTRACT = None
+
+
+def load_contract(path, launch):
+    """Declared scheduling parameters, for the W3 conformance check.
+
+    Deliberately a few regexes rather than a TOML parser: this reads two
+    values out of two files and must not acquire a dependency to do it.
+    """
+    import re
+    out = {}
+    txt = open(path, encoding="utf-8").read()
+    m = re.search(r"\[tiers\.[a-z_]+\.zephyr\](.*?)(?=\n\[|\Z)", txt, re.S)
+    if m:
+        pm = re.search(r"^\s*priority\s*=\s*(-?\d+)", m.group(1), re.M)
+        if pm:
+            out["tier_priority"] = int(pm.group(1))
+    if launch:
+        lt = open(launch, encoding="utf-8").read()
+        lm = re.search(r'name="ctrl_period"\s+value="([0-9.]+)"', lt)
+        if lm:
+            out["ctrl_period_us"] = int(round(float(lm.group(1)) * 1e6))
+    return out
+
+
 def report_stats(evs):
     """Per-thread scheduling statistics reconstructed from switch events."""
     running = defaultdict(float)   # label -> total ns on CPU
@@ -203,6 +229,7 @@ def report_stats(evs):
     windows = defaultdict(int)     # label -> dispatch count
     counts = defaultdict(int)      # event name -> occurrences
 
+    runs = []                      # (start_ns, end_ns, label) CPU intervals
     current = None
     since = None
     spanned = False        # did a WFI discontinuity fall inside this slice?
@@ -221,6 +248,11 @@ def report_stats(evs):
             elif slice_ns >= 0:
                 running[current] += slice_ns
                 longest[current] = max(longest[current], slice_ns)
+                # phase-9 W1/W2 — keep the interval itself, not just its sum.
+                # A callback span is WALL time; subtracting the intervals in
+                # which its thread was not running turns it into execution
+                # time, which is what a budget is expressed in.
+                runs.append((since, ev.ts, current))
             current, since, spanned = None, None, False
 
     # There is no trustworthy wall-clock span on this model: CNTVCT keeps
@@ -416,7 +448,8 @@ def report_stats(evs):
 
         kinds = {}                  # handle -> kind string; presence == registered
         names = {}                  # handle -> name, only when one was streamed
-        durs = defaultdict(list)    # handle -> [ms]
+        durs = defaultdict(list)    # handle -> [ms] WALL time
+        spans = defaultdict(list)   # handle -> [(start_ns, end_ns)]
         # Open spans are keyed by HANDLE rather than held in a single slot.
         # `app_marker` carries no thread id, and phase-8 W1 found dispatch
         # paths that run on a worker thread (`os_priority.rs`) as well as on
@@ -528,6 +561,7 @@ def report_stats(evs):
                     reordered += 1
                 else:
                     durs[arg].append((ev.ts - start.ts) / 1e6)
+                    spans[arg].append((start.ts, ev.ts))   # phase-9 W1/W2
         # Resolve every accumulated name once, keyed by handle. Order in the
         # stream no longer matters, so a capture that starts or ends inside a
         # registration burst loses at most the names it never saw -- it cannot
@@ -570,6 +604,139 @@ def report_stats(evs):
             print(f"  {label:<26} {kind:<12} {len(v):>7} {sum(v):>10.3f} "
                   f"{v[len(v) // 2]:>9.3f} {v[int(len(v) * 0.9)]:>9.3f} "
                   f"{v[-1]:>10.3f}")
+
+        # ---- phase-9 W1/W2 — execution time and preemption ----------------
+        #
+        # Everything above is WALL time: enter to exit, including any interval
+        # in which the thread was not on a CPU. `TierSpec::budget_us` is an
+        # EXECUTION-time budget, so the two have to be separated before any
+        # number here can be fed back into the contract.
+        #
+        # Ownership is inferred, because app markers carry no thread id: the
+        # owner of a span is whichever thread was running when the span opened.
+        # That is exact for a callback, which cannot begin on a thread other
+        # than the one dispatching it.
+        if spans and runs:
+            runs.sort()
+            starts = [r[0] for r in runs]
+
+            def slice_span(a, b):
+                """Return (exec_ns, {preemptor: ns}) for the wall span [a, b)."""
+                i = bisect.bisect_right(starts, a) - 1
+                if i < 0:
+                    i = 0
+                owner = None
+                for s0, e0, lab in runs[i:]:
+                    if s0 <= a < e0:
+                        owner = lab
+                        break
+                    if s0 >= b:
+                        break
+                if owner is None:
+                    return None, None
+                ex, stolen = 0, defaultdict(int)
+                for s0, e0, lab in runs[i:]:
+                    if s0 >= b:
+                        break
+                    ov = min(e0, b) - max(s0, a)
+                    if ov <= 0:
+                        continue
+                    if lab == owner:
+                        ex += ov
+                    else:
+                        stolen[lab] += ov
+                return ex, stolen
+
+            rows = []
+            for h, sp in spans.items():
+                execs, wall, steal = [], [], defaultdict(int)
+                for a, b in sp:
+                    ex, st = slice_span(a, b)
+                    if ex is None:
+                        continue
+                    execs.append(ex / 1e6)
+                    wall.append((b - a) / 1e6)
+                    for k, v in st.items():
+                        steal[k] += v
+                if execs:
+                    rows.append((h, sorted(execs), sorted(wall), steal))
+
+            if rows:
+                print("\n=== execution time vs wall time (phase-9 W1/W2) " + "=" * 16)
+                print("  wall = enter..exit. exec = wall minus intervals the")
+                print("  owning thread was off CPU. A budget is an EXEC figure;")
+                print("  a deadline is measured against WALL.")
+                print(f"  {'callback':<26} {'n':>6} {'wall p50':>9} {'wall max':>9} "
+                      f"{'exec p50':>9} {'exec max':>9} {'preempted':>10}")
+                for h, ex, wa, steal in sorted(rows, key=lambda r: -r[1][-1]):
+                    label = names.get(h, f"handle {h}")
+                    tot = sum(steal.values()) / 1e6
+                    print(f"  {label:<26} {len(ex):>6} "
+                          f"{wa[len(wa)//2]:>9.3f} {wa[-1]:>9.3f} "
+                          f"{ex[len(ex)//2]:>9.3f} {ex[-1]:>9.3f} "
+                          f"{tot:>10.3f}")
+                any_steal = False
+                for h, ex, wa, steal in rows:
+                    if not steal:
+                        continue
+                    any_steal = True
+                    label = names.get(h, f"handle {h}")
+                    top = sorted(steal.items(), key=lambda kv: -kv[1])[:3]
+                    who = ", ".join(f"{k} {v/1e6:.3f} ms" for k, v in top)
+                    print(f"    {label}: preempted by {who}")
+                if not any_steal:
+                    print("    no preemption observed: every span ran to")
+                    print("    completion on its owning thread.")
+
+        # ---- phase-9 W3/W4 — conformance and budget extraction -------------
+        if CONTRACT:
+            print("\n=== schedule conformance (phase-9 W3) " + "=" * 25)
+            obs_prio = {}
+            for ev in evs:
+                if ev.name == "thread_priority_set":
+                    obs_prio[thread_label(ev)] = ev.fields.get("prio")
+            ok = bad = 0
+
+            def check(what, declared, observed, note=""):
+                nonlocal ok, bad
+                if observed is None:
+                    print(f"  ?  {what:<34} declared {declared}, NOT OBSERVED {note}")
+                    return
+                if str(declared) == str(observed):
+                    print(f"  OK {what:<34} {declared}")
+                    ok += 1
+                else:
+                    print(f"  !! {what:<34} declared {declared}, observed {observed} {note}")
+                    bad += 1
+
+            # The boot tier runs on the CALLING thread rather than a spawned
+            # one (nano-ros entry_tiers.rs), so the tier's priority lands on
+            # `main`. Comparing against a thread named after the tier would
+            # always report NOT OBSERVED.
+            main_prio = next((v for k, v in obs_prio.items()
+                              if k.startswith("main")), None)
+            if "tier_priority" in CONTRACT:
+                check("tier priority (Zephyr, on main)",
+                      CONTRACT["tier_priority"], main_prio)
+            if "ctrl_period_us" in CONTRACT:
+                tp = None
+                for h, sp in spans.items():
+                    if (names.get(h, "") or "").startswith("timer@"):
+                        st = sorted(a for a, _ in sp)
+                        g = sorted(b - a for a, b in zip(st, st[1:]) if b > a)
+                        if g:
+                            tp = round(g[len(g) // 2] / 1e3)
+                check("control period (us)", CONTRACT["ctrl_period_us"], tp,
+                      "(median dispatch gap)")
+            print(f"  {ok} conforming, {bad} divergent")
+
+            print("\n=== suggested contract values (phase-9 W4) " + "=" * 20)
+            print("  OBSERVED MAXIMA, not WCET, and FVP times are not silicon.")
+            print("  Basis: budget_us = exec max, deadline_us = wall max.")
+            for h, ex, wa, _ in sorted(rows, key=lambda r: -r[1][-1]):
+                label = names.get(h, f"handle {h}")
+                print(f"  {label:<34} budget_us = {int(ex[-1]*1000):>9}  "
+                      f"deadline_us = {int(wa[-1]*1000):>9}")
 
         silent = sorted(h for h in kinds if not durs.get(h))
         if silent:
@@ -626,6 +793,11 @@ def main():
     ap.add_argument("-m", "--metadata",
                     default="zephyr/subsys/tracing/ctf/tsdl/metadata",
                     help="TSDL metadata (default: the pinned zephyr tree's)")
+    ap.add_argument("--contract", metavar="SYSTEM_TOML",
+                    help="declared scheduling parameters to check the trace "
+                         "against (phase-9 W3); pair with --launch")
+    ap.add_argument("--launch", metavar="LAUNCH_XML",
+                    help="launch file supplying ctrl_period for --contract")
     ap.add_argument("--timeline", action="store_true", help="print every event")
     ap.add_argument("--stats", action="store_true", help="print scheduling statistics")
     ap.add_argument("--limit", type=int, default=0,
@@ -658,6 +830,9 @@ def main():
             print(f"  {rel:12.6f} ms  {ev.name:<28} {fields}")
 
     if args.stats:
+        if args.contract:
+            global CONTRACT
+            CONTRACT = load_contract(args.contract, args.launch)
         report_stats(evs)
     return 0
 

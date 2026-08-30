@@ -624,9 +624,9 @@ the numbers below are p50 over cycles that reached the controllers, decoded
 from a SETTLED capture after teardown.
 
 **The control loop does not meet its 30 ms period, and the reason is the MPC
-solve.** Not scheduling, not preemption, not tier priority, not the transport,
-not the port — each of those was a hypothesis and each was killed by a
-measurement rather than an argument::
+solve.** Not scheduling, not tier priority, not the transport, not the port —
+each of those was a hypothesis and each was killed by a measurement rather than
+an argument::
 
     phase                 p50 ms
     in:process_data        0.011     flag checks
@@ -638,6 +638,30 @@ measurement rather than an argument::
 
 Note ``in:copy_inputs``. Phase 4 suspected trajectory deserialization, and so
 did this document's author; it costs 0.169 ms. The cost is in the solve.
+
+.. note::
+
+   **"Not preemption" was wrong, and is corrected here.** That claim came from
+   period tracking duration, which is inference, not measurement. Phase 9
+   subtracted the intervals in which the owning thread was off CPU:
+
+   .. code-block:: text
+
+      timer@30000us   wall p50 1.401   wall max 393.510
+                      exec p50 1.274   exec max 226.969   preempted 19399.585
+
+      preempted by: unknown (0x00281cc0) 8653.9 ms, rx_q[0] 7997.1 ms,
+                    sysworkq 2090.5 ms
+
+   ``exec max`` 226.969 ms lands on the 227 ms figure above, so the solve does
+   dominate CPU time and that conclusion stands. But 166 ms of the 393 ms worst
+   case is time OFF CPU, 19.4 s across the run. Both are true: the callback
+   runs long AND it is preempted, mostly by the DDS receive queue and an
+   unnamed nano-ros pool thread.
+
+   This distinction matters for the contract, not just for accuracy: a
+   ``budget_us`` is execution time and a ``deadline_us`` is response time, and
+   before phase 9 every figure in this document was the latter.
 
 A duplicated call, and what it was worth
 ----------------------------------------
