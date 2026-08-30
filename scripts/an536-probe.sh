@@ -13,7 +13,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${ROOT}/log"
 ISLAND_ELF="${ROOT}/build/freertos-an536/src/freertos_an536_entry/actuation_an536_entry"
 TAP_IF="tap1"; TAP_HOST_IP="192.0.3.1"; SNTP_PORT="12123"
-QEMU_BIN="${QEMU_BIN:-qemu-system-arm}"
+# QEMU: the nano-ros SDK build FIRST, then $PATH.
+#
+# These are not interchangeable. The SDK dist (`nros setup --tool qemu`) is a
+# patched fork; upstream QEMU on $PATH is a different emulator with a different
+# LAN9118 model, and this rig measures packet loss inside that model. Silently
+# falling back to $PATH means measuring a machine the product never runs on —
+# scripts/run-tap-demo.sh already resolves it this way, so a rig that does not
+# is not measuring the demo's lane.
+QEMU_BIN="${QEMU_BIN:-${NROS_HOME:-${HOME}/.nros}/sdk/qemu/11.0.0-nros2/bin/qemu-system-arm}"
+if [[ ! -x "${QEMU_BIN}" ]]; then
+  QEMU_BIN="$(command -v qemu-system-arm || true)"
+  echo "WARNING: SDK qemu not found, falling back to ${QEMU_BIN:-<none>}." >&2
+  echo "         Run: (cd modules/nros && nros setup --tool qemu)" >&2
+fi
+[[ -x "${QEMU_BIN}" ]] || { echo "no qemu-system-arm" >&2; exit 1; }
 
 POINTS=0; SECS=60; TAG="probe"
 while [[ $# -gt 0 ]]; do
