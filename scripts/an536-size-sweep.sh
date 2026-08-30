@@ -86,6 +86,20 @@ pgrep -f "sntp-server.py --bind ${TAP_HOST_IP}" >/dev/null 2>&1 || {
     --port "${SNTP_PORT}" > "${LOG_DIR}/sweep-sntp.log" 2>&1 &
   disown $! 2>/dev/null; }
 
+# Is the link paced to the emulated NIC's speed? Unpaced, QEMU hands the guest
+# a burst faster than the modelled 100 Mbps PHY ever could, so a receive-path
+# result is about the emulator rather than the part (nano-ros issue 0917).
+# Report it rather than enforce it — pacing needs root:
+#   sudo scripts/setup-tap.sh --iface tap1 --cidr 192.0.3.1/24 --rate 100mbit
+if command -v tc >/dev/null 2>&1; then
+  if tc qdisc show dev "${TAP_IF}" 2>/dev/null | head -1 | grep -q netem; then
+    echo "[link] ${TAP_IF} is PACED: $(tc qdisc show dev "${TAP_IF}" | head -1)"
+  else
+    echo "[link] ${TAP_IF} is UNPACED — bursts arrive faster than a 100 Mbps PHY;" >&2
+    echo "       receive-path numbers from this run describe the emulator, not the NIC." >&2
+  fi
+fi
+
 say "booting island"
 rm -f "${ISLAND_LOG}"
 nohup "${QEMU_BIN}" -machine mps3-an536 -nographic \
