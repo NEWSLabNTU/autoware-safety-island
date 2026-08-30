@@ -31,6 +31,22 @@ project(controller_pkg LANGUAGES C CXX)
 # actuation_module root (this file lives at <root>/src/controller_pkg/).
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
+# Eigen, when nobody above us resolved it.
+#
+# The parent actuation_module/CMakeLists.txt normally does this (and may patch
+# the headers for the cross build), so in the ordinary build this is a no-op.
+# But this package is also added as a SUBDIRECTORY on its own, by nano-ros's
+# metadata probe, where no parent runs — EIGEN3_INCLUDE_DIR is then empty and
+# the vendored Autoware geometry headers fail at `#include <Eigen/Core>`.
+# Depending on a variable a parent happens to set is what made this package
+# unusable standalone (surfaced by nano-ros issue 0939).
+if(NOT EIGEN3_INCLUDE_DIR)
+  find_package(Eigen3 QUIET)
+  if(NOT EIGEN3_INCLUDE_DIR AND TARGET Eigen3::Eigen)
+    get_target_property(EIGEN3_INCLUDE_DIR Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+  endif()
+endif()
+
 # RFC-0044 facade: the value-returning ComponentNode parameter API + the
 # std::string / std::vector<T> parameter overloads the vendored MPC/PID use are
 # gated on NROS_CPP_STD. ASI's controller declares std::vector<double> weight
