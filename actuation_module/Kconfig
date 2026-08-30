@@ -251,6 +251,23 @@ config ASI_TRACE_RING_SIZE
 	  event volume: the ring discards the oldest events continuously, so a
 	  bigger ring buys a longer window rather than fewer drops.
 
+config ASI_TRACE_RING_DUMP_ON_FATAL
+	bool "Dump the trace ring from k_sys_fatal_error_handler"
+	default y
+	depends on ASI_TRACE_RING
+	help
+	  Emit the retained events when the system faults, which is the case
+	  the ring exists for: the interesting events are the ones immediately
+	  before the fault.
+
+	  Overrides the weak default handler in kernel/fatal.c and then does
+	  what it did, so the system still halts. The dump runs BEFORE
+	  LOG_PANIC(), since flushing the log subsystem can itself fault and
+	  losing the trace to a secondary fault would defeat the point.
+
+	  Output goes out by polled UART, which needs no interrupts and no
+	  scheduler, so it survives a kernel in an undefined state.
+
 config ASI_TRACE_RING_AUTODUMP_S
 	int "Seconds after boot to auto-dump the ring (0 = never)"
 	default 0

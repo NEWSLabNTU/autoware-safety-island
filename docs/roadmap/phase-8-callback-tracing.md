@@ -345,6 +345,62 @@ in `k_sys_fatal_error_handler`, where it would capture the events leading up to
 the fault. That is the obvious next step and is deliberately not done here,
 since nothing yet asks for production tracing.
 
+### W8 follow-on — dump on fault  [x] DONE 2026-08-30
+
+`k_sys_fatal_error_handler` is overridden (weak default in `kernel/fatal.c`) to
+emit the ring before halting. This is the case the recorder exists for: the
+events immediately before a fault are the ones worth having, and a fill-once
+buffer has already discarded them.
+
+Verified with a scratch fault injector, since a recorder that has never
+recorded a real fault is not evidence of anything:
+
+```
+asi: SCRATCH -- faulting on purpose to test the ring dump
+<err> os: >>> ZEPHYR FATAL ERROR 0: CPU exception on CPU 0
+asi: fatal (reason 0) -- dumping trace ring
+asi: trace ring: dumped 4541 records, 65531 bytes retained, 216271 evicted
+
+decoded:  4541 events    skipped: 0 B    trailing: 0 B
+```
+
+216271 evictions before the fault, then 4541 events out with nothing skipped:
+the ring had wrapped many times and the framing still held across a real CPU
+exception. The injector is reverted; only the handler ships.
+
+### The bug that took three builds, and is worth knowing
+
+**`atomic_cas` cannot be used inside a fatal handler on AArch64.**
+
+The recursion guard was a `static atomic_t` with `atomic_cas(&g, 0, 1)`. On the
+very first entry it took the "already dumping" branch and the trace was never
+written -- on an image where instrumentation proved the handler was entered
+exactly once.
+
+`atomic_cas` compiles to `LDXR`/`STXR`, and the exclusive monitor is in an
+UNPREDICTABLE state immediately after a CPU exception. The store-exclusive
+fails, and the CAS reports contention that does not exist.
+
+Two wrong diagnoses came first, both plausible and both disproved by the next
+measurement:
+
+1. "The static is not zero-initialised." It reads back as `0x00f04fb0` at fault
+   time, which looks exactly like uninitialised memory. `readelf` put it in
+   `bss`, not `noinit`, so that was not it.
+2. "Something is corrupting that address." Initialising it explicitly in the
+   backend's `init()` -- a path that provably runs -- changed nothing, which
+   ruled corruption out.
+
+The guard is now a plain `volatile uint32_t`. No atomicity is needed: the
+system is halting, and a second fault re-enters the same handler on the same
+CPU rather than racing it.
+
+Worth generalising: **anything in a fatal path that relies on exclusive
+monitors is suspect**, which includes most lock-free primitives and any
+`k_spinlock` on SMP. The dump itself is safe because it uses `uart_poll_out`,
+which busy-waits on a status register and needs no interrupts, no scheduler and
+no ISR.
+
 ## Acceptance criteria
 
 - [ ] A capture attributes time to **every** registered callback, including

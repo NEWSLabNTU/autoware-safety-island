@@ -50,6 +50,21 @@ static uint32_t tail;      /* oldest whole record */
 static uint32_t stored;    /* bytes currently held, including prefixes */
 static uint32_t dropped;   /* records evicted to make room */
 
+/* Recursion guard for the fatal handler.
+ *
+ * A PLAIN volatile, deliberately, not an atomic. `atomic_cas` on AArch64
+ * compiles to LDXR/STXR, and the exclusive monitor is in an UNPREDICTABLE
+ * state immediately after a CPU exception -- the store-exclusive fails and
+ * the CAS reports contention that does not exist. Measured: the very first
+ * entry to this handler took the "already dumping" branch and the trace was
+ * never written, on an image where the handler was provably entered exactly
+ * once.
+ *
+ * No atomicity is needed here anyway. The system is halting, and a second
+ * fault re-enters this handler on the same CPU rather than racing it.
+ */
+static volatile uint32_t fatal_dumping;
+
 static inline uint32_t ring_rd8(uint32_t off) { return ring[off % RING_SIZE]; }
 
 static void ring_write(const uint8_t *src, uint32_t n)
@@ -107,6 +122,7 @@ static void asi_ring_output(const struct tracing_backend *backend,
 static void asi_ring_init(void)
 {
 	head = tail = stored = dropped = 0;
+	fatal_dumping = 0u;
 	memset(ring, 0, RING_SIZE);
 }
 
@@ -184,3 +200,56 @@ static void asi_trace_ring_autodump(void *a, void *b, void *c)
 K_THREAD_DEFINE(asi_trace_ring_dumper, 2048, asi_trace_ring_autodump,
 		NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
 #endif
+
+/* ---- Dump on fault ---------------------------------------------------- */
+
+#if defined(CONFIG_ASI_TRACE_RING_DUMP_ON_FATAL)
+#include <zephyr/fatal.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/sys/atomic.h>
+
+/* Overrides the weak default in kernel/fatal.c.
+ *
+ * This is the case the ring exists for: the events immediately before a fault
+ * are the ones worth having, and they are exactly the ones a fill-once buffer
+ * has already discarded.
+ *
+ * Safe in this context for specific reasons, not by assumption:
+ *
+ *   - The dump uses `uart_poll_out`, which busy-waits on the transmit register
+ *     and needs no interrupts, no scheduler and no driver ISR. It is the one
+ *     output path that still works with the kernel in an undefined state.
+ *   - It allocates nothing and takes no kernel object. The only lock is the
+ *     ring's own `irq_lock`, which nothing else holds.
+ *   - It runs BEFORE `LOG_PANIC()`, because flushing the log subsystem can
+ *     itself fault, and losing the trace to a secondary fault would defeat the
+ *     point.
+ *
+ * The recursion guard is not defensive padding. A fault inside the dump would
+ * re-enter this handler and dump again, faulting again, forever, and the
+ * console output would be an endless partial trace rather than a diagnosis.
+ */
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	ARG_UNUSED(esf);
+
+	if (fatal_dumping == 0u) {
+		fatal_dumping = 1u;
+		printk("asi: fatal (reason %u) -- dumping trace ring\n", reason);
+		asi_trace_ring_dump();
+	} else {
+		printk("asi: fault while dumping the trace ring; not retrying\n");
+	}
+
+	/* Then what the weak default does, so the system still halts.
+	 * `printk` rather than LOG_ERR: this file registers no log module, and
+	 * a polled write is the more dependable choice once the kernel is in
+	 * an undefined state.
+	 */
+	LOG_PANIC();
+	printk("asi: halting system\n");
+	arch_system_halt(reason);
+	CODE_UNREACHABLE;
+}
+#endif /* CONFIG_ASI_TRACE_RING_DUMP_ON_FATAL */
+
