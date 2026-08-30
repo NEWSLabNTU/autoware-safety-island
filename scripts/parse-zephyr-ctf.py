@@ -423,6 +423,7 @@ def report_stats(evs):
         # overlapping is still treated as a lost end -- if the leaf hooks W1
         # settles on turn out to nest a handle inside itself, this needs to
         # become a stack per handle.
+        collisions = {}             # handle -> [names] when one handle is reused
         pending = {}                # handle -> the open callback_start event
         crossed = set()             # handles whose open span met a WFI jump
         unbalanced = spanned = reordered = 0
@@ -435,8 +436,23 @@ def report_stats(evs):
             `handle N` label so its numbers are not lost with it.
             """
             raw = bytes(raw).split(b"\x00", 1)[0]
-            if raw and all(0x20 <= b <= 0x7E for b in raw):
-                names[handle] = raw.decode("ascii")
+            if not (raw and all(0x20 <= b <= 0x7E for b in raw)):
+                return
+            name = raw.decode("ascii")
+            # phase-8 W3a — a handle is the executor's ENTRY SLOT INDEX, and
+            # slot indices are unique within ONE executor, not across an image.
+            # An image running several tier executors therefore emits colliding
+            # handles, and every row below would silently merge two different
+            # callbacks into one set of numbers -- the exact "looks like a
+            # measurement" failure this instrumentation exists to remove.
+            #
+            # Nothing upstream detects it. Two registrations of one handle under
+            # DIFFERENT names is the observable signature, so say so rather than
+            # quietly keeping the last one.
+            prev = names.get(handle)
+            if prev is not None and prev != name:
+                collisions.setdefault(handle, [prev]).append(name)
+            names[handle] = name
 
         for ev in stream:
             if ev.disc:
@@ -494,6 +510,16 @@ def report_stats(evs):
         if not kinds:
             print("  no registration events in this capture -- the names below")
             print("  are handles; re-capture from boot to resolve them.")
+        if collisions:
+            # W3a. Loud, and above the table, because every affected row below
+            # is the SUM of two unrelated callbacks rather than a measurement.
+            print("  !! HANDLE COLLISION -- these rows merge distinct callbacks:")
+            for handle, seen in sorted(collisions.items()):
+                print(f"       handle {handle}: " + " / ".join(seen))
+            print("     A handle is an executor slot index, unique within ONE")
+            print("     executor. Several executors in one image reuse indices,")
+            print("     so the numbers for these handles are meaningless. Give")
+            print("     each executor its own id before trusting them.")
         print(f"  {'callback':<26} {'kind':<12} {'n':>7} {'total ms':>10} "
               f"{'p50 ms':>9} {'p90 ms':>9} {'max ms':>10}")
         # Registered-but-never-dispatched callbacks are listed too: "this one

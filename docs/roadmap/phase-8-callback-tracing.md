@@ -115,6 +115,28 @@ went 20.779 ms -> 4545.673 ms. The phase breakdown was verified byte-identical
 before and after, so no W12 conclusion moves. See that commit for the full
 blast-radius analysis.
 
+**Done, decoder-side.** `parse-zephyr-ctf.py` now records every handle
+registered twice under DIFFERENT names and prints, above the table:
+
+```
+!! HANDLE COLLISION -- these rows merge distinct callbacks:
+     handle 3: alpha / beta
+```
+
+Chosen over an executor id in the register payload because it needs no upstream
+change and no wire-format change, and because the decoder is where the damage
+would land: a colliding handle makes its row the SUM of two unrelated callbacks
+rather than a measurement.
+
+Verified by a synthetic capture, not by inspection -- one handle registered as
+`alpha` then `beta`, three dispatches, and the guard fires while the row shows
+the merge it is warning about. The existing real capture decodes byte-identical,
+so nothing regressed.
+
+The upstream fix (an executor id in the register payload) is still the better
+answer if multi-executor images become normal; this makes the failure visible
+in the meantime, which is the property that matters.
+
 ### W5a — registration names bind by adjacency  [ ] follow-up
 
 The `app_marker` CTF event carries exactly two `uint32`s, so a variable-length
@@ -126,17 +148,33 @@ wrong *name* cannot corrupt a *duration* (runtime events carry only the
 handle). Revisit if it ever bites; the fix is a wider CTF event, which costs a
 new Zephyr patch.
 
-### W6 — retire the superseded markers  [ ]
+### W6 — retire the superseded markers  [x] WITHDRAWN 2026-08-30
 
-Delete `Marker::control_cycle_enter` / `control_cycle_exit` (values 1 and 2)
-from `trace_marker.hpp` and their call sites; the dispatch hooks supersede them
-exactly. **Keep** the phase markers (3–7) — they answer a different question
-(where time goes *inside* a callback) and they are what found the MPC solve and
-the duplicated `setTrajectory`.
+**Do not do this. The premise was wrong.**
 
-Do not renumber the remaining markers. The header's own warning applies: values
-appear in captured traces, and renumbering silently reinterprets every trace
-taken before it. Leave the gap at 1–2.
+This item said the dispatch hooks "supersede markers 1-2 exactly" and cited the
+2943-vs-2942 cross-check as proof. That cross-check proved the *counts* match.
+It did not prove the *information* is the same, and it is not:
+
+| marker | what only it provides |
+|---|---|
+| `control_cycle_enter` (1) | the anchor for `in:process_data` and `inputs (total)` |
+| `control_cycle_exit` (2) | the end of `publish`, and the `arg` carrying the OUTCOME |
+
+`callback_start` / `callback_end` give the callback's timing. They cannot give
+the outcome — `commanded` / `safe_stop` / `not_ready` is application semantics
+and the executor has no idea about it — and they are not what
+`parse-zephyr-ctf.py` anchors the phase breakdown on
+(`PHASES = [("in:process_data", ENTER, CHECKED), ..., ("publish", LON, EXIT)]`).
+
+Deleting markers 1-2 would therefore have broken the phase breakdown and thrown
+away the outcome counts, in exchange for removing a duplication that does not
+exist. The two layers answer different questions, which the design doc already
+said; this work item contradicted it and nobody noticed because the cross-check
+looked like proof.
+
+Kept as a WITHDRAWN entry rather than deleted: the reasoning that produced it is
+worth having on the record next to the reasoning that killed it.
 
 ### W7 — measure the overhead properly  [ ]
 
@@ -191,7 +229,7 @@ Names resolve from registration events. The nameless timer synthesises as
 `timer@30000us`, which independently confirms `ctrl_period = 0.03` reached the
 image.
 
-### W3a — handles are unique per EXECUTOR, not per image  [ ] follow-up
+### W3a — handles are unique per EXECUTOR, not per image  [x] DONE 2026-08-30
 
 The slot index is unique within one `Executor`. An image running several tier
 executors emits colliding handles and the decoder silently merges two different
