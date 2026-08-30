@@ -38,6 +38,8 @@ LANE="fvp"
 BUILD_DIR=""
 ISLAND_LOG=""
 ISLAND_PID_FILE=""
+# The SNTP responder is lane-independent, so its pid file is too.
+SNTP_PID_FILE="${LOG_DIR}/tap-demo-sntp.pid"
 TAP_IF=""
 TAP_HOST_IP=""
 SNTP_PORT=""
@@ -75,7 +77,11 @@ select_lane() {
 }
 AUTOWARE_CTR="demo-safety-island-autoware-1"
 BOOT_MARKER="Actuation Safety Island is Live"
-BOOT_TIMEOUT_S=120
+# 200 s, matching .github/scripts/run-zephyr-fvp-ci.sh. The CI timeout was
+# raised from 90 s in 3ad3cdb because "the boot grew with the pin" and a slow
+# boot failed as a MISSING MARKER, which reads as a broken image rather than a
+# slow one. This script had the same failure mode at 120 s.
+BOOT_TIMEOUT_S=200
 # W3 runbook seed (sample-map-planning): ego spawn + goal ~30 m along heading.
 # NOTE (2026-08-24): this pair verifies the E-STOP closed loop only — the
 # goal snaps to a crossing lane, the planner emits a goal-anchored
@@ -117,6 +123,14 @@ demo_down() {
     pkill -f "sntp-server.py --bind ${TAP_HOST_IP}" 2>/dev/null || true
   else
     pkill -f FVP_BaseR_AEMv8R 2>/dev/null || true
+  fi
+  # Pid-file shutdown for the responder, kept from the FVP lane: pkill by
+  # pattern only finds it while the pattern still matches, and the pid file
+  # survives a rename of the bind address.
+  if [[ -f "${SNTP_PID_FILE}" ]]; then
+    say "stopping SNTP responder…"
+    kill "$(cat "${SNTP_PID_FILE}")" 2>/dev/null || true
+    rm -f "${SNTP_PID_FILE}"
   fi
   say "stopping compose stack…"
   ( cd "${ROOT}/demo" && docker compose "${COMPOSE_FILES[@]}" down )
@@ -176,7 +190,13 @@ if [[ "${LANE}" == "an536" ]]; then
     > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 else
   export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C cache_state_modelled=0"
-  ( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" ) \
+  # ASI_DEMO_BUILD_ARGS — extra build.sh flags for the island image. Added for
+  # the phase-7 loaded capture: `ASI_DEMO_BUILD_ARGS=--trace` builds the tracing
+  # profile, so a CTF timeline can be taken WHILE the vehicle drives rather than
+  # only on an idle island. Word-split on purpose (multiple flags).
+  # shellcheck disable=SC2086
+  ( cd "${ROOT}" && ./build.sh --platform zephyr-fvp --network tap -d "${BUILD_DIR}" \
+      ${ASI_DEMO_BUILD_ARGS:-} ) \
     > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 fi
 
@@ -213,6 +233,7 @@ start_sntp() {
   say "starting SNTP responder on ${TAP_HOST_IP}:${SNTP_PORT}…"
   nohup python3 "${ROOT}/scripts/sntp-server.py" \
     --bind "${TAP_HOST_IP}" --port "${SNTP_PORT}" > "${LOG_DIR}/tap-demo-sntp.log" 2>&1 &
+  echo "$!" > "${SNTP_PID_FILE}"
   disown $! 2>/dev/null || true
 }
 
