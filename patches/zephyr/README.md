@@ -74,6 +74,57 @@ to explain a fault, since the interesting events are exactly the ones it drops.
 Both of those are worth reporting upstream: the missing selection hook, and
 the RAM backend's fill-once behaviour being undocumented at the Kconfig level.
 
-EXIT PLAN: drop this patch if upstream gains a selection hook. Unlike 0002 it
-is not superseded by the 4.3 instrumentation subsystem — that is a different
-mechanism, and a custom *tracing backend* would still have no way to be chosen.
+EXIT PLAN — checked 2026-08-30, and it is shorter than written above.
+**Upstream `main` has already solved this**, differently and better: the
+backend name is a plain `CONFIG_TRACING_BACKEND_NAME` string with per-backend
+defaults, and `tracing_core.c` discovers registered backends with
+`STRUCT_SECTION_FOREACH`, treating a backend that shares the configured name as
+an override. So there is nothing to upstream — this patch is a v3.7.0-LTS
+backport need only, and it retires when the Zephyr pin moves.
+
+That is the status of ALL THREE patches here, which is worth stating in one
+place:
+
+| patch | upstream status |
+|---|---|
+| 0001 priority event | still absent on `main`; the one-line mapping is upstreamable — zephyrproject-rtos/zephyr#117637 |
+| 0002 app marker | superseded by the 4.3 instrumentation subsystem; retire, do not upstream |
+| 0003 backend selection | already fixed on `main`; backport only |
+
+Also checked: of the four issues filed on 2026-08-27, #117636 (thread-analyzer
+stack default) is now CLOSED upstream. #117634, #117635 and #117637 remain
+open.
+
+## 0001 REVISED 2026-08-30 — one line in the tracing subsystem, not the kernel
+
+The original version of this patch added a `SYS_PORT_TRACING_OBJ_FUNC` call to
+`z_impl_k_thread_priority_set()` in `kernel/sched.c`. That was more invasive
+than necessary, and it rested on an incomplete reading of the tree.
+
+Stock v3.7.0 already has both ends:
+
+* `z_thread_prio_set()` (`kernel/sched.c:780`) DOES emit
+  `SYS_PORT_TRACING_OBJ_FUNC(k_thread, sched_priority_set, thread, prio)`.
+* `ctf_top.c` DOES implement `sys_trace_k_thread_priority_set()`.
+
+They are simply not connected: `tracing_ctf.h` maps
+`sys_port_trace_k_thread_sched_priority_set(thread, prio)` to an EMPTY macro,
+so the event is emitted and then discarded, and the CTF implementation is never
+called by anything.
+
+So the fix is one line joining the two, inside the tracing subsystem, with the
+kernel untouched:
+
+```c
+#define sys_port_trace_k_thread_sched_priority_set(thread, prio) \
+        sys_trace_k_thread_priority_set(thread)
+```
+
+Verified: a traced FVP boot goes from **zero** `thread_priority_set` events to
+**53**. That is more than the original patch would have produced, because
+`z_thread_prio_set()` is reached from more paths than the syscall alone.
+
+This also corrects the analysis filed as zephyrproject-rtos/zephyr#117637,
+which said the macro is never invoked without noting that a different event IS
+emitted and dropped. The conclusion held; the diagnosis pointed at the wrong
+fix.
