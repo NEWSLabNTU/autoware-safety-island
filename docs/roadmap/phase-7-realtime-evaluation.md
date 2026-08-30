@@ -685,35 +685,39 @@ Follow-ups this opens (none investigated):
       Callback duration is unchanged (p50 0.721 ms), confirming the callback
       itself was never implicated.
 
-- [~] Follow-up: `min` period is 13.997 ms in the fixed run (p50 31.000), so a
-      few cycles land early. PARTIALLY investigated 2026-08-30, not settled.
+- [x] **ANSWERED 2026-08-30: the catch-up hypothesis is REFUTED.** `min` period
+      is 13.997 ms in the fixed run (p50 31.000), and 2.340 ms on the loaded
+      capture taken to settle it.
 
-      Hypothesis: the executor paces itself against a deadline, so a cycle that
-      overruns leaves the next one already due; it fires immediately and the
-      gap is short. That predicts short gaps FOLLOW long cycles.
+      Hypothesis was: the executor paces against a deadline, so a cycle that
+      overruns leaves the next already due; it fires immediately and the gap is
+      short. That predicts short gaps FOLLOW long cycles.
 
-      Measured on the phase-8 callback capture (2943 cycles):
+      Measured on a loaded `--drive` capture, 881 paired cycles, 211 commanded
+      (`tools/rt-eval-traces/phase7-w13-loaded-period-decode.txt`):
 
       ```
-      short gaps (<20 ms):                            4 of 2942
-      shortest:                                      11.000 ms
-      duration of the cycle preceding a short gap:    2.560 ms median (n=4)
-      duration of all cycles:                         1.128 ms median
+      short gaps (<20 ms):                               6 of 880
+      duration of the cycle BEFORE a short gap:          1.474 ms median (n=6)
+      duration of the cycle before every other:          1.393 ms median (n=874)
+      ratio:                                             1.06x
+      short-gap predecessors exceeding the 30 ms period: 0 of 6
+      short-gap predecessors that were commanded:        0 of 6
       ```
 
-      The direction is right — the preceding cycles are 2.3x typical — but this
-      does NOT settle it. n=4 is far too small, and a 2.6 ms "long" cycle is
-      nowhere near a 30 ms overrun, so the mechanism that would produce a
-      13.997 ms gap is not demonstrated.
+      A ratio of 1.06 is no effect. Every short gap follows a NORMAL, fast
+      cycle (~1.5 ms safe stop), not an overrun; none of the six predecessors
+      came near the 30 ms period, and none was a commanded cycle. The mechanism
+      cannot be catch-up after an overrun.
 
-      That capture is also the wrong workload: 2849 of its cycles are safe
-      stops and only 93 are commanded, whereas the original observation came
-      from a loaded run whose trace has since been overwritten.
+      **What causes it remains unknown**, and it is rare: 6 in 880, 0.7 %. Not
+      pursued further because nothing depends on it -- an early cycle costs
+      nothing, unlike a late one.
 
-      What would settle it: a loaded `--drive` capture with the preceding-cycle
-      correlation computed over commanded cycles. The analysis is nine lines
-      against `parse-zephyr-ctf.py`'s `decode()`; it is the capture that costs
-      something, not the arithmetic.
+      This overturns the earlier partial reading, which found 2.3x on n=4 and
+      called the direction "right". That was noise; n=4 was not worth
+      interpreting. Recorded because the earlier figure is in this file's
+      history and someone might otherwise trust it.
 - [x] **Parameter audit (2026-08-27) — the blast radius is ONE value.** An
       earlier note here claimed "every launch parameter was equally dead ...
       the ~150 MPC/PID parameters all ran on compiled defaults". That
