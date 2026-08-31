@@ -31,6 +31,14 @@ The 32-bit timestamp wraps every 4.295 s
 
 This is the one that will bite.
 
+**Verified on both 3.7 and 4.4.0.** The CANHUBK344 lane pins Zephyr 4.4.0,
+not the 3.7 this repo uses, so the line was checked in that tree rather than
+assumed to carry:
+https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/v4.4.0/subsys/tracing/ctf/ctf_top.h
+It is identical. On 4.4.0 it also sits behind ``CONFIG_TRACING_CTF_TIMESTAMP``;
+with that off there is no timestamp in the stream at all, which is a different
+failure worth checking for first.
+
 ``subsys/tracing/ctf/ctf_top.h`` emits
 
 .. code-block:: c
@@ -56,16 +64,40 @@ and every timestamp after it is wrong by a multiple of 4.295 s.
 
    [wrap] no inter-event gap exceeds 2.147 s; unwrapping unambiguous.
 
-or a warning naming the offending gaps. Check that line before trusting any
-absolute time. Our own FVP captures pass it, so the analysis in
-:doc:`trace_findings` is unaffected.
+or a warning naming every offending gap, with how many epochs the decoder
+assumed (always zero) against how many are consistent with the stream. The
+same list is written to ``trace_meta.json`` as ``wrap_ambiguous_gaps``, so a
+consumer can decide gap by gap instead of trusting or discarding a whole
+capture. Check the verdict before trusting any absolute time. Our own FVP
+captures pass it, so the analysis in :doc:`trace_findings` is unaffected.
 
-**The fix is a heartbeat.** Emit an ``app_marker`` from a periodic thread at
-1 s or so. Any period comfortably under half the wrap window guarantees that
-no gap can hide a second rollover, and it costs one event per second. A quiet
-control lane on real hardware is exactly the case that needs it: on the FVP
-the core is rarely idle for that long, on a target waiting for CAN traffic it
-easily is.
+**The fix is a heartbeat, and it must carry a sequence number.** Emit an
+``app_marker`` from a periodic thread at 1 s or so, with a monotonically
+increasing counter in its ``arg``.
+
+The period alone only *prevents* ambiguity, by ensuring no gap is long enough
+to hide a rollover. The counter additionally *repairs* it: elapsed time
+between two heartbeats is then known independently of the timestamp, so a
+reconstruction that came out short by a multiple of the wrap period is missing
+exactly that many epochs and the shortfall says how many. Without the counter
+a capture that goes quiet is unusable; with it the capture is recoverable.
+
+.. code-block:: console
+
+   $ python3 scripts/parse-zephyr-ctf.py trace.ctf --csv run/trace.csv \
+         --wall-clock-valid --lane zephyr-mr-canhubk3 --heartbeat 8:1000000
+
+``--heartbeat ID:PERIOD_US``. Corrections are reported and recorded in
+``trace_meta.json`` as ``heartbeat_corrections``. The comparison is against
+the previous heartbeat rather than the first, so only one interval's jitter
+has to stay under 2.147 s; drift against a fixed origin would eventually
+invent corrections.
+
+A quiet control lane on real hardware is exactly the case that needs this. On
+the FVP the core is rarely idle that long. On a target whose nodes are
+event-driven off CAN traffic, quiet stretches past 4.295 s are the normal
+state rather than the exception, and a capture taken while nothing is faulting
+is nearly all gap.
 
 
 Declare the time base
@@ -156,3 +188,10 @@ Cortex-M7 target, but note the gap recorded in :doc:`trace_extraction`: only
 ``nros-board-mps2-an385-freertos`` carries a ``trace/`` config directory. The
 an536 and s32z2 boards have none, and a CANHUBK344 board would need one
 ported before any of that runs.
+
+To be clear about which tree that is: ``trace/`` is a directory in the
+**nano-ros board package** (``modules/nros/packages/boards/...``), holding
+``tband_config.h``, ``tband_port.h`` and ``trace_dump.c``. It is not a Zephyr
+board directory and there is nothing to look for under ``zephyr/boards/``.
+It matters only on the FreeRTOS route; the Zephyr CTF route above needs
+nothing of the kind.

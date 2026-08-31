@@ -65,25 +65,97 @@ WRAP_PERIOD_NS = 1 << 32
 WRAP_AMBIGUITY_WARN_NS = WRAP_PERIOD_NS // 2
 
 
-def report_wrap_ambiguity(evs):
-    """Flag inter-event gaps large enough that a whole epoch may be missing."""
-    worst = []
-    for a, b in zip(evs, evs[1:]):
+def wrap_ambiguous_gaps(evs):
+    """Every inter-event gap large enough to be hiding a whole epoch.
+
+    Returned rather than only printed, because a consumer that has a
+    heartbeat can reconstruct these instead of discarding the capture.
+    """
+    out = []
+    for i, (a, b) in enumerate(zip(evs, evs[1:])):
         gap = b.ts - a.ts
         if gap > WRAP_AMBIGUITY_WARN_NS:
-            worst.append((gap, a.name, b.name))
-    if not worst:
+            out.append({
+                "index": i,
+                "gap_us": gap / 1e3,
+                "after_event": a.name,
+                "before_event": b.name,
+                "at_us": a.ts / 1e3,
+                # How many extra epochs would fit. The decoder assumed 0
+                # extra; anything from 0 to this is consistent with the
+                # stream alone.
+                "epochs_assumed": 0,
+                "epochs_possible_up_to": int(gap // WRAP_PERIOD_NS) + 1,
+            })
+    return out
+
+
+def report_wrap_ambiguity(gaps):
+    """Print the verdict. `gaps` from wrap_ambiguous_gaps()."""
+    if not gaps:
         print(f"[wrap] no inter-event gap exceeds "
               f"{WRAP_AMBIGUITY_WARN_NS / 1e9:.3f} s; unwrapping unambiguous.")
         return
-    worst.sort(reverse=True)
-    print(f"[wrap] WARNING: {len(worst)} inter-event gap(s) over "
+    print(f"[wrap] WARNING: {len(gaps)} inter-event gap(s) over "
           f"{WRAP_AMBIGUITY_WARN_NS / 1e9:.3f} s. The 32-bit ns timestamp "
           f"wraps every {WRAP_PERIOD_NS / 1e9:.3f} s, so each of these may be "
-          f"UNDERSTATED by a multiple of that and the timeline may be missing "
-          f"whole epochs:")
-    for gap, a, b in worst[:5]:
-        print(f"         {gap / 1e9:8.3f} s between {a} and {b}")
+          f"UNDERSTATED by a multiple of that. The decoder assumed the "
+          f"smallest reading (0 extra epochs) at every one:")
+    for g in sorted(gaps, key=lambda d: -d["gap_us"]):
+        print(f"         t={g['at_us'] / 1e6:9.3f} s  gap {g['gap_us'] / 1e3:9.3f} ms  "
+              f"{g['after_event']} -> {g['before_event']}  "
+              f"(0 assumed, up to {g['epochs_possible_up_to']} possible)")
+    print("       Recover with --heartbeat ID:PERIOD_US rather than "
+          "discarding the capture; see docs/design/trace_on_hardware.rst.")
+
+
+def reconstruct_epochs_from_heartbeat(evs, marker_id, period_ns):
+    """Resolve wrap ambiguity using a periodic app_marker carrying a sequence.
+
+    The marker's `arg` must be a monotonically increasing counter. Elapsed
+    time between two heartbeats is then KNOWN -- `(seq_delta) * period` --
+    so a reconstruction that came out short by a multiple of the wrap period
+    is missing exactly that many epochs, and the shortfall says how many.
+
+    Compared against the PREVIOUS heartbeat, not the first: the heartbeat has
+    jitter of its own, and accumulated drift against a fixed origin would
+    eventually exceed half a wrap period and start inventing corrections.
+    Per-interval, only one interval's jitter has to stay under 2.147 s.
+
+    Mutates `evs` in place and returns the list of corrections applied.
+    """
+    HALF = WRAP_PERIOD_NS // 2
+    U32 = 1 << 32
+    corrections = []
+    carry = 0
+    prev_seq = prev_ts = None
+    for e in evs:
+        e.ts += carry
+        if not (e.name == "app_marker"
+                and e.fields.get("marker_id") == marker_id):
+            continue
+        seq = e.fields.get("arg")
+        if seq is None:
+            continue
+        if prev_seq is not None:
+            # u32 counter, so the delta is modular.
+            d_seq = (seq - prev_seq) % U32
+            expected = d_seq * period_ns
+            short = expected - (e.ts - prev_ts)
+            k = (short + HALF) // WRAP_PERIOD_NS   # nearest, floor-safe
+            if k > 0:
+                add = k * WRAP_PERIOD_NS
+                carry += add
+                e.ts += add
+                corrections.append({
+                    "at_us": prev_ts / 1e3,
+                    "seq_from": prev_seq,
+                    "seq_to": seq,
+                    "epochs_added": int(k),
+                    "recovered_us": add / 1e3,
+                })
+        prev_seq, prev_ts = seq, e.ts
+    return corrections
 
 
 class Event:
@@ -240,6 +312,10 @@ def thread_label(ev):
 CONTRACT = None
 CSV_OUT = None
 SOURCE_PATH = None
+# Wrap-ambiguity findings and any heartbeat corrections, recorded into
+# trace_meta.json so a consumer sees them without re-running the decoder.
+WRAP_GAPS = []
+HEARTBEAT_FIXES = []
 # False for the Arm FVP, whose counter advances during WFI at a rate unrelated
 # to the tick clock. True for real silicon, where the same counter is elapsed
 # time. Set by --wall-clock-valid; see docs/design/trace_on_hardware.rst.
@@ -320,6 +396,11 @@ def write_trace_meta(runs, dropped_disc, path):
                " Use this as a denominator instead of the first..last span."),
         "segments": len(runs),
         "segments_dropped_counter_jump": dropped_disc,
+        # Machine-readable so a consumer can decide per gap rather than
+        # trusting or discarding the whole capture.
+        "wrap_period_us": WRAP_PERIOD_NS / 1e3,
+        "wrap_ambiguous_gaps": WRAP_GAPS,
+        "heartbeat_corrections": HEARTBEAT_FIXES,
         "nonmonotonic_policy": "drop" if not WALL_CLOCK_VALID else "none",
     }
     if not WALL_CLOCK_VALID:
@@ -417,7 +498,7 @@ def report_stats(evs):
         print(f"\n[time base] {sum(1 for e in evs if e.disc)} WFI counter "
               f"jumps seen, {dropped} slices dropped for spanning one. No "
               f"wall-clock span is reported -- see rt_evaluation_zephyr.rst.")
-    report_wrap_ambiguity(evs)
+    report_wrap_ambiguity(WRAP_GAPS)
 
     print("\n=== event counts " + "=" * 47)
     for name, c in sorted(counts.items(), key=lambda kv: -kv[1]):
@@ -957,6 +1038,13 @@ def main():
                          "idle-spanning slices discarded. Setting this on an "
                          "FVP capture, or omitting it on hardware, produces "
                          "confidently wrong occupancy either way.")
+    ap.add_argument("--heartbeat", metavar="ID:PERIOD_US",
+                    help="resolve wrap ambiguity from a periodic app_marker "
+                         "whose `arg` is a monotonic sequence counter, e.g. "
+                         "--heartbeat 8:1000000 for marker id 8 every 1 s. "
+                         "Without one, a gap longer than 4.295 s is "
+                         "unrecoverable and the decoder silently assumes the "
+                         "shortest reading.")
     ap.add_argument("--lane", default="zephyr-fvp",
                     help="target label recorded in trace_meta.json, e.g. "
                          "zephyr-mr-canhubk3. Default: zephyr-fvp")
@@ -971,7 +1059,38 @@ def main():
 
     events = parse_metadata(args.metadata)
     blob = open(args.trace, "rb").read()
+
+    # BEFORE decode(): it reads WALL_CLOCK_VALID to decide whether an
+    # idle-spanning counter jump is an FVP artifact to discard or real
+    # elapsed time to keep.
+    global WALL_CLOCK_VALID, LANE, WRAP_GAPS, HEARTBEAT_FIXES
+    WALL_CLOCK_VALID = args.wall_clock_valid
+    LANE = args.lane
+
     evs, health = decode(blob, events)
+
+    # Reconstruction has to happen before anything reads a timestamp.
+    if args.heartbeat and evs:
+        try:
+            hb_id, hb_us = args.heartbeat.split(":")
+            hb_id, hb_us = int(hb_id), float(hb_us)
+        except ValueError:
+            print(f"--heartbeat wants ID:PERIOD_US, got {args.heartbeat!r}",
+                  file=sys.stderr)
+            return 1
+        if hb_us * 1e3 >= WRAP_AMBIGUITY_WARN_NS:
+            print(f"--heartbeat period {hb_us / 1e6:.3f} s is not under half "
+                  f"the wrap period ({WRAP_AMBIGUITY_WARN_NS / 1e9:.3f} s); "
+                  f"it cannot disambiguate anything.", file=sys.stderr)
+            return 1
+        HEARTBEAT_FIXES = reconstruct_epochs_from_heartbeat(
+            evs, hb_id, hb_us * 1e3)
+        recovered = sum(f["recovered_us"] for f in HEARTBEAT_FIXES)
+        print(f"[heartbeat] marker {hb_id} @ {hb_us / 1e3:.3f} ms: "
+              f"{len(HEARTBEAT_FIXES)} correction(s), "
+              f"{recovered / 1e6:.3f} s of lost time recovered.")
+    if evs:
+        WRAP_GAPS = wrap_ambiguous_gaps(evs)
 
     print(f"metadata: {len(events)} event types    stream: {len(blob)} bytes")
     print(f"decoded:  {len(evs)} events    skipped: {health['skipped_bytes']} B"
@@ -991,9 +1110,6 @@ def main():
             fields = " ".join(f"{k}={v}" for k, v in ev.fields.items())
             print(f"  {rel:12.6f} ms  {ev.name:<28} {fields}")
 
-    global WALL_CLOCK_VALID, LANE
-    WALL_CLOCK_VALID = args.wall_clock_valid
-    LANE = args.lane
 
     if args.csv:
         global CSV_OUT, SOURCE_PATH
