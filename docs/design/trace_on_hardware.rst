@@ -35,9 +35,12 @@ This is the one that will bite.
 not the 3.7 this repo uses, so the line was checked in that tree rather than
 assumed to carry:
 https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/v4.4.0/subsys/tracing/ctf/ctf_top.h
-It is identical. On 4.4.0 it also sits behind ``CONFIG_TRACING_CTF_TIMESTAMP``;
-with that off there is no timestamp in the stream at all, which is a different
-failure worth checking for first.
+It is identical. It sits behind ``CONFIG_TRACING_CTF_TIMESTAMP``, which is
+``default y`` and depends on ``TRACING_CTF``, so it cannot be quietly off
+while CTF is on -- losing it takes an explicit ``=n``. Adding the line to a
+board ``.conf`` is harmless and unnecessary. The real precondition is one
+level up: ``CONFIG_TRACING_CTF`` itself, which a board that has never traced
+will not have at all.
 
 ``subsys/tracing/ctf/ctf_top.h`` emits
 
@@ -128,6 +131,54 @@ If ``segments_dropped_counter_jump`` is non-zero on a hardware capture,
 something is wrong -- a corrupted stream or a missed wrap -- rather than
 normal. On the FVP it is routine.
 
+
+Sync or async decides whether events can vanish
+===============================================
+
+``TRACING_METHOD_CHOICE`` defaults to ``TRACING_ASYNC``, which puts a ring
+buffer between the emit site and the backend. Sizing it is a real decision,
+and an undersized buffer fails by dropping events rather than by failing to
+build.
+
+The two paths differ exactly where it matters. ``ctf_top.h`` emits through
+``tracing_format_raw_data``, and:
+
+* **sync** (``tracing_format_sync.c:41``) takes the lock and calls
+  ``tracing_buffer_handle`` straight through. **No drop path on the CTF
+  route.** The drop calls elsewhere in that file are in
+  ``tracing_format_string`` and ``tracing_format_data``, which CTF does not
+  use.
+* **async** (``tracing_format_async.c:38``) puts into the ring buffer and
+  calls ``tracing_packet_drop_handle()`` when the put fails. Events are lost
+  whole, so the stream stays well-formed and a decoder sees nothing wrong.
+
+So the choice is not a performance tuning knob, it is a correctness one:
+
+============  ==========================  ================================
+              events can be lost          effect on what you measure
+============  ==========================  ================================
+``SYNC``      no (on the CTF path)        emit blocks on the backend, so
+                                          tracing perturbs the timing it
+                                          is measuring
+``ASYNC``     yes, silently               timing preserved, coverage not
+============  ==========================  ================================
+
+This repo's FVP builds set ``CONFIG_TRACING_SYNC=y`` explicitly, overriding
+the default, which is why the captures behind :doc:`trace_findings` have no
+holes. That was a lucky inheritance rather than a considered choice, and it
+is worth making deliberately.
+
+**The drop counter cannot be read.** ``tracing_packet_drop_num``
+(``tracing_core.c:46``) is a ``static atomic_t``, incremented on every drop
+and reset at init. Across the whole Zephyr tree there is no accessor, no
+shell command and no reader of any kind. On async, events are lost, the loss
+is counted, and the count is unreachable. Anyone running async should plan to
+expose it -- a two-line accessor -- rather than assume a well-formed stream
+means a complete one.
+
+Async has a second blind spot on the same route: ``tracing_format_async.c:42``
+returns early when the caller is the tracing thread, so on async the tracer's
+own execution never appears in its own trace.
 
 Transport is the real constraint
 ================================
