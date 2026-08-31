@@ -14,6 +14,28 @@ The board is in Zephyr 3.7 as ``mr_canhubk3`` (S32K344, Cortex-M7 at 160 MHz,
 XIP from flash, 128 KiB + 320 KiB SRAM).
 
 
+Before anything else: the defaults are wrong for hardware
+========================================================
+
+This is reachable without making a single deliberate choice, which is why it
+comes ahead of the wrap and the drop counter below.
+
+Zephyr defaults to ``TRACING_ASYNC`` (``subsys/tracing/Kconfig:81``) and
+``TRACING_BACKEND_UART`` (``:134``). Both defaults, together, on hardware:
+
+* **Async + UART**, changing nothing, drops events silently into a counter
+  that has no reader anywhere in the tree.
+* **Sync + UART** -- and sync is the knob a reader is most likely to flip,
+  because it sounds like the safer name -- holds interrupts disabled for a
+  byte-at-a-time blocking UART write. 1.215 ms per event at 115200. At the
+  event rate this repo actually measured, 95x realtime.
+
+So the safer-sounding of the two names is the worse one, and neither default
+is usable. Choose the method and the backend together and deliberately, and
+state both; the two are one decision, not two. The reasoning is in
+`Sync or async decides whether events can vanish`_.
+
+
 What transfers unchanged
 ========================
 
