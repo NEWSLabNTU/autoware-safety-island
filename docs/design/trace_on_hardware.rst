@@ -152,6 +152,30 @@ The two paths differ exactly where it matters. ``ctf_top.h`` emits through
   calls ``tracing_packet_drop_handle()`` when the put fails. Events are lost
   whole, so the stream stays well-formed and a decoder sees nothing wrong.
 
+**What SYNC costs is the backend's write, paid with interrupts disabled.**
+``TRACING_LOCK()`` is ``irq_lock()`` (``tracing_core.h:17``), so the whole
+backend output call runs with interrupts off. That makes the sync/async
+question inseparable from the backend choice:
+
+* **RAM** -- a bounded ``memcpy``. Microseconds, interrupts off. Fine.
+* **UART** -- ``tracing_backend_uart_output`` is a byte-at-a-time
+  ``uart_poll_out`` loop, and ``uart_poll_out`` blocks until the transmitter
+  is ready. At 115200 that is 86.8 us per byte, so a 14-byte event holds
+  interrupts off for **1.215 ms**. At the TAP capture's 78000 events/s that
+  is 95x realtime. Not slow: impossible.
+* **SEMIHOST** -- ``semihost_write`` is ``bkpt 0xab``
+  (``arch/arm/core/cortex_m/semihost.c``), which halts the core until the
+  host probe services it. Once per event, interrupts off. The instrument
+  becomes the dominant term.
+
+Semihosting therefore is **not** a third option. Under SYNC its per-event
+cost lands inside ``irq_lock``; under ASYNC it avoids that only by moving the
+trap to the tracing thread, which is the drop path again. It also makes the
+image undeployable standalone: ``bkpt 0xab`` with no probe attached and
+servicing semihosting does not degrade, it faults. A safety image that dies
+when the debugger is unplugged is a property to justify, not to accept
+quietly.
+
 So the choice is not a performance tuning knob, it is a correctness one:
 
 ============  ==========================  ================================
@@ -165,8 +189,14 @@ So the choice is not a performance tuning knob, it is a correctness one:
 
 This repo's FVP builds set ``CONFIG_TRACING_SYNC=y`` explicitly, overriding
 the default, which is why the captures behind :doc:`trace_findings` have no
-holes. That was a lucky inheritance rather than a considered choice, and it
-is worth making deliberately.
+holes. That was a lucky inheritance rather than a considered choice.
+
+**Do not copy that config to hardware.** It pairs SYNC with
+``TRACING_BACKEND_UART``, which survives only because the FVP's UART is
+modelled and ``uart_poll_out`` returns in negligible model time. On silicon
+the same pair is the 1.215 ms interrupts-off case above. The FVP numbers are
+sound for what :doc:`trace_findings` claims about them, and the
+*configuration* that produced them is not a hardware template.
 
 **The drop counter cannot be read.** ``tracing_packet_drop_num``
 (``tracing_core.c:46``) is a ``static atomic_t``, incremented on every drop
@@ -230,11 +260,12 @@ later. RTT does appear in the tracing subsystem, but under
 
 Two ways out, both worth knowing before assuming RTT is available:
 
-* ``TRACING_BACKEND_SEMIHOST`` (4.4+, not in 3.7) writes through the debug
-  probe, so an existing SWD setup needs no extra pins and gets a continuous
-  stream with no buffer ceiling. Each write traps to the host, so it is slow;
-  it is only plausible against a cut event set, and worth measuring rather
-  than assuming either way.
+* ``TRACING_BACKEND_SEMIHOST`` (4.4+, not in 3.7) needs no extra pins on an
+  existing SWD setup and has no buffer ceiling. **It is nonetheless
+  disqualified** -- see the sync/async section above: the per-event ``bkpt``
+  trap is paid with interrupts disabled, and the absent buffer ceiling is not
+  the binding constraint. Measuring its throughput would have produced a
+  plausible number and missed this entirely.
 * An out-of-tree backend via ``TRACING_BACKEND_DEFINE()``. Upstream Zephyr
   hardcodes the backend name in ``tracing_core.c`` and offers no Kconfig to
   select one, so this repo carries

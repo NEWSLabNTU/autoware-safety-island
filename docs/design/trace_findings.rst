@@ -12,6 +12,18 @@ and analysed with ``scripts/analyze-trace-csv.py``.
 
 Read the Zephyr absolute times as model time, not silicon.
 
+One further caveat on those captures, found later and recorded here rather
+than left implicit. They were taken with ``CONFIG_TRACING_SYNC`` and the UART
+backend, and ``TRACING_LOCK()`` is ``irq_lock()``, so every event was emitted
+with interrupts disabled for the duration of a polled UART write. On the FVP
+that write costs negligible model time, which is why the captures are usable
+at all; on silicon the same pair would hold interrupts off for about 1.215 ms
+per event. The distortion is therefore systematic but small here, in the
+microsecond range against the millisecond-scale effects reported below, so it
+does not overturn any conclusion in this document. It does mean ISR-latency
+questions cannot be asked of these captures, and that the config must not be
+carried to hardware. See :doc:`trace_on_hardware`.
+
 
 Summary
 =======
