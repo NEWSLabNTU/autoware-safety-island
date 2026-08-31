@@ -15,6 +15,50 @@ source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
 mkdir -p "${LOG_DIR}"
 
+# ---------------------------------------------------------------------------
+# LOCKSTEP: actuation_module/west.yml's nano-ros revision must equal the
+# modules/nros submodule pointer. west.yml says what a `west update` fetches;
+# the submodule pointer says what a `git submodule update` checks out. When
+# they disagree the two tools produce DIFFERENT trees from the same commit,
+# and nothing in the build notices.
+#
+# This has now drifted twice. Once a pin was left pointing at a commit that a
+# force-push had orphaned, and once a bump moved the submodule pointer without
+# touching west.yml. Both were found by hand, long after the fact; the check
+# costs a git call.
+# ---------------------------------------------------------------------------
+assert_pin_lockstep()
+{
+  local declared actual
+  declared="$(sed -n '/name: nano-ros/,/path:/p' "${ROOT_DIR}/actuation_module/west.yml" \
+              | sed -n 's/^ *revision: *//p' | head -1)"
+  actual="$(git -C "${ROOT_DIR}" rev-parse HEAD:modules/nros 2>/dev/null)"
+
+  if [ -z "${declared}" ] || [ -z "${actual}" ]; then
+    echo "lockstep: could not read both pins (west.yml='${declared}' submodule='${actual}')" >&2
+    exit 1
+  fi
+  if [ "${declared}" != "${actual}" ]; then
+    echo "lockstep: nano-ros pin disagrees between west.yml and the submodule." >&2
+    echo "  west.yml:  ${declared}" >&2
+    echo "  submodule: ${actual}" >&2
+    echo "west update and git submodule update would produce different trees." >&2
+    echo "Move BOTH together; see the LOCKSTEP note in actuation_module/west.yml." >&2
+    exit 1
+  fi
+
+  # A pin no branch contains is unfetchable for a fresh clone even when the
+  # two agree -- which is how a rebased-away commit stayed pinned for a day.
+  if [ -d "${ROOT_DIR}/modules/nros/.git" ] || [ -f "${ROOT_DIR}/modules/nros/.git" ]; then
+    if ! git -C "${ROOT_DIR}/modules/nros" branch -r --contains "${actual}" 2>/dev/null | grep -q .; then
+      echo "lockstep: pin ${actual} is on no remote branch; a fresh clone cannot fetch it." >&2
+      exit 1
+    fi
+  fi
+  echo "lockstep: nano-ros pin ${actual} agrees and is reachable"
+}
+assert_pin_lockstep
+
 ensure_fvp_available()
 {
   local fvp_bin
