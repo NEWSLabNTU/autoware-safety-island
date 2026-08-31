@@ -584,8 +584,15 @@ needs the loaded measurement.
 **Generic pool threads are unnamed.** ``nros_zephyr_tier_task_create()`` calls
 ``k_thread_name_set()``, but the generic pool path does not, so the seven
 transport threads appear as ``unknown`` and are separable only by thread id and
-stack base. Naming them upstream would make a control-loop timeline
-substantially more readable.
+stack base.
+
+The cause is narrower than "nano-ros does not name threads". The ABI has
+carried a ``name`` in ``nros_platform_task_attr_t`` all along, every caller
+fills it, and the FreeRTOS port hands it to ``xTaskCreate`` -- which is why the
+same application traces as ``nros_app`` and ``zpico_read`` there. Only the
+Zephyr port's generic path read ``priority`` out of the attr and dropped
+``name``. Fixed in nano-ros PR #159 (``fix/zephyr-port-drops-task-name``);
+until that lands and the pin moves, expect ``unknown`` rows.
 
 **Longest slice.** ``main`` shows a 62.1 ms worst contiguous slice against a
 0.67 ms median. Worth attention if the 30 ms period matters, though note the
