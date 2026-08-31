@@ -75,12 +75,100 @@ build_variant()
   "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@"
 }
 
+# ---------------------------------------------------------------------------
+# Cleanup on ANY exit, including abort.
+#
+# Without this the script's own death leaks whatever it had started. That is
+# not hypothetical: a run killed mid-phase left an FVP running for ten hours
+# on a core, because `set -e` and an outside SIGTERM both bypass the per-phase
+# kill in run_fvp_variant.
+#
+# The sweep matches on the build path AND the ELF name. Matching the path
+# alone would also select build.sh, west and cmake, and killing those is worse
+# than the orphan it is trying to remove. Matching the binary NAME instead --
+# `pkill -f FVP_BaseR_AEMv8R` -- is worse still: `-f` matches whole command
+# lines, so it can select the very shell doing the killing.
+# ---------------------------------------------------------------------------
+CURRENT_FVP_PID=""
+
+ci_cleanup()
+{
+  local rc=$?
+
+  if [ -n "${CURRENT_FVP_PID}" ]; then
+    kill -TERM -- "-${CURRENT_FVP_PID}" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-${CURRENT_FVP_PID}" 2>/dev/null || true
+    CURRENT_FVP_PID=""
+  fi
+
+  if [ -n "${BG_PID}" ]; then
+    kill -TERM "${BG_PID}" 2>/dev/null || true
+    BG_PID=""
+  fi
+
+  local stray
+  stray="$(ps -eo pid,args 2>/dev/null \
+           | grep -F "${ROOT_DIR}/build/" \
+           | grep -F 'zephyr.elf' \
+           | grep -v ' grep ' \
+           | awk '{print $1}')"
+  if [ -n "${stray}" ]; then
+    echo "cleanup: sweeping stray FVP pid(s): $(echo ${stray} | tr '\n' ' ')" >&2
+    # shellcheck disable=SC2086
+    kill -KILL ${stray} 2>/dev/null || true
+  fi
+
+  return "${rc}"
+}
+trap ci_cleanup EXIT INT TERM
+
+# Build a variant in the BACKGROUND, so it overlaps the previous phase's model
+# run. Phases are independent -- separate build dirs, separate logs -- and only
+# ever one build is in flight at a time, so nothing contends for the cargo or
+# ccache state. The win is bounded by min(build, run) per phase; it is a couple
+# of minutes, not the fifteen that early-exit recovers.
+BG_PID=""
+BG_NAME=""
+BG_LOG=""
+
+build_variant_bg()
+{
+  local name="$1"
+  shift
+  BG_NAME="${name}"
+  BG_LOG="${LOG_DIR}/build-${name}.log"
+  "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@" \
+      >"${BG_LOG}" 2>&1 &
+  BG_PID=$!
+  echo "  (building ${name} in the background)"
+}
+
+# Join the background build. A failure here must be as loud as a foreground
+# one, and must show its log -- a build that failed quietly in the background
+# would otherwise surface as a confusing "Missing ELF" much later.
+wait_build()
+{
+  [ -n "${BG_PID}" ] || return 0
+  local pid="${BG_PID}"
+  BG_PID=""
+  if ! wait "${pid}"; then
+    echo "Background build of ${BG_NAME} FAILED" >&2
+    tail -40 "${BG_LOG}" >&2
+    exit 1
+  fi
+}
+
 # Run FVP with the built ELF and capture output
 run_fvp_variant()
 {
   local name="$1"
   local log="$2"
   local timeout_seconds="$3"
+  shift 3
+  # Remaining args are the markers that mean "this phase has done its work".
+  # With none given the run waits out the full timeout, which is the old
+  # behaviour.
 
   local build_dir="${BUILD_ROOT}/${name}"
   if [ ! -f "${build_dir}/zephyr/zephyr.elf" ]; then
@@ -88,25 +176,62 @@ run_fvp_variant()
     exit 1
   fi
 
-  # Remove old log
   rm -f "${log}"
-
   echo "Starting FVP for ${name}..."
 
-  # Use west build --target run which uses CMake's FVP configuration
-  # ARMFVP_BIN_PATH must be set for CMake to find the FVP binary
-  set +e
-  run_command_with_timeout "${log}" "${timeout_seconds}" \
-    west build -d "${build_dir}" --target run
-  local rc=$?
-  set -e
+  # The image never exits on its own, so before this it was ALWAYS killed by
+  # the clock: measured, a success marker landed 72 lines into a 762-line log
+  # and the model then ran another ~190 s for nothing. Five runtime phases x
+  # 200 s was ~17 minutes of pure waiting.
+  #
+  # `setsid` so the model gets its own process group and can be killed as a
+  # group. Killing by name or by a path pattern is what leaked an FVP that
+  # then burned a core for ten hours.
+  setsid west build -d "${build_dir}" --target run >"${log}" 2>&1 &
+  local wpid=$!
+  CURRENT_FVP_PID="${wpid}"        # so ci_cleanup can reach it on abort
+
+  local grace="${CI_FVP_GRACE_SECONDS:-15}"
+  local waited=0
+  local seen=0
+
+  while [ "${waited}" -lt "${timeout_seconds}" ]; do
+    kill -0 "${wpid}" 2>/dev/null || break      # model exited by itself
+
+    if [ "$#" -gt 0 ]; then
+      seen=1
+      local m
+      for m in "$@"; do
+        grep -aqF -- "${m}" "${log}" 2>/dev/null || { seen=0; break; }
+      done
+      if [ "${seen}" = 1 ]; then
+        # NOT an immediate kill. `forbid_marker "ZEPHYR FATAL ERROR"` exists
+        # because a crash can land AFTER the success marker -- that is exactly
+        # how a net_socket_service stack overflow went unnoticed here. Keep
+        # watching for a grace window so the forbid checks still have
+        # something to find.
+        echo "  markers satisfied; ${grace}s grace, then stopping"
+        sleep "${grace}"
+        break
+      fi
+    fi
+
+    sleep 2
+    waited=$((waited + 2))
+  done
+
+  kill -TERM -- "-${wpid}" 2>/dev/null
+  sleep 1
+  kill -KILL -- "-${wpid}" 2>/dev/null
+  wait "${wpid}" 2>/dev/null
+  CURRENT_FVP_PID=""
 
   if [ ! -s "${log}" ]; then
     echo "FVP produced no output for ${name}" >&2
     exit 1
   fi
 
-  echo "FVP ${name} finished"
+  echo "FVP ${name} finished after ~${waited}s"
 }
 
 # Every runtime phase asserts the absence of a fatal error as well as the
@@ -116,33 +241,47 @@ run_fvp_variant()
 # exactly how a net_socket_service stack overflow went unnoticed here.
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
-run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}"
+build_variant_bg unit --unit-test          # overlaps phase 1's model run
+run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}" \
+    "Starting Controller Node" "Controller Node Started" \
+    "Actuation Safety Island is Live"
 require_marker "${LOG_DIR}/controller.log" "Starting Controller Node"
 require_marker "${LOG_DIR}/controller.log" "Controller Node Started"
 require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
 forbid_marker "${LOG_DIR}/controller.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 2 - Zephyr FVP unit_test build + run"
-build_variant unit --unit-test
-run_fvp_variant unit "${LOG_DIR}/unit.log" "${FVP_TIMEOUT_SECONDS}"
+wait_build
+build_variant_bg dds-loopback --dds-loopback-test
+run_fvp_variant unit "${LOG_DIR}/unit.log" "${FVP_TIMEOUT_SECONDS}" \
+    "=== All Tests Passed ==="
 require_marker "${LOG_DIR}/unit.log" "=== All Tests Passed ==="
 forbid_marker "${LOG_DIR}/unit.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 3 - Zephyr FVP DDS loopback build + run"
-build_variant dds-loopback --dds-loopback-test
-run_fvp_variant dds-loopback "${LOG_DIR}/dds-loopback.log" "${FVP_TIMEOUT_SECONDS}"
+wait_build
+build_variant_bg can --can-output-test
+run_fvp_variant dds-loopback "${LOG_DIR}/dds-loopback.log" "${FVP_TIMEOUT_SECONDS}" \
+    "Starting DDS loopback test" "STEERING REPORT" "DDS loopback test passed"
 require_marker "${LOG_DIR}/dds-loopback.log" "Starting DDS loopback test"
 require_marker "${LOG_DIR}/dds-loopback.log" "STEERING REPORT"
 require_marker "${LOG_DIR}/dds-loopback.log" "DDS loopback test passed"
 forbid_marker "${LOG_DIR}/dds-loopback.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 4 - Zephyr FVP CAN loopback build + run"
-build_variant can --can-output-test
-run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}"
+wait_build
+build_variant_bg stats --trace-stats --dds-loopback-test
+run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}" \
+    "CAN output tests passed"
 require_marker "${LOG_DIR}/can.log" "CAN output tests passed"
 forbid_marker "${LOG_DIR}/can.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 5 - Zephyr FVP TAP network build smoke"
+# Join the stats build BEFORE starting this one. Phase 5 is build-only, so
+# without this the background stats build and this foreground TAP build would
+# run concurrently -- breaking the one-build-at-a-time property the overlap
+# scheme depends on for its cache behaviour.
+wait_build
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap -d "${ROOT_DIR}/build/zephyr-fvp-tap"
 test -f "${ROOT_DIR}/build/zephyr-fvp-tap/zephyr/zephyr.elf"
 
@@ -150,8 +289,12 @@ echo "Phase 6 - Zephyr FVP scheduling statistics (rt-eval Layer 1)"
 # Kept separate from phase 3 rather than folded into it: if the statistics
 # layer regresses, that should not be indistinguishable from a DDS-path
 # regression. See docs/design/rt_evaluation_zephyr.rst.
-build_variant stats --trace-stats --dds-loopback-test
-run_fvp_variant stats "${LOG_DIR}/stats.log" "${FVP_TIMEOUT_SECONDS}"
+# The stats build was started during phase 4 and joined in phase 5, so this
+# is a no-op; kept so the phase reads correctly if phase 5 is ever removed.
+wait_build
+run_fvp_variant stats "${LOG_DIR}/stats.log" "${FVP_TIMEOUT_SECONDS}" \
+    "DDS loopback test passed" "Thread analyze:" "Total CPU cycles used" \
+    "Longest Frame"
 # The workload must still pass with the statistics enabled — this phase is a
 # non-regression check as much as a reporting one.
 require_marker "${LOG_DIR}/stats.log" "DDS loopback test passed"

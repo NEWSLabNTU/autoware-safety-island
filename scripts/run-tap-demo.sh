@@ -122,7 +122,28 @@ demo_down() {
     pkill -f "qemu-system-arm -machine mps3-an536" 2>/dev/null || true
     pkill -f "sntp-server.py --bind ${TAP_HOST_IP}" 2>/dev/null || true
   else
-    pkill -f FVP_BaseR_AEMv8R 2>/dev/null || true
+    # Sweep any model still holding THIS repo's ELFs, selected on the build
+    # path AND the ELF name.
+    #
+    # `pkill -f FVP_BaseR_AEMv8R` was here and is a footgun: `-f` matches whole
+    # command lines, so any shell whose own command line mentions that string --
+    # including the one running this script -- is a candidate. It killed the
+    # calling shell three separate times during phase-7 work.
+    #
+    # Both conditions are load-bearing. Matching the path alone would also
+    # select build.sh, west and cmake; killing those mid-run is worse than the
+    # orphan being swept.
+    local stray
+    stray="$(ps -eo pid,args 2>/dev/null \
+             | grep -F "${ROOT}/build/" \
+             | grep -F 'zephyr.elf' \
+             | grep -v ' grep ' \
+             | awk '{print $1}')"
+    if [[ -n "${stray}" ]]; then
+      warn "sweeping stray FVP pids: $(echo "${stray}" | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      kill -KILL ${stray} 2>/dev/null || true
+    fi
   fi
   # Pid-file shutdown for the responder, kept from the FVP lane: pkill by
   # pattern only finds it while the pattern still matches, and the pid file
