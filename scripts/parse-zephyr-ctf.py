@@ -52,6 +52,39 @@ HEADER_SIZE = HEADER.size  # 5
 # script reported 18300 s for a 90 s capture.
 WRAP_THRESHOLD_NS = 1 << 31
 
+# The timestamp is 32-bit NANOSECONDS, so it wraps every 4.295 s on every
+# target regardless of clock rate. That makes unwrapping ambiguous: an observed
+# gap of `g` could equally be `g`, `g + 4.295 s`, or `g + 8.59 s`, and nothing
+# in the stream distinguishes them. The reconstruction always assumes the
+# smallest, so a long quiet stretch silently loses whole epochs.
+#
+# It only bites when events stop arriving for a large fraction of the period.
+# Warn past half of it, and see docs/design/trace_on_hardware.rst for the fix
+# (an app_marker heartbeat well inside 4.295 s makes every wrap unambiguous).
+WRAP_PERIOD_NS = 1 << 32
+WRAP_AMBIGUITY_WARN_NS = WRAP_PERIOD_NS // 2
+
+
+def report_wrap_ambiguity(evs):
+    """Flag inter-event gaps large enough that a whole epoch may be missing."""
+    worst = []
+    for a, b in zip(evs, evs[1:]):
+        gap = b.ts - a.ts
+        if gap > WRAP_AMBIGUITY_WARN_NS:
+            worst.append((gap, a.name, b.name))
+    if not worst:
+        print(f"[wrap] no inter-event gap exceeds "
+              f"{WRAP_AMBIGUITY_WARN_NS / 1e9:.3f} s; unwrapping unambiguous.")
+        return
+    worst.sort(reverse=True)
+    print(f"[wrap] WARNING: {len(worst)} inter-event gap(s) over "
+          f"{WRAP_AMBIGUITY_WARN_NS / 1e9:.3f} s. The 32-bit ns timestamp "
+          f"wraps every {WRAP_PERIOD_NS / 1e9:.3f} s, so each of these may be "
+          f"UNDERSTATED by a multiple of that and the timeline may be missing "
+          f"whole epochs:")
+    for gap, a, b in worst[:5]:
+        print(f"         {gap / 1e9:8.3f} s between {a} and {b}")
+
 
 class Event:
     """One decoded event: name, unwrapped timestamp (ns), and its fields.
@@ -180,7 +213,13 @@ def decode(blob, events):
             # overshoots wildly -- a 12.214 s loopback run reconstructs as
             # 2654 s. Mark the boundary so callers can exclude the gap; the
             # execution time either side of it is sound.
-            disc = last_name == "idle"
+            # FVP-specific, and WRONG on real silicon. On the model the
+            # counter races ahead across WFI, so an idle-then-wrap boundary
+            # spans time that never happened and the slice must go. On
+            # hardware the same boundary is an ordinary rollover across a
+            # genuinely idle stretch, and discarding it would throw away real
+            # elapsed time. `--wall-clock-valid` says which target this is.
+            disc = (last_name == "idle") and not WALL_CLOCK_VALID
         last_raw = raw_ts
         last_name = name
 
@@ -201,6 +240,13 @@ def thread_label(ev):
 CONTRACT = None
 CSV_OUT = None
 SOURCE_PATH = None
+# False for the Arm FVP, whose counter advances during WFI at a rate unrelated
+# to the tick clock. True for real silicon, where the same counter is elapsed
+# time. Set by --wall-clock-valid; see docs/design/trace_on_hardware.rst.
+WALL_CLOCK_VALID = False
+# Which target produced the capture. Recorded in trace_meta.json so a consumer
+# can tell an FVP run from silicon without being told.
+LANE = "zephyr-fvp"
 
 
 def write_segments_csv(runs, dropped_disc, path):
@@ -259,30 +305,35 @@ def write_trace_meta(runs, dropped_disc, path):
     import json as _json
     busy = sum(e - s for s, e, lab in runs if not lab.startswith("idle"))
     meta = {
-        "lane": "zephyr-fvp",
+        "lane": LANE,
         "source": "CTF via scripts/parse-zephyr-ctf.py",
         # Without this, identifying which capture produced a given CSV meant
         # re-running the decoder over every candidate until the segment
         # counts matched.
         "source_path": SOURCE_PATH,
-        "time_base_is_wall_clock": False,
-        "wall_clock_span_valid": False,
-        "wall_clock_span_invalid_reason":
-            "CNTVCT advances during WFI at a rate unrelated to the tick "
-            "clock, so first..last spans idle and is not elapsed time. Do "
-            "not derive occupancy from it.",
+        "time_base_is_wall_clock": WALL_CLOCK_VALID,
+        "wall_clock_span_valid": WALL_CLOCK_VALID,
         "busy_span_us": busy / 1e3,
         "busy_span_note":
-            "Sum of non-idle execution segments. Use this as a denominator "
-            "instead of the first..last span.",
+            "Sum of non-idle execution segments."
+            + ("" if WALL_CLOCK_VALID else
+               " Use this as a denominator instead of the first..last span."),
         "segments": len(runs),
         "segments_dropped_counter_jump": dropped_disc,
-        "nonmonotonic_policy": "drop",
+        "nonmonotonic_policy": "drop" if not WALL_CLOCK_VALID else "none",
     }
+    if not WALL_CLOCK_VALID:
+        meta["wall_clock_span_invalid_reason"] = (
+            "CNTVCT advances during WFI at a rate unrelated to the tick "
+            "clock, so first..last spans idle and is not elapsed time. Do "
+            "not derive occupancy from it.")
     with open(path, "w") as fh:
         _json.dump(meta, fh, indent=2)
         fh.write("\n")
-    print(f"wrote {path} (wall-clock span marked INVALID for this lane)")
+    print(f"wrote {path} "
+          + ("(wall-clock span usable: target counter is elapsed time)"
+             if WALL_CLOCK_VALID
+             else "(wall-clock span marked INVALID for this lane)"))
 
 
 def load_contract(path, launch):
@@ -359,9 +410,14 @@ def report_stats(evs):
     # non-idle execution as the base and report no CPU percentage.
     busy = sum(v for k, v in running.items() if not k.startswith("idle"))
 
-    print(f"\n[time base] {sum(1 for e in evs if e.disc)} WFI counter jumps seen, "
-          f"{dropped} slices dropped for spanning one. No wall-clock span is "
-          f"reported -- see rt_evaluation_zephyr.rst.")
+    if WALL_CLOCK_VALID:
+        print(f"\n[time base] target counter declared to BE elapsed time "
+              f"(--wall-clock-valid); no slices discarded.")
+    else:
+        print(f"\n[time base] {sum(1 for e in evs if e.disc)} WFI counter "
+              f"jumps seen, {dropped} slices dropped for spanning one. No "
+              f"wall-clock span is reported -- see rt_evaluation_zephyr.rst.")
+    report_wrap_ambiguity(evs)
 
     print("\n=== event counts " + "=" * 47)
     for name, c in sorted(counts.items(), key=lambda kv: -kv[1]):
@@ -894,6 +950,16 @@ def main():
                     help="write task,start_us,end_us execution segments (the "
                          "shape nano-ros-rt-eval's FreeRTOS lane emits), plus "
                          "a trace_meta.json describing this lane's time base")
+    ap.add_argument("--wall-clock-valid", action="store_true",
+                    help="the target's counter IS elapsed time (real "
+                         "silicon). Default assumes the Arm FVP, whose "
+                         "counter races ahead across WFI, and which needs "
+                         "idle-spanning slices discarded. Setting this on an "
+                         "FVP capture, or omitting it on hardware, produces "
+                         "confidently wrong occupancy either way.")
+    ap.add_argument("--lane", default="zephyr-fvp",
+                    help="target label recorded in trace_meta.json, e.g. "
+                         "zephyr-mr-canhubk3. Default: zephyr-fvp")
     ap.add_argument("--timeline", action="store_true", help="print every event")
     ap.add_argument("--stats", action="store_true", help="print scheduling statistics")
     ap.add_argument("--limit", type=int, default=0,
@@ -924,6 +990,10 @@ def main():
             rel = (ev.ts - base) / 1e6
             fields = " ".join(f"{k}={v}" for k, v in ev.fields.items())
             print(f"  {rel:12.6f} ms  {ev.name:<28} {fields}")
+
+    global WALL_CLOCK_VALID, LANE
+    WALL_CLOCK_VALID = args.wall_clock_valid
+    LANE = args.lane
 
     if args.csv:
         global CSV_OUT, SOURCE_PATH

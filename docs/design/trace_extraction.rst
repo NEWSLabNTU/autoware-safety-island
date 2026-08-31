@@ -10,6 +10,9 @@ in the same shape, so one analyser serves both and the numbers are directly
 comparable. This document is the procedure; the analysis of what the captures
 actually showed is in :doc:`trace_findings`.
 
+Taking this to real hardware needs a few of these assumptions revisited; see
+:doc:`trace_on_hardware` for the CANHUBK344 lane.
+
 The extraction machinery on the FreeRTOS side is taken from
 `NEWSLabNTU/nano-ros-rt-eval <https://github.com/NEWSLabNTU/nano-ros-rt-eval>`_,
 whose ``tools/trace2csv.py`` is carried here as
