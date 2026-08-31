@@ -17,6 +17,7 @@ Usage:
     parse-zephyr-ctf.py TRACE [-m METADATA] [--timeline] [--stats] [--limit N]
 """
 
+import os
 import argparse
 import re
 import bisect
@@ -198,6 +199,90 @@ def thread_label(ev):
 
 
 CONTRACT = None
+CSV_OUT = None
+SOURCE_PATH = None
+
+
+def write_segments_csv(runs, dropped_disc, path):
+    """Emit `task,start_us,end_us` execution segments.
+
+    The same shape nano-ros-rt-eval's FreeRTOS lane produces via
+    tools/trace2csv.py, so one set of analysis tools reads both lanes.
+
+    Two differences from that lane are deliberate and are recorded in the
+    sidecar metadata rather than papered over:
+
+      * SEGMENT ENDS ARE MEASURED, not inferred. Zephyr emits
+        `thread_switched_out`, so a segment ends where the trace says it
+        ends. The FreeRTOS fold has only switch-INs and must treat a task as
+        running until the next one, which also forces it to drop the final
+        segment. Nothing is dropped here for that reason.
+
+      * NON-MONOTONIC TIMESTAMPS ARE DROPPED, NOT CLAMPED. The FreeRTOS port
+        steps back a few microseconds across a tick boundary, and clamping
+        repairs that honestly. This lane's discontinuities are WFI counter
+        jumps of hundreds of milliseconds -- the FVP's counter keeps running
+        while the core is halted. Clamping those would invent execution time
+        that never happened, so the slices spanning them are discarded and
+        counted.
+    """
+    import csv as _csv
+    with open(path, "w", newline="") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["task", "start_us", "end_us"])
+        for start_ns, end_ns, label in sorted(runs):
+            w.writerow([label, f"{start_ns / 1e3:.3f}", f"{end_ns / 1e3:.3f}"])
+    print(f"\nwrote {len(runs)} segments to {path}"
+          f" ({dropped_disc} dropped for spanning a counter jump)")
+
+
+def write_trace_meta(runs, dropped_disc, path):
+    """Sidecar describing what the CSV's numbers can and cannot support.
+
+    A consumer naturally divides total task time by
+    `last.end_us - first.start_us` to get occupancy. On THIS lane that
+    denominator is not elapsed time: CNTVCT advances while the core is in
+    WFI at a rate unrelated to the tick clock, so the span includes idle
+    stretches that never took that long.
+
+    How wrong it gets depends on how idle the capture is, and the busy case
+    is the dangerous one. An idle run inflates the span by orders of
+    magnitude and the result is obviously absurd. The loaded TAP capture
+    inflates it by only 1.3x -- 84063 ms against 65284 ms of busy time --
+    and yields percentages that look entirely reasonable and are wrong.
+
+    Rather than emit a CSV that silently produces a wrong percentage, state
+    the limitation where a tool can read it. A busy span over non-idle
+    segments IS meaningful and is supplied for anything that wants a
+    denominator.
+    """
+    import json as _json
+    busy = sum(e - s for s, e, lab in runs if not lab.startswith("idle"))
+    meta = {
+        "lane": "zephyr-fvp",
+        "source": "CTF via scripts/parse-zephyr-ctf.py",
+        # Without this, identifying which capture produced a given CSV meant
+        # re-running the decoder over every candidate until the segment
+        # counts matched.
+        "source_path": SOURCE_PATH,
+        "time_base_is_wall_clock": False,
+        "wall_clock_span_valid": False,
+        "wall_clock_span_invalid_reason":
+            "CNTVCT advances during WFI at a rate unrelated to the tick "
+            "clock, so first..last spans idle and is not elapsed time. Do "
+            "not derive occupancy from it.",
+        "busy_span_us": busy / 1e3,
+        "busy_span_note":
+            "Sum of non-idle execution segments. Use this as a denominator "
+            "instead of the first..last span.",
+        "segments": len(runs),
+        "segments_dropped_counter_jump": dropped_disc,
+        "nonmonotonic_policy": "drop",
+    }
+    with open(path, "w") as fh:
+        _json.dump(meta, fh, indent=2)
+        fh.write("\n")
+    print(f"wrote {path} (wall-clock span marked INVALID for this lane)")
 
 
 def load_contract(path, launch):
@@ -254,6 +339,13 @@ def report_stats(evs):
                 # time, which is what a budget is expressed in.
                 runs.append((since, ev.ts, current))
             current, since, spanned = None, None, False
+
+    if CSV_OUT:
+        import os as _os
+        write_segments_csv(runs, dropped, CSV_OUT)
+        write_trace_meta(runs, dropped,
+                         _os.path.join(_os.path.dirname(_os.path.abspath(CSV_OUT))
+                                       or ".", "trace_meta.json"))
 
     # There is no trustworthy wall-clock span on this model: CNTVCT keeps
     # advancing while the core is in WFI, at a rate unrelated to the tick clock
@@ -798,6 +890,10 @@ def main():
                          "against (phase-9 W3); pair with --launch")
     ap.add_argument("--launch", metavar="LAUNCH_XML",
                     help="launch file supplying ctrl_period for --contract")
+    ap.add_argument("--csv", metavar="TRACE_CSV",
+                    help="write task,start_us,end_us execution segments (the "
+                         "shape nano-ros-rt-eval's FreeRTOS lane emits), plus "
+                         "a trace_meta.json describing this lane's time base")
     ap.add_argument("--timeline", action="store_true", help="print every event")
     ap.add_argument("--stats", action="store_true", help="print scheduling statistics")
     ap.add_argument("--limit", type=int, default=0,
@@ -829,6 +925,11 @@ def main():
             fields = " ".join(f"{k}={v}" for k, v in ev.fields.items())
             print(f"  {rel:12.6f} ms  {ev.name:<28} {fields}")
 
+    if args.csv:
+        global CSV_OUT, SOURCE_PATH
+        CSV_OUT = args.csv
+        SOURCE_PATH = os.path.abspath(args.trace)
+        args.stats = True
     if args.stats:
         if args.contract:
             global CONTRACT
