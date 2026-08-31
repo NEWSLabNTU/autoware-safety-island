@@ -194,16 +194,60 @@ roughly in order of effort:
 1. **Cut the event set.** ``CONFIG_TRACING_*`` selects families. Most of that
    1.09 MB/s is thread switches and ISRs; if the question is control-loop
    cadence, ``app_marker`` plus thread switches is a fraction of it.
-2. **Burst into RAM, read out over the debugger.** With roughly 448 KiB of
-   SRAM on the S32K344, a 128 KiB buffer holds about 9400 events, which at
-   full rate is only about 120 ms. That is the same order as the FreeRTOS
-   lane's 16 KiB Tonbandgeraet snapshot (32 to 250 ms), and it comes with the
-   same warning: see :doc:`trace_findings`, where 4 to 8 activations per
-   loaded run were enough to establish a 5x rate collapse and nowhere near
-   enough for a percentile.
+2. **Burst into RAM, read out over the debugger.** A 128 KiB buffer holds
+   about 9400 events, which at full rate is only about 120 ms -- the same
+   order as the FreeRTOS lane's 16 KiB Tonbandgeraet snapshot, and it carries
+   the same warning: see :doc:`trace_findings`, where 4 to 8 activations per
+   loaded run established a 5x rate collapse and were nowhere near enough for
+   a percentile.
+
+   **The RAM backend is one-shot, not a ring.**
+   ``tracing_backend_ram.c`` is a ``memcpy`` into a plain array, and once
+   ``pos + length`` would pass the end it latches ``buffer_full`` and records
+   nothing further until re-init. So it truncates the tail rather than
+   dropping scattered events.
+
+   That is the better failure mode, and worth being explicit about why: a
+   prefix is analysable where a hole-riddled stream is not, and unlike the
+   async drop counter the truncation is **detectable from the artifact** --
+   ``buffer_full`` set, or the dump ending exactly on the buffer boundary.
+
+   Two practical points. ``CONFIG_RAM_TRACING_BUFFER_SIZE`` defaults to 4096,
+   about 290 events at 14.0 bytes each, which is useless; choose and state it.
+   And dump ``ram_tracing[0 .. pos]``, not the whole array -- ``init``
+   zero-fills it, so a full-array dump appends zeros that a decoder will
+   count as trailing garbage.
 3. **A fast LPUART.** The S32K344 will run well above 115200; whether it
    reaches 10 Mbaud sustained with a host that can absorb it is worth
    measuring before committing to it.
+
+**There is no RTT backend for CTF.** ``TRACING_BACKEND_CHOICE`` offers UART
+(default), USB, POSIX, RAM and ADSP_MEMORY_WINDOW, plus SEMIHOST on 4.4 and
+later. RTT does appear in the tracing subsystem, but under
+``SEGGER_SYSTEMVIEW``, which is a *format* selected instead of
+``TRACING_CTF`` -- so taking RTT means giving up CTF and everything in
+:doc:`trace_extraction` that decodes it.
+
+Two ways out, both worth knowing before assuming RTT is available:
+
+* ``TRACING_BACKEND_SEMIHOST`` (4.4+, not in 3.7) writes through the debug
+  probe, so an existing SWD setup needs no extra pins and gets a continuous
+  stream with no buffer ceiling. Each write traps to the host, so it is slow;
+  it is only plausible against a cut event set, and worth measuring rather
+  than assuming either way.
+* An out-of-tree backend via ``TRACING_BACKEND_DEFINE()``. Upstream Zephyr
+  hardcodes the backend name in ``tracing_core.c`` and offers no Kconfig to
+  select one, so this repo carries
+  ``patches/zephyr/0003-tracing-allow-an-out-of-tree-backend.patch`` (16 lines)
+  to make it selectable. That patch, not anything upstream, is what an
+  RTT-for-CTF backend would need.
+
+.. note::
+
+   Line numbers in this document are from the Zephyr 3.7 tree this repo
+   pins. They drift across versions -- ``tracing_packet_drop_num`` is at
+   ``tracing_core.c:46`` on 3.7 and ``:30`` on 4.4.0. The code is unchanged;
+   cite the tree with the line.
 
 Combining 1 and 2 is usually what makes a capture window long enough to be
 interesting.
