@@ -5,7 +5,8 @@
 Taking the trace tooling to real silicon
 =====================================
 
-Notes for the NXP CANHUBK344 lane. Everything in :doc:`trace_extraction` was
+Notes for the NXP CANHUBK344 lane. :doc:`zephyr_tracing` is the reference for
+the subsystem itself; this document is only what changes off the model. Everything in :doc:`trace_extraction` was
 built against two simulators, the Arm FVP and QEMU, and some of what those
 targets forced is wrong on hardware. This is what transfers, what changes, and
 the one thing that will silently corrupt a capture if it is not handled.

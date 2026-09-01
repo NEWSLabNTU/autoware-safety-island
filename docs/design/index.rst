@@ -22,3 +22,8 @@ Runtime design, DDS topic contracts, and forward-looking design work.
    workspace_mode
    rt_evaluation_zephyr
    callback_tracing
+   zephyr_tracing
+   trace_extraction
+   trace_on_hardware
+   trace_findings
+   rt_probes_and_benchmarks
