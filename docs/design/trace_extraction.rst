@@ -73,8 +73,19 @@ with ``CONFIG_TRACING_CTF``; see :doc:`rt_evaluation_zephyr`.
    $ python3 scripts/parse-zephyr-ctf.py build/zephyr-fvp-tap/trace.ctf \
          --csv /tmp/run/trace.csv
 
-The decoder reads the TSDL out of the capture, so it needs no schema kept in
-step by hand. ``--csv`` writes ``trace.csv`` and ``trace_meta.json`` together.
+``--csv`` writes ``trace.csv`` and ``trace_meta.json`` together.
+
+**The stream does not carry its own schema.** A Zephyr CTF capture is bare
+event records; the TSDL that names them lives in the tree, at
+``subsys/tracing/ctf/tsdl/metadata``, and the decoder defaults to the pinned
+one (``-m`` overrides). The pairing is load-bearing and unchecked: event ids
+are positions in that file, so decoding a stream against a different tree's
+TSDL silently renames events and misreads fields rather than failing. Decode
+with the metadata from the tree that built the image.
+
+This repo's copy is also patched -- ``patches/zephyr/0002`` adds the
+``app_marker`` event -- so a stock metadata cannot decode markers at all, and
+a patched image traced against stock TSDL loses them silently.
 
 The TAP profile needs ``sudo scripts/setup-tap.sh`` once and
 ``scripts/sntp-server.py`` running on 192.168.10.1:12123 -- the image blocks

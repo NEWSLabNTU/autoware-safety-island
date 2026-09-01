@@ -42,8 +42,13 @@ What transfers unchanged
 * The CSV contract, ``task,start_us,end_us``, and ``trace_meta.json``.
 * ``scripts/analyze-trace-csv.py``. It is lane-agnostic and reads the time
   base out of the metadata rather than assuming one.
-* ``scripts/parse-zephyr-ctf.py``. It reads the TSDL out of the capture, so a
-  different board's event set decodes with no changes.
+* ``scripts/parse-zephyr-ctf.py``, **but pass ``-m``**. It does not read the
+  schema from the capture: it parses a TSDL file, defaulting to this repo's
+  pinned 3.7 tree. Point it at your own tree's
+  ``subsys/tracing/ctf/tsdl/metadata``. Event ids are positions in that file,
+  so a mismatched pairing renames events and misreads fields silently instead
+  of failing. Note also that this repo's TSDL is patched to add
+  ``app_marker``; a stock metadata will not decode the heartbeat.
 * The out-of-tree ``app_marker`` event (``patches/zephyr/``) and
   ``common::diag::trace_marker``. Not board-specific.
 
