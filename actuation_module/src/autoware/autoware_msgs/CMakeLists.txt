@@ -38,7 +38,17 @@ project(autoware_msgs LANGUAGES C CXX)
 # module variant accepts-and-ignores it (parity since nano-ros Phase
 # 210.E.3.c — verified, nano-ros issue 0753; the old lane gate here
 # guarded against a misparse that no current pin has).
-set(_nros_skip_install SKIP_INSTALL)
+# CODEGEN_CONFIG rides along with SKIP_INSTALL because every call below wants
+# both. nano-ros requires a DERIVED serialized-size bound on every received
+# message (phase-380: no bound means an error, not a fallback buffer size),
+# and ROS's std_msgs/Header declares frame_id as an unbounded string, so
+# Trajectory, Odometry and AccelWithCovarianceStamped all failed the check.
+# nros-codegen.toml caps it. The config must be passed EXPLICITLY here: the
+# beside-package.xml auto-discovery in NanoRosVerbs.cmake only covers the
+# `_nros_generate_declared_interfaces` path used by interface CONSUMERS, and
+# this package calls nros_generate_interfaces() directly.
+set(_nros_common SKIP_INSTALL
+    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/nros-codegen.toml")
 
 # NOTE: nros_generate_interfaces() does NOT walk DEPENDENCIES
 # transitively when building the FFI lib.rs include!() set. Every
@@ -46,10 +56,10 @@ set(_nros_skip_install SKIP_INSTALL)
 # nested fields like Header -> Time — must be listed explicitly.
 nros_generate_interfaces(builtin_interfaces
     msg/Duration.msg msg/Time.msg
-    LANGUAGE CPP ${_nros_skip_install})
+    LANGUAGE CPP ${_nros_common})
 nros_generate_interfaces(std_msgs
     msg/Header.msg
-    LANGUAGE CPP DEPENDENCIES builtin_interfaces ${_nros_skip_install})
+    LANGUAGE CPP DEPENDENCIES builtin_interfaces ${_nros_common})
 nros_generate_interfaces(geometry_msgs
     msg/Accel.msg msg/AccelStamped.msg msg/AccelWithCovariance.msg
     msg/AccelWithCovarianceStamped.msg msg/Point.msg msg/Pose.msg
@@ -58,37 +68,37 @@ nros_generate_interfaces(geometry_msgs
     msg/QuaternionStamped.msg msg/Transform.msg msg/TransformStamped.msg
     msg/Twist.msg msg/TwistStamped.msg msg/TwistWithCovariance.msg
     msg/TwistWithCovarianceStamped.msg msg/Vector3.msg msg/Vector3Stamped.msg
-    LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_skip_install})
+    LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_common})
 nros_generate_interfaces(nav_msgs
     msg/Odometry.msg
     LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
-    ${_nros_skip_install})
+    ${_nros_common})
 nros_generate_interfaces(autoware_perception_msgs
     msg/PredictedPath.msg
     LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
-    ${_nros_skip_install})
+    ${_nros_common})
 nros_generate_interfaces(autoware_vehicle_msgs
     msg/SteeringReport.msg msg/VelocityReport.msg
     LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces geometry_msgs
-    ${_nros_skip_install})
+    ${_nros_common})
 nros_generate_interfaces(autoware_planning_msgs
     msg/Path.msg msg/PathPoint.msg msg/TrajectoryPoint.msg
     msg_overrides/autoware_planning_msgs/msg/Trajectory.msg
     LANGUAGE CPP DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
-    ${_nros_skip_install})
+    ${_nros_common})
 nros_generate_interfaces(autoware_control_msgs
     msg/Control.msg msg/ControlHorizon.msg msg/Lateral.msg msg/Longitudinal.msg
-    LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_skip_install})
+    LANGUAGE CPP DEPENDENCIES std_msgs builtin_interfaces ${_nros_common})
 nros_generate_interfaces(autoware_adapi_v1_msgs
     msg/OperationModeState.msg
     LANGUAGE CPP DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
-    ${_nros_skip_install})
+    ${_nros_common})
 nros_generate_interfaces(tier4_debug_msgs
     msg/Float32MultiArrayStamped.msg msg/Float32Stamped.msg
     msg/Float64MultiArrayStamped.msg msg/Float64Stamped.msg
     msg/MultiArrayDimension.msg msg/MultiArrayLayout.msg
     msg/ProcessingTimeNode.msg msg/ProcessingTimeTree.msg
-    LANGUAGE CPP DEPENDENCIES builtin_interfaces std_msgs ${_nros_skip_install})
+    LANGUAGE CPP DEPENDENCIES builtin_interfaces std_msgs ${_nros_common})
 
 # INTERFACE target exposes ASI's hand-written
 # `<autoware/autoware_msgs/messages.hpp>` umbrella (Trajectory wrapper + cap).
