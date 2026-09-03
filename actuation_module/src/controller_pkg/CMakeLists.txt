@@ -139,11 +139,55 @@ if(TARGET ${_component})
     ${_controller_includes}
     "${EIGEN3_INCLUDE_DIR}")
 
+  # State the language standard on the TARGET rather than inheriting whatever
+  # the enclosing project set. Same reason as the Eigen and autoware_msgs blocks
+  # (nano-ros issue 0939): this package is add_subdirectory'd standalone by the
+  # nros metadata probe, whose generated CMakeLists sets `CMAKE_CXX_STANDARD 14`
+  # — and the vendored Autoware tree is C++17 (`alt_geometry.hpp` alone uses
+  # `std::optional` a dozen times). Without this the probe fails with
+  # "'optional' in namespace 'std' does not name a template type", which names
+  # the symbol and not the cause.
+  #
+  # PUBLIC via the property pair: consumers that link this component compile
+  # against the same standard, which is what the workspace lane's generated
+  # entry TU needs.
+  set_target_properties(${_component} PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON)
+  target_compile_features(${_component} PUBLIC cxx_std_17)
+
   # autoware_msgs INTERFACE target exposes the hand-written
   # `<autoware/autoware_msgs/messages.hpp>` umbrella include.
-  if(TARGET autoware_msgs)
-    target_link_libraries(${_component} PUBLIC autoware_msgs)
+  #
+  # Resolve it HERE when a parent has not, for the reason the Eigen block above
+  # exists (nano-ros issue 0939): this package is add_subdirectory'd standalone
+  # by the nros metadata probe, which synthesizes its own CMakeLists and adds
+  # only `controller_pkg`. `autoware_msgs` is never defined in that configure,
+  # so a bare `if(TARGET …)` silently skipped the link, the umbrella's include
+  # directory never reached the component, and the probe failed with
+  #
+  #     geometry.hpp:31:10: fatal error: autoware/autoware_msgs/messages.hpp:
+  #     No such file or directory
+  #
+  # which reads as a missing file rather than a missing dependency. It also
+  # looked intermittent, because a failed probe is cached as unprobeable and not
+  # re-run. The main build was never affected — actuation_module/CMakeLists.txt
+  # adds autoware_msgs (:178) before this package (:247) — which is exactly why
+  # depending on a parent's ordering hid the problem for so long.
+  if(NOT TARGET autoware_msgs)
+    add_subdirectory("${_ACT_ROOT}/src/autoware/autoware_msgs" autoware_msgs)
   endif()
+  # Now that both routes have been tried, a still-missing target is a build
+  # configuration error and says so. Silently continuing produces a compile
+  # failure several files away that names none of this.
+  if(NOT TARGET autoware_msgs)
+    message(FATAL_ERROR
+      "controller_pkg: the autoware_msgs target is missing and could not be "
+      "added from ${_ACT_ROOT}/src/autoware/autoware_msgs. The component "
+      "cannot compile without the <autoware/autoware_msgs/messages.hpp> "
+      "umbrella include it carries.")
+  endif()
+  target_link_libraries(${_component} PUBLIC autoware_msgs)
 
   # nros codegen emits the generated C++ message headers under the autoware_msgs
   # subdir's binary tree (target_include_directories(app …) inside
