@@ -148,12 +148,11 @@ if(TARGET ${_component})
   # "'optional' in namespace 'std' does not name a template type", which names
   # the symbol and not the cause.
   #
-  # PUBLIC via the property pair: consumers that link this component compile
-  # against the same standard, which is what the workspace lane's generated
-  # entry TU needs.
-  set_target_properties(${_component} PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON)
+  # A FLOOR, not a pin. `set_target_properties(CXX_STANDARD 17)` sets the
+  # standard EXACTLY, which silently downgrades a parent that selected a later
+  # one — and the main build does select a later one. `cxx_std_17` says "at
+  # least 17", which is the actual requirement: raise the probe's 14, leave
+  # everything else alone.
   target_compile_features(${_component} PUBLIC cxx_std_17)
 
   # autoware_msgs INTERFACE target exposes the hand-written
