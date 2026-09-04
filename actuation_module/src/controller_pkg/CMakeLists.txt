@@ -121,6 +121,11 @@ nano_ros_add_node(controller
   TYPED
   SHAPE   rclcpp
   HEADER  controller_pkg/controller.hpp
+  # Stated, not inferred. cmake expands `${_controller_sources}` before it
+  # infers, but `nros`'s static CMakeLists scanner reads this line as text and
+  # sees a token with no extension — and the language it settles on picks the
+  # component's ABI seam (nano-ros issue 1062).
+  LANGUAGE CPP
   SOURCES ${_controller_sources}
   # RFC-0047 — the control timer's group; bound to [tiers.control] by
   # controller_bringup/system.toml group_tiers.

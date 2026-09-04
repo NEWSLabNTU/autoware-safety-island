@@ -39,7 +39,11 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-08-31. The three PRs this pin was waiting on are all in
+    # ON main, 2026-09-05, carrying nano-ros #1062 — the fix that stops the
+    # metadata probe from reading this repo's C++ controller as C. The pin it
+    # replaced (91241878b) is an ancestor, so this only moves forward.
+    #
+    # Earlier, 2026-08-31. The three PRs that pin was waiting on are all in
     # main now, under different hashes because the merge queue rebases:
     #   #61 forward NROS_ZEPHYR_HEAP_SIZE to cargo  -> 6d95c1a8b
     #   #71 starvation says so; impossible sizes fail -> ee0d1933a
@@ -63,7 +67,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 91241878b73f30d02fb8ca9e2637a2069da1408b
+      revision: 902ea135e79f8cd5f507576e8a72816409086085
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
