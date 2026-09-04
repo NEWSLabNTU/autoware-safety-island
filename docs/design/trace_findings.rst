@@ -166,7 +166,8 @@ gap of 29.2 ms is the same order as the 30 ms nominal control period.
 The 3.2 s gap is a traffic gap, not a stall
 -------------------------------------------
 
-``rx_q[0]`` and the unnamed pool thread at ``0x00281cc0`` both show a maximum
+``rx_q[0]`` and the anonymous thread at ``0x00281cc0`` -- since identified as
+CycloneDDS's unicast receive thread ``recvUC`` -- both show a maximum
 inter-activation gap of 3234 ms, agreeing to 150 us, which looks like a single
 global stall. It is not. Over that window the core is **83.9% idle**; the two
 threads agree because they are the same RX pipeline and neither had work.
@@ -178,10 +179,20 @@ No tier threads exist on this lane
 
 Every thread in the image is either named by this repo
 (``asi_thread_stats``, ``asi_sntp_resync``), a Zephyr subsystem thread
-(``rx_q[0]``, ``sysworkq``, ``net_mgmt``, ``tcp_work``), or an unnamed
-nano-ros **generic pool** thread. The tier pool is absent, so
-``[tiers.high.zephyr] priority = 5, deadline_us = 10000`` is not active here
-and the control work runs on ``main``.
+(``rx_q[0]``, ``sysworkq``, ``net_mgmt``, ``tcp_work``), or -- in the
+captures below -- an anonymous one shown only by stack address. The tier
+pool is absent, so ``[tiers.high.zephyr] priority = 5, deadline_us = 10000``
+is not active here and the control work runs on ``main``.
+
+.. note::
+
+   This document originally called those anonymous threads nano-ros
+   **generic pool** threads. That was wrong, and the error mattered: it
+   pointed the fix at the wrong layer. They are **CycloneDDS ddsrt**
+   threads, and they were anonymous because ``ddsrt_thread_setname`` had no
+   Zephyr arm -- a preprocessor chain over ``__linux``/``__APPLE__``/
+   ``__FreeBSD__``/``__sun``/``__QNXNTO__`` falling through to a
+   ``#warning "not supported"``. See `Re-capture with named threads`_.
 
 The consequence for this comparison is blunt: the Zephyr lane and the
 FreeRTOS lane are not running the same structure, and no cross-lane tier
@@ -196,6 +207,86 @@ builds. That is not evidence that priority does not matter: in both captures
 ``rx_q[0]`` has **6 segments over 277 s** and ``main`` holds 99% of non-idle
 time. There is nothing to prioritise against. The experiment needs the TAP
 profile, where traffic exists.
+
+
+Re-capture with named threads
+=============================
+
+Taken 2026-09-04 on ASI ``e011f20`` (nano-ros ``9cc6d913``, CycloneDDS
+``79bd9cb9``) -- the pin that carries the ddsrt naming fix. Archived at
+``~/asi-captures/recap-2026-09-04-loaded/`` with its TSDL, Kconfig and
+console log.
+
+This is a **second measurement, not a correction of the first**. The
+dependency set moved 236 commits between them, so any timing difference is
+confounded and none of it is attributable to naming. The numbers above stand
+as what they were.
+
+**The anonymous 13.7 % row was ``recvUC``**, CycloneDDS's unicast receive
+thread. Occupancy over the clean window:
+
+.. code-block:: text
+
+   task                         occ%   segs   slice p50   per p50   preempt%
+   main                        62.16   8040     932.3u    3.894 ms     15.4%
+   recvUC                      16.64   5132     973.8u    8.083 ms     35.2%
+   rx_q[0]                     14.54   3807    1011.6u    8.058 ms      0.5%
+   sysworkq                     4.14   7197     154.3u    4.705 ms     32.5%
+   tev                          2.32   2697     118.7u   30.155 ms     69.0%
+   dq.builtins                  0.17     55     171.9u   37.649 ms     15.4%
+   recv                         0.02     13     407.6u    3.108  s      0.0%
+
+Every row that previously read ``unknown (0x...)`` now names a Cyclone
+thread. ``main``'s own figures over the same window:
+
+.. code-block:: text
+
+   activations 6207
+   period   p50  3.894   p90  8.428   p99  9.948   max 1000.362 ms
+   exec     p50  1.451   p90  5.952   p99  6.507   max   87.420 ms
+
+**Two anonymous segments survive, and they are not a regression.**
+``ddsrt`` names a thread from inside its own trampoline, so the first
+segment a thread runs -- before it reaches ``ddsrt_thread_setname`` -- is
+still recorded under its address. One segment each for ``tev`` and
+``recv``, out of 153820. Naming from the spawn attr would close even that,
+which is what nano-ros #159 does for threads that take the platform path;
+Cyclone does not.
+
+Bounds on this capture, stated because they are tighter than they look
+=======================================================================
+
+**The usable window is the first 30 s, not the full 300 s.** The decoder's
+wrap check reported two ambiguous gaps:
+
+.. code-block:: text
+
+   AMBIGUOUS gap 4.293 s at t= 30.065 s   thread_switched_in -> mutex_lock_exit
+   AMBIGUOUS gap 4.292 s at t=150.326 s   thread_switched_in -> mutex_lock_enter
+
+Both sit within 3 ms of one full wrap period (4.295 s), which is the
+signature of a reconstruction that is missing an epoch rather than of a real
+gap. Timestamps after t=30.065 s may be understated by a multiple of the wrap
+period, so every figure above is taken from ``--until 30``.
+
+That check is the one added for the CANHUBK344 hardware lane
+(:doc:`trace_on_hardware`). It found its first real case here, on our own
+data, which is also the argument for the ``app_marker`` heartbeat that lane
+is adopting: with a sequence-numbered heartbeat these two gaps would be
+repairable rather than merely detectable.
+
+**This run was loaded from boot**, so it shows no traffic-onset transition.
+The compose stack was seeded -- ``/initialpose`` confirmed by
+``/localization/kinematic_state``, then the goal confirmed by
+``/planning/scenario_planning/trajectory`` -- *before* the island was
+launched, where the original capture started the island first and saw
+traffic arrive at t=20 s.
+
+An unloaded attempt preceded this one and was discarded rather than
+published: it recorded 277 ``Inputs not ready -- commanding safe stop``
+against 1 here, and ``recv`` moved 1 segment in 300 s. It measured an idle
+island, and its numbers would have replaced a loaded measurement with an
+unloaded one while appearing to differ only in thread names.
 
 
 Cross-lane cautions
