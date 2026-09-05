@@ -31,6 +31,28 @@ source "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
 # cannot execute, and misleading about why.
 add_ros_lib_paths
 
+# ...and the message prefixes, for the same reconfigure. Without them it dies on
+# the first .msg it looks for: "nros_generate_interfaces(): cannot find
+# 'msg/Odometry.msg' for package 'nav_msgs'".
+#
+# Three separate variables now, all one shape: `west build --target run`
+# re-enters cmake, so whatever build.sh resolves, this script has to resolve
+# identically. Each is defined once and sourced by both.
+# shellcheck source=../../scripts/ament-env.sh
+source "${ROOT_DIR}/scripts/ament-env.sh"
+resolve_ament_env
+
+# The rest of what build.sh puts around a Zephyr configure, for the same reason:
+#   * CMAKE_PREFIX_PATH is CLEARED. Resolving the messages above may source a
+#     ROS setup.bash, which sets it -- and a populated CMAKE_PREFIX_PATH lets
+#     the cross build find host ROS packages. build.sh clears it deliberately;
+#     a reconfigure here must not quietly reintroduce it.
+#   * the host `nros` CLI is on PATH, since the Zephyr module resolves the
+#     codegen tool from _NANO_ROS_CODEGEN_TOOL, then $NROS_CLI, then PATH.
+export CMAKE_PREFIX_PATH=""
+export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+export PATH="${ROOT_DIR}/modules/nros/packages/cli/target/release:${PATH}"
+
 mkdir -p "${LOG_DIR}"
 
 # ---------------------------------------------------------------------------
