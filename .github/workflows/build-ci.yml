@@ -1,6 +1,11 @@
 name: Build and Test
 
 on:
+  # This fork lands work by fast-forwarding `main` rather than through pull
+  # requests, so `pull_request` alone never fires and the first signal on a
+  # commit would be the nightly, hours later.
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   schedule:
