@@ -91,6 +91,23 @@ jobs:
           fi
           west zephyr-export
 
+      # west clones nano-ros as a manifest project and stops there; its OWN
+      # submodules stay empty. The Zephyr build then configures the CycloneDDS
+      # RMW and fails with "Cyclone DDS submodule not initialised". Runs after
+      # `west update` because that is what creates modules/nros, and stays
+      # unconditional because the cache-hit path skips the update entirely.
+      - name: Initialize nano-ros submodules (CycloneDDS backend)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C modules/nros submodule update --init --recursive third-party/dds/cyclonedds
+
+      # The Zephyr lane cross-compiles the nano-ros runtime for the FVP's
+      # AArch64 core; bootstrap-asi.sh adds this target for exactly this reason.
+      - name: Add the Rust cross target this lane builds
+        shell: bash
+        run: rustup target add aarch64-unknown-none
+
       - name: Run Zephyr FVP validation
         shell: bash
         run: .github/scripts/run-zephyr-fvp-ci.sh
@@ -218,6 +235,14 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           fi
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # Corrosion cross-compiles the nano-ros runtime for the R52. The CI script
+      # runs bootstrap with --skip-rustup, so nothing else adds this target and
+      # corrosion's FindRust stops the configure with "Target armv8r-none-eabihf
+      # is not installed". bootstrap-asi.sh adds the same target for this lane.
+      - name: Add the Rust cross target this lane builds
+        shell: bash
+        run: rustup target add armv8r-none-eabihf
 
       # The SDK store is cached too: re-downloading QEMU 11 and a 13.2 cross
       # toolchain on every run is the slowest part of this job by far.

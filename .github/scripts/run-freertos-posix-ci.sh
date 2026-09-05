@@ -32,6 +32,27 @@ echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/src/freertos_posix_entry/actuation_posix_entry"
 test -x "${entry}"
+
+# CycloneDDS on this lane links whatever the image supplies -- in the Autoware
+# devcontainer that includes iceoryx -- and the LINKER finding a library says
+# nothing about the LOADER finding it. CI died here with
+#   error while loading shared libraries: libiceoryx_binding_c.so
+# after a clean build and link. Put the prefixes' lib dirs on the run-time path.
+#
+# Both `lib` AND its multiarch subdirectory: this entry resolves libddsc from
+# /opt/ros/humble/lib/x86_64-linux-gnu, and iceoryx sits beside it there. A
+# path with only `lib` on it looks right and still fails.
+for _p in /opt/autoware /opt/autoware/*/ "/opt/ros/${ROS_DISTRO:-humble}" /opt/ros/*/; do
+  for _d in "${_p}/lib" "${_p}"/lib/*-linux-gnu; do
+    [ -d "${_d}" ] || continue
+    case ":${LD_LIBRARY_PATH:-}:" in
+      *":${_d}:"*) ;;
+      *) LD_LIBRARY_PATH="${_d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
+    esac
+  done
+done
+export LD_LIBRARY_PATH
+
 log="${BUILD_ROOT}/controller.log"
 rm -f "${log}"
 set +e
@@ -41,6 +62,12 @@ set -e
 if ! is_success_or_timeout "${rc}"; then
   dump_log "${log}"
   echo "Entry exited unexpectedly: ${rc}" >&2
+  # 127 from a binary that built and linked is a LOADER failure. Name the
+  # unresolved libraries rather than leaving the next reader to guess.
+  if [ "${rc}" = "127" ]; then
+    echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-unset}" >&2
+    ldd "${entry}" 2>&1 | grep "not found" >&2 || true
+  fi
   exit "${rc}"
 fi
 require_marker "${log}" "Starting Controller Node"
