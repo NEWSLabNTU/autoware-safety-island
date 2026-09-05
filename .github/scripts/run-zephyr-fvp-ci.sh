@@ -13,6 +13,13 @@ FVP_INSTALL_DIR="${BUILD_ROOT}/tools/fvp"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
+# The same nano-ros knobs build.sh resolves. `west build --target run` re-enters
+# cmake, and a reconfigure without these picks the crate defaults -- a 64 KiB
+# platform heap that cannot hold the 448 KiB executor arena -- so the lane
+# failed AFTER a successful build, at the moment it tried to start the model.
+# shellcheck source=../../scripts/zephyr-nros-knobs.sh
+source "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
+
 mkdir -p "${LOG_DIR}"
 
 # ---------------------------------------------------------------------------
