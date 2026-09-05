@@ -319,10 +319,18 @@ run_fvp_variant()
     waited=$((waited + 2))
   done
 
-  kill -TERM -- "-${wpid}" 2>/dev/null
+  # `|| true` on the kills too: the loop above breaks when the model exits on
+  # its own, and killing an already-dead group is a non-zero status that would
+  # abort a phase that had just succeeded. The cleanup trap already guards its
+  # kills this way; these two were the odd ones out.
+  kill -TERM -- "-${wpid}" 2>/dev/null || true
   sleep 1
-  kill -KILL -- "-${wpid}" 2>/dev/null
-  wait "${wpid}" 2>/dev/null
+  kill -KILL -- "-${wpid}" 2>/dev/null || true
+  # `|| true` because we just killed it: `wait` reports 143/137 and this script
+  # runs under `set -e`, so the status of a kill WE issued would abort the phase
+  # the moment its markers were satisfied. Phase 1 got exactly that far and
+  # exited 1 immediately after printing "markers satisfied".
+  wait "${wpid}" 2>/dev/null || true
   CURRENT_FVP_PID=""
 
   if [ ! -s "${log}" ]; then
