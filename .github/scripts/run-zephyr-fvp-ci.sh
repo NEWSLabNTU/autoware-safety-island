@@ -20,6 +20,17 @@ source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 # shellcheck source=../../scripts/zephyr-nros-knobs.sh
 source "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
 
+# `idlc` -- the CycloneDDS IDL compiler, a HOST tool this lane shells during
+# cmake configure -- comes from the image's ROS prefix and links iceoryx, which
+# the loader cannot find without this:
+#
+#   cached idlc /opt/ros/humble/bin/idlc cannot run (error while loading shared
+#   libraries: libiceoryx_binding_c.so)
+#
+# nano-ros then reports it as "idlc not found", which is true of a tool that
+# cannot execute, and misleading about why.
+add_ros_lib_paths
+
 mkdir -p "${LOG_DIR}"
 
 # ---------------------------------------------------------------------------

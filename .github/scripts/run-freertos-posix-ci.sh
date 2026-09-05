@@ -39,19 +39,9 @@ test -x "${entry}"
 #   error while loading shared libraries: libiceoryx_binding_c.so
 # after a clean build and link. Put the prefixes' lib dirs on the run-time path.
 #
-# Both `lib` AND its multiarch subdirectory: this entry resolves libddsc from
-# /opt/ros/humble/lib/x86_64-linux-gnu, and iceoryx sits beside it there. A
-# path with only `lib` on it looks right and still fails.
-for _p in /opt/autoware /opt/autoware/*/ "/opt/ros/${ROS_DISTRO:-humble}" /opt/ros/*/; do
-  for _d in "${_p}/lib" "${_p}"/lib/*-linux-gnu; do
-    [ -d "${_d}" ] || continue
-    case ":${LD_LIBRARY_PATH:-}:" in
-      *":${_d}:"*) ;;
-      *) LD_LIBRARY_PATH="${_d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
-    esac
-  done
-done
-export LD_LIBRARY_PATH
+# Shared with the Zephyr lane, which needs the same directories for a different
+# reason -- see add_ros_lib_paths in ci-helpers.sh.
+add_ros_lib_paths
 
 log="${BUILD_ROOT}/controller.log"
 rm -f "${log}"

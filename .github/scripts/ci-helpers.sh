@@ -16,6 +16,34 @@ set -euo pipefail
 # cannot hang the runner.
 CI_KILL_AFTER_SECONDS="${CI_KILL_AFTER_SECONDS:-5}"
 
+# Put the image's ROS / Autoware library directories on LD_LIBRARY_PATH.
+#
+# Two different things in this repo need it, and both failed the same way:
+#
+#   actuation_posix_entry: error while loading shared libraries: libiceoryx_binding_c.so
+#   cached idlc /opt/ros/humble/bin/idlc cannot run (... libiceoryx_binding_c.so ...)
+#
+# The first is the POSIX lane's own binary at run time; the second is a HOST
+# tool the Zephyr lane shells during cmake configure. A linker or a package
+# manager finding a library says nothing about the loader finding it.
+#
+# Both `lib` AND its multiarch subdirectory: these installs put the shared
+# objects in lib/x86_64-linux-gnu, and a path carrying only `lib` looks right
+# and still fails.
+add_ros_lib_paths() {
+  local p d
+  for p in /opt/autoware /opt/autoware/*/ "/opt/ros/${ROS_DISTRO:-humble}" /opt/ros/*/; do
+    for d in "${p}/lib" "${p}"/lib/*-linux-gnu; do
+      [ -d "${d}" ] || continue
+      case ":${LD_LIBRARY_PATH:-}:" in
+        *":${d}:"*) ;;
+        *) LD_LIBRARY_PATH="${d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
+      esac
+    done
+  done
+  export LD_LIBRARY_PATH
+}
+
 dump_log() {
   local log="$1"
   if [ -f "$log" ]; then
