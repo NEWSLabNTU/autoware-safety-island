@@ -58,8 +58,14 @@ assert_pin_lockstep()
   # still on no branch afterwards, so the check keeps its teeth.
   if [ -d "${ROOT_DIR}/modules/nros/.git" ] || [ -f "${ROOT_DIR}/modules/nros/.git" ]; then
     if ! git -C "${ROOT_DIR}/modules/nros" branch -r --contains "${actual}" 2>/dev/null | grep -q .; then
-      git -C "${ROOT_DIR}/modules/nros" fetch --quiet origin \
-        '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
+      # Not `origin`: west names the remote after the MANIFEST entry, so this
+      # clone's only remote is `newslab`. Fetching `origin` there fails, which
+      # is why the first attempt at this fix changed nothing in CI.
+      local rmt
+      for rmt in $(git -C "${ROOT_DIR}/modules/nros" remote); do
+        git -C "${ROOT_DIR}/modules/nros" fetch --quiet "${rmt}" \
+          "+refs/heads/*:refs/remotes/${rmt}/*" 2>/dev/null || true
+      done
     fi
     if ! git -C "${ROOT_DIR}/modules/nros" branch -r --contains "${actual}" 2>/dev/null | grep -q .; then
       echo "lockstep: pin ${actual} is on no remote branch; a fresh clone cannot fetch it." >&2
