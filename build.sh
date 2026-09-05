@@ -51,6 +51,8 @@ function usage() {
   echo -e "${GREEN}    --trace            ${NC}Zephyr FVP only: build with CTF tracing + thread runtime"
   echo -e "${GREEN}                         stats, streaming the trace to uart1. See"
   echo -e "${GREEN}                         docs/design/rt_evaluation_zephyr.rst.${NC}"
+  echo -e "${GREEN}    --run              ${NC}Zephyr only: start the model for an already-built -d"
+  echo -e "${GREEN}                         directory, in the same environment the build had.${NC}"
   echo -e "${GREEN}    -c                 ${NC}Clean all builds and exit."
   echo -e "${GREEN}    -h                 ${NC}Display the usage and exit."
   echo ""
@@ -113,6 +115,13 @@ function parse_args() {
         require_arg "$1" "${2:-}"
         NETWORK_PROFILE="$2"
         shift 2
+        ;;
+      --run)
+        # Start the model for an ALREADY-BUILT -d directory, in the same
+        # environment a build gets. See ZEPHYR_RUN_ONLY in
+        # build_zephyr_actuation_module for why the run has to come from here.
+        ZEPHYR_RUN_ONLY=1
+        shift
         ;;
       --unit-test)
         BUILD_TEST_FLAG=1
@@ -496,6 +505,31 @@ function build_zephyr_actuation_module() {
     local extra_dtc_overlay
     extra_dtc_overlay=$(IFS=';'; echo "${extra_dtc_overlays[*]}")
     build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${extra_dtc_overlay}")
+  fi
+
+  # --run: start the model in THIS environment instead of configuring a build.
+  #
+  # `west build --target run` re-enters the build graph, and nano-ros's
+  # size-probe keys on every NROS_* variable in the environment plus the
+  # CONFIG_NROS_* lines of Zephyr's $DOTCONFIG. A run launched from outside this
+  # function therefore probes to different numbers than the build did, and the
+  # C/C++ header-agreement guard stops it:
+  #
+  #   NROS_EXECUTOR_SIZE: on-disk=477088 vs would-write=477336
+  #
+  # CI chased that variable by variable -- the knobs, then AMENT_PREFIX_PATH,
+  # then the loader path -- which cannot converge, because the identity is the
+  # WHOLE environment. Running from here means there is nothing to replicate.
+  # It also hands the model the ARMFVP flags set above, which an external
+  # launcher did not have either.
+  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
+    if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
+      echo -e "${RED}--run: no ELF at ${BUILD_DIR}/zephyr/zephyr.elf — build first.${NC}" 1>&2
+      exit 1
+    fi
+    echo -e "${GREEN}Starting the model for ${BUILD_DIR}...${NC}"
+    west build -d "${BUILD_DIR}" --target run
+    return
   fi
 
   west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"

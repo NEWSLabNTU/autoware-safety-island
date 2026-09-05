@@ -279,7 +279,14 @@ run_fvp_variant()
   # `setsid` so the model gets its own process group and can be killed as a
   # group. Killing by name or by a path pattern is what leaked an FVP that
   # then burned a core for ten hours.
-  setsid west build -d "${build_dir}" --target run >"${log}" 2>&1 &
+  # Through build.sh, NOT `west build --target run` directly: that command
+  # re-enters the build graph, and nano-ros's size-probe identity is every
+  # NROS_* variable in the environment plus $DOTCONFIG's CONFIG_NROS_* lines.
+  # Launched from here the numbers differed from the build's and the C/C++
+  # header guard stopped the run. Replicating the environment variable by
+  # variable cannot converge; running from the same place the build ran can.
+  setsid "${ROOT_DIR}/build.sh" --platform zephyr-fvp -t "${ZEPHYR_TARGET:-fvp_baser_aemv8r_smp}" \
+      -d "${build_dir}" --run >"${log}" 2>&1 &
   local wpid=$!
   CURRENT_FVP_PID="${wpid}"        # so ci_cleanup can reach it on abort
 
