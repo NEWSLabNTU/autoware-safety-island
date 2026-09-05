@@ -224,55 +224,32 @@ ci_cleanup()
 }
 trap ci_cleanup EXIT INT TERM
 
-# SERIALIZED -- this used to build the next variant in the BACKGROUND, to
-# overlap the previous phase's model run. The scheme rested on "only ever one
-# build is in flight at a time", and that premise was false: `run_fvp_variant`
-# launches the model with `west build --target run`, which RE-ENTERS the build
-# graph. A run therefore overlaps the background build, and nano-ros's
-# size-probe cache under modules/nros/build is shared across build dirs:
+# There is no background build, and no cross-variant interleave.
+#
+# This lane used to build the NEXT variant while the CURRENT one ran, on the
+# stated premise that "only ever one build is in flight at a time". Two things
+# were wrong with that. `run_fvp_variant` starts the model with
+# `west build --target run`, which RE-ENTERS the build graph -- so a run
+# overlapped the background build. And serializing those builds did not fix it:
 #
 #   nros-cpp: .../nros_config_generated.h was written by another crate with
-#   DIFFERENT probed sizes ... EXECUTOR_OPAQUE_U64S: on-disk=59636 vs
-#   would-write=59667
+#   DIFFERENT probed sizes ... NROS_EXECUTOR_SIZE: on-disk=477088 vs
+#   would-write=477336
 #
-# The C and C++ halves of one image then disagree about the runtime layout,
-# which the probe correctly refuses to let through. The overlap was worth a
-# couple of minutes; correctness of the image is worth more. The bg/wait
-# structure is kept so the phase code and its error paths stay unchanged.
+# came back with the builds strictly ordered. The cause is not concurrency but
+# the INTERLEAVE: building a differently-configured variant between another
+# variant's build and its run leaves that variant's build.ninja stale, so the
+# run reconfigures and re-probes, and nano-ros's size-probe state under
+# modules/nros/build no longer matches the header the earlier build wrote.
+#
+# Each variant is now built immediately before it is run. Nothing is stale at
+# run time, so `--target run` has nothing to rebuild -- which also retires a
+# whole class of failure this lane kept hitting, where the reconfigure ran
+# without the environment build.sh had established.
+#
+# BG_PID stays only for the cleanup trap, which kills a build if the job is
+# interrupted mid-phase.
 BG_PID=""
-BG_NAME=""
-BG_LOG=""
-
-build_variant_bg()
-{
-  local name="$1"
-  shift
-  BG_NAME="${name}"
-  BG_LOG="${LOG_DIR}/build-${name}.log"
-  echo "  (building ${name} -- serialized, see the note above)"
-  if ! "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@" \
-        >"${BG_LOG}" 2>&1; then
-    echo "Build of ${name} FAILED" >&2
-    tail -40 "${BG_LOG}" >&2
-    exit 1
-  fi
-  BG_PID=""
-}
-
-# Join the background build. A failure here must be as loud as a foreground
-# one, and must show its log -- a build that failed quietly in the background
-# would otherwise surface as a confusing "Missing ELF" much later.
-wait_build()
-{
-  [ -n "${BG_PID}" ] || return 0
-  local pid="${BG_PID}"
-  BG_PID=""
-  if ! wait "${pid}"; then
-    echo "Background build of ${BG_NAME} FAILED" >&2
-    tail -40 "${BG_LOG}" >&2
-    exit 1
-  fi
-}
 
 # Run FVP with the built ELF and capture output
 run_fvp_variant()
@@ -374,7 +351,6 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
-build_variant_bg unit --unit-test          # overlaps phase 1's model run
 run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}" \
     "Starting Controller Node" "Controller Node Started" \
     "Actuation Safety Island is Live"
@@ -384,16 +360,14 @@ require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
 forbid_marker "${LOG_DIR}/controller.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 2 - Zephyr FVP unit_test build + run"
-wait_build
-build_variant_bg dds-loopback --dds-loopback-test
+build_variant unit --unit-test
 run_fvp_variant unit "${LOG_DIR}/unit.log" "${FVP_TIMEOUT_SECONDS}" \
     "=== All Tests Passed ==="
 require_marker "${LOG_DIR}/unit.log" "=== All Tests Passed ==="
 forbid_marker "${LOG_DIR}/unit.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 3 - Zephyr FVP DDS loopback build + run"
-wait_build
-build_variant_bg can --can-output-test
+build_variant dds-loopback --dds-loopback-test
 run_fvp_variant dds-loopback "${LOG_DIR}/dds-loopback.log" "${FVP_TIMEOUT_SECONDS}" \
     "Starting DDS loopback test" "STEERING REPORT" "DDS loopback test passed"
 require_marker "${LOG_DIR}/dds-loopback.log" "Starting DDS loopback test"
@@ -402,19 +376,14 @@ require_marker "${LOG_DIR}/dds-loopback.log" "DDS loopback test passed"
 forbid_marker "${LOG_DIR}/dds-loopback.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 4 - Zephyr FVP CAN loopback build + run"
-wait_build
-build_variant_bg stats --trace-stats --dds-loopback-test
+build_variant can --can-output-test
 run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}" \
     "CAN output tests passed"
 require_marker "${LOG_DIR}/can.log" "CAN output tests passed"
 forbid_marker "${LOG_DIR}/can.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 5 - Zephyr FVP TAP network build smoke"
-# Join the stats build BEFORE starting this one. Phase 5 is build-only, so
-# without this the background stats build and this foreground TAP build would
-# run concurrently -- breaking the one-build-at-a-time property the overlap
-# scheme depends on for its cache behaviour.
-wait_build
+# Build-only phase; the variant it does not run is built where it IS run.
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap -d "${ROOT_DIR}/build/zephyr-fvp-tap"
 test -f "${ROOT_DIR}/build/zephyr-fvp-tap/zephyr/zephyr.elf"
 
@@ -424,7 +393,7 @@ echo "Phase 6 - Zephyr FVP scheduling statistics (rt-eval Layer 1)"
 # regression. See docs/design/rt_evaluation_zephyr.rst.
 # The stats build was started during phase 4 and joined in phase 5, so this
 # is a no-op; kept so the phase reads correctly if phase 5 is ever removed.
-wait_build
+build_variant stats --trace-stats --dds-loopback-test
 run_fvp_variant stats "${LOG_DIR}/stats.log" "${FVP_TIMEOUT_SECONDS}" \
     "DDS loopback test passed" "Thread analyze:" "Total CPU cycles used" \
     "Longest Frame"
