@@ -173,6 +173,52 @@ the others):
       (`-Dmain=actuation_main`), so the file dies with W3 — nothing to
       fold now.
 
+## W7 — board glue, handed over from nano-ros phase-215  [~]
+
+nano-ros phase-215 ("board crate as an importable unit") carried a **215.H**
+block tracking THIS repo's side of that import, plus a 215.J.5 item and an
+acceptance bullet about `actuation_module/CMakeLists.txt`. Those describe ASI
+work and belong here; nano-ros keeps the general feature and drops the
+consumer-specific plan. Recorded 2026-09-06 with the state each item is
+actually in, because two of the four had drifted.
+
+- [x] **Board glue is one line.** `actuation_module/CMakeLists.txt:154-155`
+      includes `nano_ros_use_board.cmake` and calls
+      `nano_ros_use_board(fvp-aemv8r-smp)` BEFORE `find_package(Zephyr)`, which
+      is where the BOARD id, the board's base `prj.conf`, its DTS overlay, the
+      default RMW (cyclonedds) and the runner (armfvp) come from. That replaced
+      the hand-glued `EXTRA_CONF_FILE` / `DTC_OVERLAY` / `BOARD` wiring.
+      _(This was nano-ros 215.H.2, and it has been done since phase 2.C while
+      that document still listed it as outstanding — a record, not a gap.)_
+
+- [~] **`actuation_module/boards/` still carries nine files, and that is
+      correct.** nano-ros 215.H.3 read "drop the per-board conf / overlay",
+      which is done for the BOARD's own glue — the base `prj.conf` and DTS
+      overlay now arrive from the crate. What is left is ASI's own VARIANT
+      matrix, layered by `build.sh:426-472` on top of the board:
+      `*_actuation.conf`, `*_tap_network.conf`, `*_can_loopback.{conf,overlay}`,
+      `*_tracing.overlay`, and the two `s32z270dc2_rtu0_r52*` overlays. A
+      consumer layering its own configuration over a board crate is the
+      intended shape, not leftover glue. **Condition to revisit:** only if a
+      variant here turns out to be describing the BOARD rather than this
+      application.
+
+- [ ] **`build.sh` still hardcodes the target list.** `build.sh:36` —
+      `ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")` —
+      and the per-variant conf/overlay layering below it keys on the HWMv2
+      basename derived from that string. nano-ros 215.H.4 wanted this driven by
+      the board crate instead. Real, small, and ASI's own: the board crate can
+      name its Zephyr BOARD id, so the list becomes a lookup rather than a
+      literal. Nothing depends on it today; the two-target list is correct as
+      written and the cost is that a third target means editing a shell array.
+
+- Dropped from the inherited plan, because they name files that exist on
+  neither branch: `fvp/NOTES.md` cross-references (215.H.6) and
+  `bootstrap-asi.sh` delegating to `nros setup board` (215.J.5). Neither file
+  has ever existed here. If that workflow is still wanted it should be scoped
+  against what the repo has, not resumed from a plan written for a layout that
+  did not land.
+
 ## W6 — ASI carries production logic; ROS infra belongs to nano-ros  [ ]
 
 The governing principle (2026-08-22): ASI's CMake and glue should be plain

@@ -1,6 +1,15 @@
 # Phase 4 — FreeRTOS targets onto nano-ros (retire the vendored CycloneDDS)
 
-Status (2026-08-20): OPEN — planned. The Zephyr targets are fully on
+Status (2026-09-06): **19 of 21 boxes done; the migration itself is
+COMPLETE.** Both FreeRTOS targets build on nano-ros and the legacy vendored
+`cyclonedds/` submodule is gone; CI runs `FreeRTOS POSIX (nano-ros)` and
+`FreeRTOS AN536 (emulated Cortex-R52)` green beside the Zephyr FVP lane. What
+remains is one deferred nicety (FVP idle pacing, below) — the other open box
+was a forward reference to phase-5 W5's logger item, which **landed
+2026-08-26** and is corrected below.
+
+The original status, kept because the plan it framed is still the record of
+how this was done: OPEN — planned. The Zephyr targets are fully on
 nano-ros (phase-3, validated end-to-end incl. the tap demo); the two
 FreeRTOS targets still build the LEGACY vendored `cyclonedds/` submodule
 plus the raw `common/dds` + bespoke-Node path. This phase migrates them and
@@ -576,11 +585,16 @@ together with the below that is the whole open set.
   person does not re-chase it.
 
 **Phase-5 W5 (ASI plumbing → nano-ros features):**
-- [ ] `common/logger/` → `nros_log`: sequenced BEHIND W3 because the legacy
+- [x] `common/logger/` → `nros_log` — **DONE 2026-08-26**, unblocked by W3 as
+      predicted. See phase-5 W5 for what shipped (the `log_*` surface stays for
+      the 20+ vendored Autoware TUs; the sink is `nros_log_emit_fmt`). This
+      entry is the forward reference and had gone stale against it; the
+      original wording follows.
+      _Sequenced BEHIND W3 because the legacy
       lane compiles `logger.hpp` and links no nros; a swap now would need a
       banned mode gate. Keep the `log_*` API surface (20+ vendored Autoware
       TUs call it), swap the sink; upstream has no throttle macros yet, so
-      `log_*_throttle` stays ASI-side.
+      `log_*_throttle` stays ASI-side._
 - (poll shim, network_config, main.cpp, SNTP epoch: closed or filed above.)
 
 **Demo / tooling:**

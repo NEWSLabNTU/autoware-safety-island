@@ -1,6 +1,13 @@
 # Phase 8 — callback-level tracing
 
-Status: **planned** (opened 2026-08-29). Scope: make the *callback* the unit of
+Status: **complete** (opened 2026-08-29, closed 2026-08-30). Every acceptance
+item is met — a capture attributes time to every registered callback, names come
+from registration events, FVP CI is green on all six phases at the 2026-08-30
+pin, and the subscription-callback cost that phase 7 could not see is now
+measured. One acceptance item is struck through rather than met, deliberately,
+and says so where it stands.
+
+Scope: make the *callback* the unit of
 observation instead of the thread, by instrumenting nano-ros's executor
 dispatch boundary rather than hand-placing markers in application code.
 
