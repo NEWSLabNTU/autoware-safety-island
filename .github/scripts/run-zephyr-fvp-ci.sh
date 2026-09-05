@@ -49,7 +49,18 @@ assert_pin_lockstep()
 
   # A pin no branch contains is unfetchable for a fresh clone even when the
   # two agree -- which is how a rebased-away commit stayed pinned for a day.
+  #
+  # `branch -r` answers from remote-tracking refs, which a working checkout has
+  # and a CI checkout may not: `west update` fetches the manifest revision and
+  # nothing else, so refs/remotes/origin/* is EMPTY and every pin looks orphaned.
+  # That is the false positive this guard hit the first time it ever ran in CI.
+  # Fetch the heads before believing the answer; a genuinely orphaned commit is
+  # still on no branch afterwards, so the check keeps its teeth.
   if [ -d "${ROOT_DIR}/modules/nros/.git" ] || [ -f "${ROOT_DIR}/modules/nros/.git" ]; then
+    if ! git -C "${ROOT_DIR}/modules/nros" branch -r --contains "${actual}" 2>/dev/null | grep -q .; then
+      git -C "${ROOT_DIR}/modules/nros" fetch --quiet origin \
+        '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
+    fi
     if ! git -C "${ROOT_DIR}/modules/nros" branch -r --contains "${actual}" 2>/dev/null | grep -q .; then
       echo "lockstep: pin ${actual} is on no remote branch; a fresh clone cannot fetch it." >&2
       exit 1

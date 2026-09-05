@@ -46,6 +46,15 @@ jobs:
         shell: bash
         run: git submodule update --init --recursive zephyr
 
+      # Same reason as the other two jobs: nano-ros's prebuilt SDK dists are
+      # .tar.zst and the devcontainer image has no zstd binary.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
       # phase-3 W1 — the Zephyr platforms build on nano-ros: the host `nros`
       # CLI (message codegen + entry orchestration) is a Rust binary built by
       # build.sh's bootstrap hook, and the nano-ros runtime cross-compiles via
@@ -121,6 +130,18 @@ jobs:
           git submodule update --init modules/nros
           git -C modules/nros submodule update --init packages/cli/third-party/play_launch
 
+      # nano-ros ships its prebuilt SDK dists (QEMU, the 13.2 cross toolchain)
+      # as .tar.zst, and `tar` cannot unpack one without the zstd binary. The
+      # devcontainer image does not carry it, so `nros setup --tool qemu` fails
+      # with "this prebuilt dist is zstd-compressed, but the `zstd` binary is
+      # not on PATH" — after paying for the download.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
       - name: Install Rust toolchain (nano-ros CLI + runtime)
         shell: bash
         run: |
@@ -177,6 +198,18 @@ jobs:
         run: |
           git submodule update --init modules/nros
           git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      # nano-ros ships its prebuilt SDK dists (QEMU, the 13.2 cross toolchain)
+      # as .tar.zst, and `tar` cannot unpack one without the zstd binary. The
+      # devcontainer image does not carry it, so `nros setup --tool qemu` fails
+      # with "this prebuilt dist is zstd-compressed, but the `zstd` binary is
+      # not on PATH" — after paying for the download.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
 
       - name: Install Rust toolchain (nano-ros CLI + runtime)
         shell: bash
