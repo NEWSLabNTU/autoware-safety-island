@@ -507,28 +507,65 @@ function build_zephyr_actuation_module() {
     build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${extra_dtc_overlay}")
   fi
 
-  # --run: start the model in THIS environment instead of configuring a build.
+  # --run: start the model WITHOUT re-entering the build graph.
   #
-  # `west build --target run` re-enters the build graph, and nano-ros's
-  # size-probe keys on every NROS_* variable in the environment plus the
-  # CONFIG_NROS_* lines of Zephyr's $DOTCONFIG. A run launched from outside this
-  # function therefore probes to different numbers than the build did, and the
-  # C/C++ header-agreement guard stops it:
+  # `west build --target run` rebuilds first, and that rebuild cannot be made
+  # to succeed from here. Measured, in a clean build dir, build then run:
   #
-  #   NROS_EXECUTOR_SIZE: on-disk=477088 vs would-write=477336
+  #   nros-cpp: nros_config_generated.h was written by another crate with
+  #   DIFFERENT probed sizes ... NROS_EXECUTOR_SIZE: on-disk=477088 vs
+  #   would-write=477336
   #
-  # CI chased that variable by variable -- the knobs, then AMENT_PREFIX_PATH,
-  # then the loader path -- which cannot converge, because the identity is the
-  # WHOLE environment. Running from here means there is nothing to replicate.
-  # It also hands the model the ARMFVP flags set above, which an external
-  # launcher did not have either.
+  # The two numbers come from two nros-c compilations that coexist in one build
+  # dir with different feature sets -- their own generated headers say so:
+  #
+  #   NROS_CONFIG_VARIANT "alloc_..._param_services_platform_zephyr_..."  -> 477336
+  #   NROS_CONFIG_VARIANT "critical_section_..._platform_zephyr_..."      -> 477088
+  #
+  # and both write the SAME shared header. Whichever build script runs second
+  # trips nano-ros's C/C++ agreement guard. The guard is right; what it catches
+  # is upstream, and it is reached on any second cargo invocation because the
+  # writer declares `rerun-if-changed` on the header it writes.
+  #
+  # So do not invoke cargo again to start a model that is already built. CMake
+  # records the FVP command line in build.ninja; run exactly that.
   if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
     if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
       echo -e "${RED}--run: no ELF at ${BUILD_DIR}/zephyr/zephyr.elf — build first.${NC}" 1>&2
       exit 1
     fi
+    local ninja_file="${BUILD_DIR}/build.ninja"
+    if [ ! -f "${ninja_file}" ]; then
+      echo -e "${RED}--run: no build.ninja in ${BUILD_DIR}.${NC}" 1>&2
+      exit 1
+    fi
+    # The `run_armfvp` custom command, verbatim: `cd <dir> && <fvp> -C ... -a elf`.
+    # Ninja escapes `$` as `$$` and a literal space in a path as `$ `; undo both.
+    local run_cmd
+    run_cmd="$(awk '/Custom command for zephyr\/CMakeFiles\/run_armfvp/{f=1} f && /^  COMMAND = /{sub(/^  COMMAND = /,""); print; exit}' \
+               "${ninja_file}" | sed 's/\$\$/$/g; s/\$ / /g')"
+    if [ -z "${run_cmd}" ]; then
+      echo -e "${RED}--run: no run_armfvp command in ${ninja_file}.${NC}" 1>&2
+      echo -e "${YELLOW}The board's run target is what supplies the model command line.${NC}" 1>&2
+      exit 1
+    fi
+    # ARMFVP-NOTFOUND is what cmake records when no model was on PATH at
+    # CONFIGURE time. Substitute the one resolved now rather than failing with
+    # a shell "command not found", which says nothing about the cause.
+    if [ "${run_cmd#*ARMFVP-NOTFOUND}" != "${run_cmd}" ]; then
+      if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R" ]; then
+        run_cmd="${run_cmd//ARMFVP-NOTFOUND/${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R}"
+      else
+        echo -e "${RED}--run: this build dir was configured with no FVP on PATH${NC}" 1>&2
+        echo -e "${YELLOW}(cmake recorded ARMFVP-NOTFOUND). Set ARMFVP_BIN_PATH, or rebuild"\
+" with the model installed.${NC}" 1>&2
+        exit 1
+      fi
+    fi
     echo -e "${GREEN}Starting the model for ${BUILD_DIR}...${NC}"
-    west build -d "${BUILD_DIR}" --target run
+    # Subshell: the recorded command begins with a `cd`, and that must not
+    # follow us back into the rest of this script.
+    ( eval "${run_cmd}" )
     return
   fi
 
