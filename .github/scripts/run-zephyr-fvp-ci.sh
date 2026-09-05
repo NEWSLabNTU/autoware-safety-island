@@ -184,11 +184,21 @@ ci_cleanup()
 }
 trap ci_cleanup EXIT INT TERM
 
-# Build a variant in the BACKGROUND, so it overlaps the previous phase's model
-# run. Phases are independent -- separate build dirs, separate logs -- and only
-# ever one build is in flight at a time, so nothing contends for the cargo or
-# ccache state. The win is bounded by min(build, run) per phase; it is a couple
-# of minutes, not the fifteen that early-exit recovers.
+# SERIALIZED -- this used to build the next variant in the BACKGROUND, to
+# overlap the previous phase's model run. The scheme rested on "only ever one
+# build is in flight at a time", and that premise was false: `run_fvp_variant`
+# launches the model with `west build --target run`, which RE-ENTERS the build
+# graph. A run therefore overlaps the background build, and nano-ros's
+# size-probe cache under modules/nros/build is shared across build dirs:
+#
+#   nros-cpp: .../nros_config_generated.h was written by another crate with
+#   DIFFERENT probed sizes ... EXECUTOR_OPAQUE_U64S: on-disk=59636 vs
+#   would-write=59667
+#
+# The C and C++ halves of one image then disagree about the runtime layout,
+# which the probe correctly refuses to let through. The overlap was worth a
+# couple of minutes; correctness of the image is worth more. The bg/wait
+# structure is kept so the phase code and its error paths stay unchanged.
 BG_PID=""
 BG_NAME=""
 BG_LOG=""
@@ -199,10 +209,14 @@ build_variant_bg()
   shift
   BG_NAME="${name}"
   BG_LOG="${LOG_DIR}/build-${name}.log"
-  "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@" \
-      >"${BG_LOG}" 2>&1 &
-  BG_PID=$!
-  echo "  (building ${name} in the background)"
+  echo "  (building ${name} -- serialized, see the note above)"
+  if ! "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@" \
+        >"${BG_LOG}" 2>&1; then
+    echo "Build of ${name} FAILED" >&2
+    tail -40 "${BG_LOG}" >&2
+    exit 1
+  fi
+  BG_PID=""
 }
 
 # Join the background build. A failure here must be as loud as a foreground
