@@ -208,12 +208,17 @@ ci_cleanup()
     BG_PID=""
   fi
 
+  # `|| true` because FINDING NOTHING is the good case, and it is a failure
+  # status: grep exits 1 on no match, `pipefail` promotes that over awk's 0, and
+  # `set -e` then aborts the trap -- which is the script's exit status. Every
+  # phase passed and the job still reported failure, one line after
+  # "Zephyr FVP runtime validation OK", because no stray FVP was left behind.
   local stray
   stray="$(ps -eo pid,args 2>/dev/null \
            | grep -F "${ROOT_DIR}/build/" \
            | grep -F 'zephyr.elf' \
            | grep -v ' grep ' \
-           | awk '{print $1}')"
+           | awk '{print $1}')" || true
   if [ -n "${stray}" ]; then
     echo "cleanup: sweeping stray FVP pid(s): $(echo ${stray} | tr '\n' ' ')" >&2
     # shellcheck disable=SC2086
