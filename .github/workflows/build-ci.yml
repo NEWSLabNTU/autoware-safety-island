@@ -101,6 +101,9 @@ jobs:
         run: |
           set -euo pipefail
           git -C modules/nros submodule update --init --recursive third-party/dds/cyclonedds
+          # nros-launch-resolve's parser crates live in this nested submodule;
+          # the two FreeRTOS jobs already init it for the same reason.
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
 
       # The Zephyr lane cross-compiles the nano-ros runtime for the FVP's
       # AArch64 core; bootstrap-asi.sh adds this target for exactly this reason.

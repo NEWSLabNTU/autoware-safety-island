@@ -300,6 +300,24 @@ run_fvp_variant()
 # a crash does not change the exit code: a require_marker-only phase stays
 # green straight through one, provided the marker printed first. That is
 # exactly how a net_socket_service stack overflow went unnoticed here.
+# Phase 0 - the launch resolver, which build.sh's bootstrap hook does NOT build.
+#
+# `nros codegen entry` resolves the bringup's SystemModel by shelling
+# `nros-launch-resolve`, and stops the cmake configure when it is absent:
+#
+#   resolve SystemModel for .../config/system_model.yaml: cannot resolve the
+#   SystemModel: `nros-launch-resolve` not found
+#
+# The FreeRTOS lanes have always built it in their own Phase 0; this lane
+# reached the same code only once its earlier failures were cleared.
+echo "Phase 0 - nano-ros launch resolver"
+NROS="${ROOT_DIR}/modules/nros"
+cargo build --release \
+  --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
+mkdir -p "${NROS}/packages/cli/target/release"
+ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
+       "${NROS}/packages/cli/target/release/nros-launch-resolve"
+
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
 build_variant_bg unit --unit-test          # overlaps phase 1's model run
