@@ -1,168 +1,177 @@
 .. Copyright (c) 2026, Arm Limited.
 .. SPDX-License-Identifier: Apache-2.0
 
-=============================================
-Probes and benchmarks worth adding to nano-ros
-=============================================
-
-A survey of what practical safety-critical and real-time systems measure,
-checked against what nano-ros measures today, to find the gaps worth closing.
-
-Each recommendation names what nano-ros already has, so nothing here proposes
-rebuilding something that exists.
-
-
-What nano-ros already has
-=========================
-
-Verified in the tree, not assumed.
-
-**Contract** (``nros-platform/src/board/tier.rs:45``): ``priority``, ``core``,
-``class``, ``period_us``, ``budget_us``, ``deadline_us``, ``deadline_policy``,
-``preempt_threshold``, ``time_slice_us``, ``stack_bytes``, ``spin_period_us``.
-
-**Runtime monitors** (``nros-node/src/executor/monitor.rs``), drained into
-``nros-diagnostics``:
-
-* ``rate-hierarchy-runtime`` -- publish rate over a window
-* ``max-age-runtime`` -- subscriber take age from the CDR header stamp
-* ``max-latency-runtime`` -- node-path take-to-publish
-* ``timer-overrun-runtime`` -- exact, from the timer's own counter
-* ``deadline-miss-runtime`` -- callback ran past its SchedContext deadline
-
-**Sporadic server** budget replenishment (``sched_context.rs``).
-
-**Heap accounting** with a retained high-water: ``peak_bytes``
-(``nros-platform/src/lib.rs:219``), exposed as
-``nros_platform_heap_used_bytes``.
-
-**Callback-level CTF tracing**, 30 leaf dispatch sites (nano-ros PR #145).
-
-**A static spin-quantization audit** (``spin.rs``, issue #515) that warns when
-a declared period is not an integer multiple of the spin period.
-
-That is a strong base. The monitors are event-driven violation detectors and
-the contract is rich. What is thin is *evidence produced when nothing is
-violated*, which is what sizing a contract needs.
-
-
-Recommendation 1: release jitter
-================================
-
-**The gap nano-ros already names.** ``spin.rs:2077``:
-
-    ...the rate is preserved and no activation is dropped, so every runtime
-    rule is (correctly) silent -- the jitter stays invisible until someone
-    measures cadence on target.
-
-Issue #515 added a *static* audit for the one cause it could see at build
-time. Nothing measures actual release instants at runtime.
-
-This is the single most established probe in the field. ``cyclictest``, the
-reference tool for real-time Linux validation, exists to report exactly one
-thing: the deviation between a timer's programmed wake-up and the instant the
-task actually resumed, as a histogram whose **maximum** is the figure of merit.
-Every RT Linux distribution documents it as the primary acceptance measurement.
-
-**Shape:** on each activation, record ``actual_release - nominal_release``.
-Keep min / max / a coarse histogram per tier. Cheap: one clock read that the
-spin loop already performs, one subtraction, one ``fetch_max``.
-
-**Why it matters here:** the ASI Zephyr capture showed an executor whose
-activation period had p50 9.742 ms, p99 29.173 ms and max 38.287 ms against a
-nominal 30 ms control period. Reconstructing that needed a full CTF capture,
-an out-of-tree kernel patch and a decoder. A jitter histogram would have said
-it directly, on any target, with no tracing infrastructure at all.
-
-
-Recommendation 2: execution-time high-water
+===========================================
+Real-time probes and benchmarks in nano-ros
 ===========================================
 
-``SpinPeriodResult.elapsed`` (``types.rs:99``) is per-period and transient.
-``Violation.measured`` records a number only at the instant a bound is
-breached. So a system that never violates produces **no evidence of how close
-it came**, which is precisely the evidence needed to choose ``budget_us`` and
-``deadline_us``.
+This began as a survey of what safety-critical and real-time systems measure,
+checked against what nano-ros measured, to find the gaps worth closing. Six
+recommendations came out of it. Five have since been built and one turned out
+to rest on a false premise.
 
-AUTOSAR OS assigns each task an execution budget and terminates a task that
-exceeds it. That mechanism is only as good as the budget, and the budget comes
-from measured worst-case execution on target.
+It is kept as a record of what was built, what each probe actually measures,
+and — because two of the original recommendations were wrong in ways that cost
+real work — where the survey misled.
 
-**Shape:** retain a per-callback (or per-SchedContext) ``exec_max_us``,
-alongside a ``since`` marker so it can be read and reset. Optionally a small
-histogram. This is one ``fetch_max`` on a value the dispatch loop already
-computes.
+Status
+======
 
-**Payoff:** closes the loop the contract implies but cannot currently feed.
-Measured maxima flow back into ``system.toml`` as budgets, rather than being
-guessed and then policed.
+============================================  ==================================
+Item                                          State
+============================================  ==================================
+1. Release jitter                             Landed; nominal corrected twice
+2. Execution-time high-water                  Landed
+3. Stack high-water                           Landed; C++ setter in review
+4. Alive supervision                          In review (nano-ros #462)
+5. Port conformance benchmark                 Landed
+6. End-to-end chain latency                   **Withdrawn — premise was wrong**
+============================================  ==================================
 
-Pair it with **execution vs response time** kept apart. The ASI Zephyr
-analysis found a callback whose execution max was 226.969 ms while its
-wall-clock span was 393.510 ms; reporting only the latter would have blamed
-the callback for 167 ms of other threads' work. Budget is sized from
-execution; deadline is checked against response.
-
-
-Recommendation 3: stack high-water
-==================================
-
-Heap has ``peak_bytes``. **Stack has nothing portable** -- the only stack call
-in the tree is Zephyr's ``k_thread_stack_free`` on teardown.
-
-ISO 26262 treats spatial freedom from interference as a first-class
-requirement, and stack overflow is the classic way one component corrupts
-another's state. AUTOSAR pairs memory protection with stack monitoring for
-exactly this reason.
-
-The absence shows: ASI had to read Zephyr's ``thread_analyzer`` printk output
-and grep it in CI (``require_stack_headroom`` in ``.github/scripts``). That is
-a text-scraping workaround for a missing platform capability, and it is
-Zephyr-only.
-
-**Shape:** add ``nros_platform_task_stack_high_water(task) -> usize`` to the
-platform ABI. Every target kernel already supports it:
-
-* FreeRTOS -- ``uxTaskGetStackHighWaterMark``
-* Zephyr -- ``k_thread_stack_space_get``
-* ThreadX -- stack fill-pattern inspection (``tx_thread_stack_highest_ptr``)
-* POSIX -- pattern fill at spawn
-
-Ports that genuinely cannot report it return ``None``, which is the same
-"unsupported is explicit" discipline the ABI already applies to ``stack_bytes``
-and ``priority``.
+Phase-436 later added two more, from a review of the executor rather than of
+the field: park-deadline attribution and a declared park granularity. They are
+described under `What phase-436 added`_.
 
 
-Recommendation 4: alive supervision
-===================================
+Two corrections
+===============
 
-Every current monitor fires when something happens: a rate drifts, an age
-exceeds, a deadline is missed. Nothing fires when a callback **stops happening
-altogether**. ``rate-hierarchy-runtime`` covers publishers, not callbacks, so
-a timer callback that silently stops firing while its publisher is driven from
-elsewhere is invisible.
+These are stated first because both cost work, and both are the same kind of
+error: a claim about the system that nobody checked against the system.
+
+Recommendation 6's premise was false
+------------------------------------
+
+The original text said chain latency was *"the largest item here and the only
+one that touches the wire format"*, and listed it as highest value and highest
+cost.
+
+**No wire-format change is needed, and none was needed when this was written.**
+``max-age-runtime`` already computes age from the CDR header stamp
+(``observe_publish_stamp``, ``monitor.rs:116``). If a publisher propagates the
+originating stamp rather than restamping, that age *is* sensor-to-actuator
+latency across the chain — the quantity the recommendation asked for.
+
+The real gap was never the wire format. It is **stamp-propagation discipline**:
+whether each node in a chain forwards the stamp it received. That is a
+convention to document and check, not a protocol change, and it is a far
+smaller piece of work than the one that was scheduled.
+
+The recommendation is withdrawn rather than deferred, because deferring it
+would preserve the wrong reason.
+
+Recommendation 1 was implemented on a path no image takes
+---------------------------------------------------------
+
+The shape given was *"on each activation, record ``actual_release -
+nominal_release``"*, which is correct. The first implementation (nano-ros
+#312) put the probe in ``spin_period``.
+
+**nros-cpp's tiers do not call ``spin_period``.** They run a ``spin_once`` loop
+paced by ``platform_sleep_us``, so the probe recorded zero forever while
+appearing to work. This is the same class as nano-ros issue 0736 — a
+measurement placed on a path no shipped image takes — which had already been
+cited in the very PR that made the mistake.
+
+Fixed in #379/#418 by moving the probe into ``spin_once``, the function every
+driver goes through.
+
+A second, subtler version of the same error survived that fix. ``spin_once``'s
+argument is a **blocking bound**, not a cadence, and the tier loops pass a
+hardcoded 10 ms while pacing themselves with ``platform_sleep_us``. So the rule
+judged every tier against 10 ms whatever ``spin_period_us`` the contract
+declared: a 1 kHz tier could run nine periods late and register as on time.
+Corrected in #648 by declaring the cadence explicitly
+(``set_spin_nominal_us``) instead of inferring it from the timeout.
+
+The lesson worth keeping: **for a probe, "it compiles and reports a number" is
+not evidence that it measures the intended thing.** Three separate reviews
+passed a probe that was reporting zero.
+
+
+What was built
+==============
+
+1. Release jitter
+-----------------
+
+``release-jitter-runtime`` (``monitor.rs:563``), backed by
+``Executor::release_jitter() -> (max_us, late_wakes, total_wakes)``.
+
+Records ``actual - nominal`` per wake in ``spin_once``. The maximum is the
+figure of merit, as in ``cyclictest``; the late/total ratio separates the two
+failure modes — one late wake in ten thousand is a glitch, ten thousand in ten
+thousand means the period cannot be met at all.
+
+**Why it mattered here.** The ASI Zephyr capture showed activation periods of
+p50 9.742 ms, p99 29.173 ms, max 38.287 ms against a nominal 30 ms. Getting
+that number required a full CTF capture, an out-of-tree kernel patch and a
+decoder. The probe reports it directly on any target with no tracing at all.
+
+2. Execution-time high-water
+----------------------------
+
+``SchedContext::max_exec_us`` (``sched_context.rs:273``), a retained
+``fetch_max`` on a value the dispatch loop already computed and discarded.
+
+The point is evidence produced **when nothing is violated**. ``Violation.measured``
+records a number only at the instant a bound breaks, so a system that never
+violates produced no evidence of how close it came — which is exactly what
+sizing ``budget_us`` and ``deadline_us`` needs. Measured maxima now flow back
+into ``system.toml`` rather than being guessed and then policed.
+
+**Execution and response time are kept apart, deliberately.** The ASI analysis
+found a callback whose execution max was 226.969 ms while its wall-clock span
+was 393.510 ms. Reporting only the span would have blamed the callback for
+167 ms of other threads' work. Budget is sized from execution; deadline is
+checked against response.
+
+3. Stack high-water
+-------------------
+
+``nros_platform_task_stack_unused_bytes`` (``platform.h:292``) and the
+``stack-headroom-runtime`` rule.
+
+Replaces a Zephyr-only workaround: ASI had been scraping ``thread_analyzer``
+printk output and grepping it in CI. ISO 26262 treats spatial freedom from
+interference as first-class, and stack overflow is the classic way one
+component corrupts another.
+
+One defect worth recording, because it was self-inflicted and both PRs missed
+it: the accessor was first placed inside an ``alloc``-gated ``task`` module and
+called unconditionally, which broke the ``no_std`` Zephyr build. Neither PR
+caught it because ``--features std`` implies ``alloc``. Moved to the crate root
+in #487.
+
+The C++ setter (``nros_cpp_executor_set_min_stack_headroom``) is nano-ros #529,
+in review. Wiring it on the ASI side is still open.
+
+4. Alive supervision
+--------------------
+
+nano-ros #462, in review.
+
+Every other monitor fires when something *happens*. Nothing fires when a
+callback stops happening altogether — ``rate-hierarchy-runtime`` covers
+publishers, not callbacks, so a timer callback that silently stops while its
+publisher is driven from elsewhere is invisible.
 
 AUTOSAR's Watchdog Manager separates these deliberately: *alive supervision*
-(did it run at all, at roughly the right rate) is a distinct mechanism from
-*deadline supervision* (did it finish in time). nano-ros has the second and
-not the first.
+(did it run at all) is a distinct mechanism from *deadline supervision* (did it
+finish in time). nano-ros had the second and not the first.
 
-**Shape:** per-SchedContext liveness counter with an expected activation count
-per window; a violation when the delta is zero or far under. Reuses the
-existing window drain and the ``DeadlineAction`` escalation ladder
-(``ignore`` / ``warn`` / ``skip`` / ``fault``), so no new policy surface.
+5. Port conformance benchmark
+-----------------------------
 
+``packages/testing/nros-bench/port-metric``, a small ``no_std`` crate run per
+port.
 
-Recommendation 5: a port conformance benchmark
-==============================================
+Measured on the POSIX port: allocate+free 218 M/s, yield 13.7 M/s, mutex
+lock/unlock 252 M/s. The value is not the absolute number, which is
+board-specific, but the regression signal and an honest cross-port table.
 
-nano-ros supports at least Zephyr, FreeRTOS, ThreadX, NuttX, POSIX and several
-bare-metal boards. There is no way to say what a port costs, or to notice when
-a port regresses.
-
-The EEMBC **Thread-Metric** suite is the established shape for this and has
-been the standard RTOS comparison for two decades. Its tests map almost
-one-to-one onto what a nano-ros port must provide:
+Shaped after EEMBC Thread-Metric, whose tests map nearly one-to-one onto what
+a nano-ros port must provide:
 
 ===========================  ==========================================
 Thread-Metric test           nano-ros port surface
@@ -176,61 +185,60 @@ Semaphore processing         ``nros_platform_mutex_*`` / wake
 Memory alloc/dealloc         ``nros_platform_alloc``
 ===========================  ==========================================
 
-**Shape:** one small ``no_std`` crate run per port in CI, reporting
-iterations/second per test. The value is not the absolute number, which is
-board-specific, but the regression signal and the honest cross-port table.
 
-This also gives a home for the **tracing overhead** number. ``ros2_tracing``
-publishes its instrumentation cost (about 0.0033 ms average added end-to-end
-message latency) and that published figure is why people are willing to leave
-it enabled in production. nano-ros's callback hooks should be able to make the
-same claim with the same kind of evidence.
+.. _What phase-436 added:
 
+What phase-436 added
+====================
 
-Recommendation 6: end-to-end chain latency
-==========================================
+A later review of the executor itself — rather than of the field — found that
+the blocking wait was bounded by the caller's timeout narrowed only by the
+*backend's* next event. Nothing let a registered **timer** shorten the sleep,
+so ``spin_default()``'s 50 ms slept past a 10 ms timer it owned.
 
-``max-latency-runtime`` measures take-to-publish **within one node**. The
-quantity a vehicle integrator cares about is sensor-to-actuator across a chain
-of nodes.
+Two probes came out of the fix, both reporting rather than judging:
 
-``ros2_tracing`` separates intra-node, inter-node and end-to-end latency for
-this reason, and REP-2014 is the ROS 2 community's attempt to standardise
-benchmarking around it.
+* **Park attribution** — which deadline source bounded each park
+  (``last_park() -> (bound_us, WakeSourceId)``). Turns "why did we wake" from a
+  guess into a number, for one byte per spin.
+* **Declared park granularity** — ``park_granularity_us()`` states what the
+  build can actually express (1 ms today, since every ``nros_platform_wake_*``
+  port takes ``uint32_t timeout_ms``), and
+  ``release_jitter_granularity_us()`` states what the jitter figure is
+  therefore worth.
 
-**Shape:** propagate a correlation id in the message header and record
-first-publish and final-consume. This is the largest item here and the only
-one that touches the wire format, so it is listed last deliberately. It is
-also the only one that answers the question a safety case actually asks.
+The second exists because of a discipline this document has now been wrong
+about twice: **a measurement must not claim precision its mechanism cannot
+deliver.** Jitter is reported in microseconds; whether that is honest depends
+on whether the loop paces itself or is paced by the wait, so the executor says
+which.
+
+See nano-ros ``docs/roadmap/phase-436-poll-wake-revision-deadline-driven-executor.md``.
 
 
 Not recommended
 ===============
 
-* **A Rhealstone-style single composite figure.** It collapses six
-  independent costs into one number that hides which of them regressed.
-  Thread-Metric's per-test breakdown is strictly more useful.
+* **A Rhealstone-style single composite figure.** It collapses six independent
+  costs into one number that hides which of them regressed. Thread-Metric's
+  per-test breakdown is strictly more useful.
 * **Anything requiring a cycle-accurate model to interpret.** The FVP is a
-  programmer's-view fast model; probes whose value depends on cycle counts
-  will produce confident nonsense there. Everything above is meaningful on a
+  programmer's-view fast model; probes whose value depends on cycle counts will
+  produce confident nonsense there. Everything above is meaningful on a
   functional model and sharper on silicon.
 
 
-Priority
-========
+Still open
+==========
 
-1. Execution-time high-water (Rec 2) -- smallest change, feeds the contract
-   directly, and the contract already has the field waiting for it.
-2. Release jitter (Rec 1) -- closes a gap the code names, cheap, and needs no
-   tracing infrastructure.
-3. Stack high-water (Rec 3) -- safety-standard staple, currently worked around
-   with a Zephyr-only text scrape.
-4. Alive supervision (Rec 4) -- reuses the existing window and escalation.
-5. Port benchmark (Rec 5) -- separable, no runtime cost.
-6. Chain latency (Rec 6) -- highest value, highest cost, touches the wire.
-
-The first three are all "retain a maximum on a value that is already
-computed and then discarded".
+* Alive supervision (nano-ros #462) and the C++ stack-headroom setter (#529)
+  are in review; wiring the latter into ASI's entry has not been done.
+* **Stamp-propagation discipline** — the real content of the withdrawn
+  Recommendation 6. Whether each node in a chain forwards the stamp it
+  received is unchecked, and until it is, ``max-age-runtime`` reports
+  end-to-end latency only where the convention happens to hold.
+* Making the executor's wait loops wake off the backend's listener rather than
+  a fixed 10 ms grid (nano-ros issue 1195's larger half).
 
 
 Sources
