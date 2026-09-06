@@ -175,6 +175,26 @@ require_stack_headroom() {
     | grep -a "STACK: unused" \
     | sed -E 's/^ *(.*[^ ]) *: STACK: unused [0-9]+ usage ([0-9]+) \/ ([0-9]+) \(([0-9]+) %\).*/OK \4 \2 \3 \1/')
 
+  # NO rows is not "no breaches". An assertion that passes when the report is
+  # empty is an assertion that stops existing the moment the analyzer does --
+  # a renamed marker, a Kconfig dropped from tracing_stats.conf, an image that
+  # prints "Thread analyze:" and nothing under it. Measured against the CI
+  # artifact this gate has been reading: 51 rows, worst thread 70%. A run that
+  # produces none has not measured anything.
+  #
+  # 8 is well under a healthy image's count and well above zero: four idle
+  # threads alone (one per core) plus main, and this lane reports 51.
+  local count
+  count=$(printf '%s\n' "${rows}" | grep -ac '^OK ' || true)
+  if [ "${count}" -lt 8 ]; then
+    dump_log "$log"
+    echo "Only ${count} thread-analyzer stack row(s) in $log — expected at least 8." >&2
+    echo "CONFIG_THREAD_ANALYZER selects INIT_STACKS / THREAD_STACK_INFO; with the" >&2
+    echo "analyzer off there is nothing to measure and this check would pass on" >&2
+    echo "an empty report." >&2
+    exit 1
+  fi
+
   # Anything the pattern did not rewrite is an analyzer format this function
   # does not understand. Fail loudly instead of letting it fall through the
   # numeric test, which is exactly how the bug above stayed invisible.
