@@ -29,7 +29,32 @@ export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
 # it at what this image actually needs.
 export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
 export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
-export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-458752}"
+# MEASURED, and not the 458752 that stood here.
+#
+# nros budgets every arena slot at the ActionClient worst case (issue 0900):
+# MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048, about 1 MB at this lane's knobs.
+# 458752 was a cap on that guess. This image owns no action client, no action
+# server and no service -- `ros2 node info /controller` lists five
+# subscriptions and three publishers.
+#
+# What the runtime says it claims, measured on two lanes:
+#
+#   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
+#   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
+#
+# Within 300 bytes of each other across a 4x difference in rx_buf, so the claim
+# does not track the buffer knob the derivation multiplies by 12. 131072 is
+# 1.5x the measured claim.
+#
+# Too small is FATAL, not advisory. At 16 KiB, measured:
+#
+#   arena exhausted: 66356 more bytes needed, 784/16384 in use
+#   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
+#
+# The earlier 1008-byte figure quoted for this knob came from the DDS-LOOPBACK
+# TEST image in stats.log, not the controller -- a different image with a
+# fraction of the entities.
+export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
 # Zephyr heap for the nros allocator funnel. nano-ros phase-391 W3 moved
 # Zephyr allocation onto an rlsf-backed funnel and turned COMMON_LIBC_MALLOC
 # OFF, which retires CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE — the 16 MiB arena

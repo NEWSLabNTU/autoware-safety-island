@@ -612,6 +612,29 @@ function build_freertos_posix() {
   export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
+  # case (nano-ros issue 0900), so the DERIVED size is
+  # MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048 -- about 1 MB on this lane and
+  # 3.4 MB on an536, for an image that owns no action client, no action server
+  # and no service (`ros2 node info /controller`: five subscriptions, three
+  # publishers).
+  #
+  # What it actually claims, from the runtime's own advisory:
+  #
+  #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
+  #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
+  #
+  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # claim does not scale with the buffer knob the derivation multiplies by 12.
+  #
+  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # advisory -- measured at 16 KiB:
+  #
+  #   arena exhausted: 66356 more bytes needed, 784/16384 in use
+  #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
+  #
+  # so raise it, do not trim it, if this image ever grows an entity.
+  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
@@ -692,6 +715,29 @@ function build_freertos_armv8r_nros() {
   # 10 Hz on the host (the class nano-ros issue 0749 documents: an undersized
   # subscription buffer discards the sample silently, after Cyclone ACKed it).
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-65536}"
+  # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
+  # case (nano-ros issue 0900), so the DERIVED size is
+  # MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048 -- about 1 MB on this lane and
+  # 3.4 MB on an536, for an image that owns no action client, no action server
+  # and no service (`ros2 node info /controller`: five subscriptions, three
+  # publishers).
+  #
+  # What it actually claims, from the runtime's own advisory:
+  #
+  #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
+  #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
+  #
+  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # claim does not scale with the buffer knob the derivation multiplies by 12.
+  #
+  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # advisory -- measured at 16 KiB:
+  #
+  #   arena exhausted: 66356 more bytes needed, 784/16384 in use
+  #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
+  #
+  # so raise it, do not trim it, if this image ever grows an entity.
+  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
