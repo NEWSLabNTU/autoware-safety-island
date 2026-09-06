@@ -52,19 +52,32 @@ jobs:
           # Treat warnings as errors for clean builds
           SPHINXOPTS: "-W --keep-going"
 
+      # PUBLISHING is gated; BUILDING is not. This repo is a fork, and a fork has
+      # no Pages site unless someone enables one, so `actions/configure-pages`
+      # failed every run:
+      #
+      #   Get Pages site failed. Please verify that the repository has Pages
+      #   enabled and configured to build using GitHub Actions
+      #
+      # A workflow that is red for a reason unrelated to its subject teaches
+      # people to ignore it, and `sphinx-build -W` above is a real check worth
+      # keeping green. The canonical repo still publishes; a fork opts in by
+      # enabling Pages and setting the PUBLISH_DOCS repository variable.
       - name: Setup Pages
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && (github.repository == 'autowarefoundation/autoware-safety-island' || vars.PUBLISH_DOCS == 'true')
         uses: actions/configure-pages@v6
 
       - name: Upload artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && (github.repository == 'autowarefoundation/autoware-safety-island' || vars.PUBLISH_DOCS == 'true')
         uses: actions/upload-pages-artifact@v4
         with:
           path: './docs/_build/html'
 
   # Deployment job (only runs on push to main/master, not on PRs)
   deploy:
-    if: github.event_name != 'pull_request'
+    # Same gate as the upload above: with nothing uploaded there is nothing to
+    # deploy, and this job would fail looking for the artifact.
+    if: github.event_name != 'pull_request' && (github.repository == 'autowarefoundation/autoware-safety-island' || vars.PUBLISH_DOCS == 'true')
     runs-on: ubuntu-latest
     needs: build
     steps:
