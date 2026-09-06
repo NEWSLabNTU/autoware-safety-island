@@ -39,16 +39,15 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-09-05, carrying nano-ros #1062 — the fix that stops the
-    # metadata probe from reading this repo's C++ controller as C. The pin it
-    # replaced (91241878b) is an ancestor, so this only moves forward.
+    # ON main, 2026-09-07. 462 commits since the last bump, including #1156 —
+    # the fix that lets a C++-only Zephyr image build TWICE in one directory.
+    # ASI found that one by running #1100's stated acceptance, which #1100 could
+    # not run for want of a Zephyr SDK; the FVP lane now exercises it on every
+    # run, because it builds each variant and then starts a model.
     #
-    # Earlier, 2026-08-31. The three PRs that pin was waiting on are all in
-    # main now, under different hashes because the merge queue rebases:
-    #   #61 forward NROS_ZEPHYR_HEAP_SIZE to cargo  -> 6d95c1a8b
-    #   #71 starvation says so; impossible sizes fail -> ee0d1933a
-    #   #75 name chunks carry their handle           -> 0875ed688
-    # (which is why GitHub shows #61 and #71 as CLOSED rather than merged).
+    # Earlier, 2026-09-05, carrying #1062 — the metadata probe reading this
+    # repo's C++ controller as C. Earlier still, 2026-08-31: three PRs that
+    # landed under different hashes because the merge queue rebases.
     #
     # The previous revision, 13eb682fe, had been ORPHANED for the second time:
     # `fix/trace-names-bind-by-handle` no longer exists on the remote, so
@@ -67,7 +66,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 902ea135e79f8cd5f507576e8a72816409086085
+      revision: 1976727d8f09ee95af59eee750ae4f7d676f3833
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
