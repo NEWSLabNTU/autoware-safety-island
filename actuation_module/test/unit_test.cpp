@@ -70,7 +70,7 @@ public:
     explicit TestNode(nros::NodeHandle h)
     : nros::ComponentNode(h, "test_node")
     {
-        create_timer<TestNode, &TestNode::on_tick>(100);  // 10 Hz timer
+        create_wall_timer<TestNode, &TestNode::on_tick>(100);  // 10 Hz timer
         pose_pub = create_publisher<PoseStampedMsg>("test_pose");
         NROS_SUBSCRIBE(PoseStampedMsg, on_pose, "test_pose");
         // Backs the parameter write on_tick exercises from dispatch context.

@@ -23,7 +23,7 @@ public:
   explicit DdsTestSub(nros::NodeHandle h)
   : nros::ComponentNode(h, "dds_test_sub")
   {
-    create_timer<DdsTestSub, &DdsTestSub::on_timer>(500);
+    create_wall_timer<DdsTestSub, &DdsTestSub::on_timer>(500);
 
     NROS_SUBSCRIBE(SteeringReportMsg, on_steering_report,
                    "/vehicle/status/steering_status");
