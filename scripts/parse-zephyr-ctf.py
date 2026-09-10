@@ -417,6 +417,13 @@ def write_trace_meta(runs, dropped_disc, path):
              else "(wall-clock span marked INVALID for this lane)"))
 
 
+# A measured period is judged to one kernel tick. The FVP lane runs Zephyr at
+# CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000, so a timer can only fire on 1 ms
+# boundaries and a median dispatch gap within 1000 us of the declared period is
+# the period.
+TICK_TOL_US = 1000
+
+
 def load_contract(path, launch):
     """Declared scheduling parameters, for the W3 conformance check.
 
@@ -926,12 +933,21 @@ def report_stats(evs):
                     obs_prio[thread_label(ev)] = ev.fields.get("prio")
             ok = bad = 0
 
-            def check(what, declared, observed, note=""):
+            def check(what, declared, observed, note="", tol=None):
                 nonlocal ok, bad
                 if observed is None:
                     print(f"  ?  {what:<34} declared {declared}, NOT OBSERVED {note}")
                     return
-                if str(declared) == str(observed):
+                # A SETTING (a priority) must match exactly. A MEASURED period
+                # can only be judged to the resolution it was measured at, so
+                # it takes a tolerance: 30001 us against a declared 30000 us on
+                # a 1 ms tick is conforming, and exact string equality called
+                # it divergent.
+                if tol is not None:
+                    same = abs(int(observed) - int(declared)) <= tol
+                else:
+                    same = str(declared) == str(observed)
+                if same:
                     print(f"  OK {what:<34} {declared}")
                     ok += 1
                 else:
@@ -948,15 +964,22 @@ def report_stats(evs):
                 check("tier priority (Zephyr, on main)",
                       CONTRACT["tier_priority"], main_prio)
             if "ctrl_period_us" in CONTRACT:
+                # The CONTROL timer, by name. A timer's label carries its
+                # requested period (`timer@30000us`), and an image can own
+                # more than one: ASI's rt-probe readout adds a 1 s timer.
+                # This used to take whichever `timer@` handle came last, so a
+                # second timer silently replaced the control period with its
+                # own and the check reported the control loop at 1 Hz.
+                want = f"timer@{CONTRACT['ctrl_period_us']}us"
                 tp = None
                 for h, sp in spans.items():
-                    if (names.get(h, "") or "").startswith("timer@"):
+                    if (names.get(h, "") or "") == want:
                         st = sorted(a for a, _ in sp)
                         g = sorted(b - a for a, b in zip(st, st[1:]) if b > a)
                         if g:
                             tp = round(g[len(g) // 2] / 1e3)
                 check("control period (us)", CONTRACT["ctrl_period_us"], tp,
-                      "(median dispatch gap)")
+                      f"(median dispatch gap of {want})", tol=TICK_TOL_US)
             print(f"  {ok} conforming, {bad} divergent")
 
             print("\n=== suggested contract values (phase-9 W4) " + "=" * 20)
