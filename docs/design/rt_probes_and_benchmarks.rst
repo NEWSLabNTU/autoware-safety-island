@@ -22,8 +22,8 @@ Item                                          State
 ============================================  ==================================
 1. Release jitter                             Landed; nominal corrected twice
 2. Execution-time high-water                  Landed
-3. Stack high-water                           Landed; C++ setter in review
-4. Alive supervision                          In review (nano-ros #462)
+3. Stack high-water                           Landed; inert without INIT_STACKS
+4. Alive supervision                          Landed (nano-ros #462)
 5. Port conformance benchmark                 Landed
 6. End-to-end chain latency                   **Withdrawn — premise was wrong**
 ============================================  ==================================
@@ -143,13 +143,27 @@ called unconditionally, which broke the ``no_std`` Zephyr build. Neither PR
 caught it because ``--features std`` implies ``alloc``. Moved to the crate root
 in #487.
 
-The C++ setter (``nros_cpp_executor_set_min_stack_headroom``) is nano-ros #529,
-in review. Wiring it on the ASI side is still open.
+The C++ setter landed in nano-ros #529, and ASI does not need to call it: the
+Zephyr C entry derives the bound itself for every tier. The boot tier's bound
+comes from ``main()``'s stack, which is the thread that tier runs on, so the
+thread measured is the thread sized. ASI's single ``control`` tier is the boot
+tier.
+
+**On ASI's default FVP build the rule is armed and measures nothing.** Zephyr's
+``nros_platform_task_stack_unused_bytes`` reports only with
+``CONFIG_INIT_STACKS`` and ``CONFIG_THREAD_STACK_INFO``, and returns 0 otherwise,
+which the rule reads as "not instrumented" and skips. The default build has
+``THREAD_STACK_INFO`` but not ``INIT_STACKS``. Only the ``--trace-stats`` variant
+turns stack painting on, through ``CONFIG_THREAD_ANALYZER`` in
+``tracing_stats.conf``. So a default-build run that reports zero headroom
+violations has not checked headroom. The ``--trace-stats`` CI lane is where the
+number is real.
 
 4. Alive supervision
 --------------------
 
-nano-ros #462, in review.
+Landed in nano-ros #462. It needs no declaration: each SchedContext is judged
+against the period it declares, so it runs on ASI as soon as the pin includes it.
 
 Every other monitor fires when something *happens*. Nothing fires when a
 callback stops happening altogether — ``rate-hierarchy-runtime`` covers
@@ -202,8 +216,9 @@ Two probes came out of the fix, both reporting rather than judging:
   (``last_park() -> (bound_us, WakeSourceId)``). Turns "why did we wake" from a
   guess into a number, for one byte per spin.
 * **Declared park granularity** — ``park_granularity_us()`` states what the
-  build can actually express (1 ms today, since every ``nros_platform_wake_*``
-  port takes ``uint32_t timeout_ms``), and
+  build can actually express. Since nano-ros W7.b it comes from the installed
+  park primitive: the kernel tick on Zephyr, 10 ms on ThreadX, and the 1 ms
+  ``wake_wait_ms`` floor only where no primitive is installed. And
   ``release_jitter_granularity_us()`` states what the jitter figure is
   therefore worth.
 
@@ -212,6 +227,11 @@ about twice: **a measurement must not claim precision its mechanism cannot
 deliver.** Jitter is reported in microseconds; whether that is honest depends
 on whether the loop paces itself or is paced by the wait, so the executor says
 which.
+
+A C or C++ entry such as ASI's could not read any of these numbers; its only
+signal was the violation line, which fires at a whole period late. nano-ros
+#871 adds ``nros_cpp_executor_release_jitter`` and
+``nros_cpp_executor_last_park`` for that.
 
 See nano-ros ``docs/roadmap/phase-436-poll-wake-revision-deadline-driven-executor.md``.
 
@@ -231,8 +251,12 @@ Not recommended
 Still open
 ==========
 
-* Alive supervision (nano-ros #462) and the C++ stack-headroom setter (#529)
-  are in review; wiring the latter into ASI's entry has not been done.
+* **Stack headroom on the default FVP build** is armed but blind without
+  ``CONFIG_INIT_STACKS`` (above). Either the default build pays for stack
+  painting, or the ``--trace-stats`` lane is declared the only place the number
+  exists.
+* **Reading jitter and park attribution from ASI** needs nano-ros #871. After
+  that comes the loaded cross-check against a CTF trace.
 * **Stamp-propagation discipline** — the real content of the withdrawn
   Recommendation 6. Whether each node in a chain forwards the stamp it
   received is unchecked, and until it is, ``max-age-runtime`` reports
