@@ -284,7 +284,17 @@ if [[ "${LANE}" == "an536" ]]; then
     -net nic -net tap,ifname="${TAP_IF}",script=no,downscript=no \
     -netdev hubport,id=h0,hubid=0 > "${ISLAND_LOG}" 2>&1 &
 else
-  nohup west build -d "${BUILD_DIR}" --target run > "${ISLAND_LOG}" 2>&1 &
+  # build.sh --run, NOT `west build --target run`. West's run target rebuilds
+  # first, and that rebuild re-enters cargo: it waits on the shared
+  # ~/.cargo package-cache lock, which another agent's build or test can hold
+  # for minutes. The model then never starts inside BOOT_TIMEOUT_S, and the
+  # failure reads as an island that never boots. `build.sh --run` launches the
+  # recorded run_armfvp command without touching the build graph, which is the
+  # same fix .github/scripts/run-zephyr-fvp-ci.sh already has (a83fa1f). The
+  # model's command line carries the ELF path, so demo_down's stray sweep still
+  # finds it.
+  nohup "${ROOT}/build.sh" --platform zephyr-fvp -d "${BUILD_DIR}" --run \
+    > "${ISLAND_LOG}" 2>&1 &
 fi
 ISLAND_PID=$!
 disown "${ISLAND_PID}" 2>/dev/null || true
@@ -323,7 +333,17 @@ if [[ "${LANE}" == "an536" ]]; then
     -net nic -net tap,ifname="${TAP_IF}",script=no,downscript=no \
     -netdev hubport,id=h0,hubid=0 > "${ISLAND_LOG}" 2>&1 &
 else
-  nohup west build -d "${BUILD_DIR}" --target run > "${ISLAND_LOG}" 2>&1 &
+  # build.sh --run, NOT `west build --target run`. West's run target rebuilds
+  # first, and that rebuild re-enters cargo: it waits on the shared
+  # ~/.cargo package-cache lock, which another agent's build or test can hold
+  # for minutes. The model then never starts inside BOOT_TIMEOUT_S, and the
+  # failure reads as an island that never boots. `build.sh --run` launches the
+  # recorded run_armfvp command without touching the build graph, which is the
+  # same fix .github/scripts/run-zephyr-fvp-ci.sh already has (a83fa1f). The
+  # model's command line carries the ELF path, so demo_down's stray sweep still
+  # finds it.
+  nohup "${ROOT}/build.sh" --platform zephyr-fvp -d "${BUILD_DIR}" --run \
+    > "${ISLAND_LOG}" 2>&1 &
 fi
 ISLAND_PID=$!
 disown "${ISLAND_PID}" 2>/dev/null || true
