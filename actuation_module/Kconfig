@@ -181,6 +181,27 @@ config NET_IFACE2_VLAN
 # See docs/design/rt_evaluation_zephyr.rst. Enabled by ./build.sh --trace-stats
 # and --trace via actuation_module/tracing_stats.conf.
 
+config ASI_RT_PROBE_REPORT
+	bool "Periodic nano-ros release-jitter and park report"
+	help
+	  Print nano-ros's executor probes from the controller's own executor,
+	  once per ASI_RT_PROBE_REPORT_INTERVAL_MS, as one "rt-probe:" line:
+	  the worst wake past its nominal release, late and total wakes, the
+	  granularity that figure is worth, and the last park's bound, the park
+	  the platform was actually asked for, and which source bounded it.
+
+	  These are the figures nano-ros phase-436 A3 compares against a CTF
+	  capture. Without this the only signal is the release-jitter-runtime
+	  violation line, which fires only when a wake is a whole period late.
+
+	  The report is a timer on the control executor, so it is part of the
+	  load it measures: one formatted log line per interval.
+
+config ASI_RT_PROBE_REPORT_INTERVAL_MS
+	int "Interval between rt-probe reports (ms)"
+	depends on ASI_RT_PROBE_REPORT
+	default 1000
+
 config ASI_THREAD_STATS_REPORT
 	bool "Periodic thread statistics report"
 	depends on THREAD_ANALYZER

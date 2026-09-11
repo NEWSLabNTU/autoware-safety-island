@@ -36,6 +36,12 @@
 #include "controller_pkg/node_identity.hpp"
 #include "common/logger/logger.hpp"
 
+#if defined(CONFIG_ASI_RT_PROBE_REPORT)
+#include <inttypes.h>
+
+#include "nros/nros_cpp_ffi.h"  // nros_cpp_executor_release_jitter / _last_park
+#endif
+
 namespace controller_pkg {
 
 /// \brief ASI's trajectory-follower control node.
@@ -67,10 +73,52 @@ class Controller final
     explicit Controller(nros::NodeHandle handle)
         : ::autoware::motion::control::trajectory_follower_node::Controller(
               (common::logger::log_info("Starting Controller Node...\n"), handle))
+#if defined(CONFIG_ASI_RT_PROBE_REPORT)
+        , executor_(handle.executor)
+#endif
     {
         common::logger::log_success("Controller Node Started\n");
         common::logger::log_success("Actuation Safety Island is Live\n");
+#if defined(CONFIG_ASI_RT_PROBE_REPORT)
+        create_wall_timer<Controller, &Controller::report_rt_probes>(
+            CONFIG_ASI_RT_PROBE_REPORT_INTERVAL_MS);
+#endif
     }
+
+#if defined(CONFIG_ASI_RT_PROBE_REPORT)
+  private:
+    /// nano-ros phase-436 A3: one "rt-probe:" line per interval from the
+    /// executor this node runs on, covering THAT interval only. The
+    /// statistics are cleared after each report: the executor's own maximum
+    /// is since boot, and the boot transient (~34 ms on FVP) otherwise pins it
+    /// for the life of the process, hiding everything the steady state does.
+    /// granularity_us is what the figure is worth; park_source is
+    /// NROS_CPP_WAKE_SOURCE_* / platform index, for the last park only.
+    void report_rt_probes()
+    {
+        uint64_t max_us = 0, granularity_us = 0, bound_us = 0, achieved_us = 0;
+        uint32_t late = 0, total = 0;
+        uint8_t source = 0, index = 0;
+        if (nros_cpp_executor_release_jitter(executor_, &max_us, &late, &total,
+                                             &granularity_us) != NROS_CPP_RET_OK ||
+            nros_cpp_executor_last_park(executor_, &bound_us, &achieved_us, &source,
+                                        &index) != NROS_CPP_RET_OK) {
+            common::logger::log_warn("rt-probe: the executor refused the readout\n");
+            return;
+        }
+        common::logger::log_info(
+            "rt-probe: window_ms=%u jitter_max_us=%" PRIu64 " late=%" PRIu32
+            " total=%" PRIu32
+            " granularity_us=%" PRIu64 " park_bound_us=%" PRIu64
+            " park_achieved_us=%" PRIu64 " park_source=%u/%u\n",
+            static_cast<unsigned>(CONFIG_ASI_RT_PROBE_REPORT_INTERVAL_MS), max_us, late,
+            total, granularity_us, bound_us, achieved_us, static_cast<unsigned>(source),
+            static_cast<unsigned>(index));
+        (void)nros_cpp_executor_clear_release_jitter_stats(executor_);
+    }
+
+    void* executor_;
+#endif
 };
 
 }  // namespace controller_pkg
