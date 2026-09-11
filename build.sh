@@ -319,6 +319,51 @@ function build_nros_cli() {
 # shellcheck source=scripts/ament-env.sh
 . "${ROOT_DIR}/scripts/ament-env.sh"
 
+# --run: start the model for an ALREADY-BUILT -d directory. Needs only the
+# build dir and ARMFVP_BIN_PATH, so it runs BEFORE anything that touches
+# cargo. It used to run after build_nros_cli, and that "~0.1 s no-op" waits
+# on the shared ~/.cargo package-cache lock whenever another session's build
+# or test holds it: a model launch that needs no compiler at all sat blocked
+# on one for as long as the other session kept it.
+function run_zephyr_model() {
+  if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
+    echo -e "${RED}--run: no ELF at ${BUILD_DIR}/zephyr/zephyr.elf — build first.${NC}" 1>&2
+    exit 1
+  fi
+  local ninja_file="${BUILD_DIR}/build.ninja"
+  if [ ! -f "${ninja_file}" ]; then
+    echo -e "${RED}--run: no build.ninja in ${BUILD_DIR}.${NC}" 1>&2
+    exit 1
+  fi
+  # The `run_armfvp` custom command, verbatim: `cd <dir> && <fvp> -C ... -a elf`.
+  # Ninja escapes `$` as `$$` and a literal space in a path as `$ `; undo both.
+  local run_cmd
+  run_cmd="$(awk '/Custom command for zephyr\/CMakeFiles\/run_armfvp/{f=1} f && /^  COMMAND = /{sub(/^  COMMAND = /,""); print; exit}' \
+             "${ninja_file}" | sed 's/\$\$/$/g; s/\$ / /g')"
+  if [ -z "${run_cmd}" ]; then
+    echo -e "${RED}--run: no run_armfvp command in ${ninja_file}.${NC}" 1>&2
+    echo -e "${YELLOW}The board's run target is what supplies the model command line.${NC}" 1>&2
+    exit 1
+  fi
+  # ARMFVP-NOTFOUND is what cmake records when no model was on PATH at
+  # CONFIGURE time. Substitute the one resolved now rather than failing with
+  # a shell "command not found", which says nothing about the cause.
+  if [ "${run_cmd#*ARMFVP-NOTFOUND}" != "${run_cmd}" ]; then
+    if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R" ]; then
+      run_cmd="${run_cmd//ARMFVP-NOTFOUND/${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R}"
+    else
+      echo -e "${RED}--run: this build dir was configured with no FVP on PATH${NC}" 1>&2
+      echo -e "${YELLOW}(cmake recorded ARMFVP-NOTFOUND). Set ARMFVP_BIN_PATH, or rebuild"\
+" with the model installed.${NC}" 1>&2
+      exit 1
+    fi
+  fi
+  echo -e "${GREEN}Starting the model for ${BUILD_DIR}...${NC}"
+  # Subshell: the recorded command begins with a `cd`, and that must not
+  # follow us back into the rest of this script.
+  ( eval "${run_cmd}" )
+}
+
 function build_zephyr_actuation_module() {
   echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
   # Phase 3 W1 (nano-ros branch) — the Zephyr platforms run on nano-ros:
@@ -327,6 +372,10 @@ function build_zephyr_actuation_module() {
   # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
   # here. The FreeRTOS platforms below still use it unchanged.
   require_nros_checkout
+  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
+    run_zephyr_model
+    return
+  fi
   # Build the host `nros` CLI if missing or stale (full host provisioning is
   # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
   # — inlined from the retired bootstrap-nano-ros-shim.sh.
@@ -529,45 +578,6 @@ function build_zephyr_actuation_module() {
   #
   # So do not invoke cargo again to start a model that is already built. CMake
   # records the FVP command line in build.ninja; run exactly that.
-  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
-    if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
-      echo -e "${RED}--run: no ELF at ${BUILD_DIR}/zephyr/zephyr.elf — build first.${NC}" 1>&2
-      exit 1
-    fi
-    local ninja_file="${BUILD_DIR}/build.ninja"
-    if [ ! -f "${ninja_file}" ]; then
-      echo -e "${RED}--run: no build.ninja in ${BUILD_DIR}.${NC}" 1>&2
-      exit 1
-    fi
-    # The `run_armfvp` custom command, verbatim: `cd <dir> && <fvp> -C ... -a elf`.
-    # Ninja escapes `$` as `$$` and a literal space in a path as `$ `; undo both.
-    local run_cmd
-    run_cmd="$(awk '/Custom command for zephyr\/CMakeFiles\/run_armfvp/{f=1} f && /^  COMMAND = /{sub(/^  COMMAND = /,""); print; exit}' \
-               "${ninja_file}" | sed 's/\$\$/$/g; s/\$ / /g')"
-    if [ -z "${run_cmd}" ]; then
-      echo -e "${RED}--run: no run_armfvp command in ${ninja_file}.${NC}" 1>&2
-      echo -e "${YELLOW}The board's run target is what supplies the model command line.${NC}" 1>&2
-      exit 1
-    fi
-    # ARMFVP-NOTFOUND is what cmake records when no model was on PATH at
-    # CONFIGURE time. Substitute the one resolved now rather than failing with
-    # a shell "command not found", which says nothing about the cause.
-    if [ "${run_cmd#*ARMFVP-NOTFOUND}" != "${run_cmd}" ]; then
-      if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R" ]; then
-        run_cmd="${run_cmd//ARMFVP-NOTFOUND/${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R}"
-      else
-        echo -e "${RED}--run: this build dir was configured with no FVP on PATH${NC}" 1>&2
-        echo -e "${YELLOW}(cmake recorded ARMFVP-NOTFOUND). Set ARMFVP_BIN_PATH, or rebuild"\
-" with the model installed.${NC}" 1>&2
-        exit 1
-      fi
-    fi
-    echo -e "${GREEN}Starting the model for ${BUILD_DIR}...${NC}"
-    # Subshell: the recorded command begins with a `cd`, and that must not
-    # follow us back into the rest of this script.
-    ( eval "${run_cmd}" )
-    return
-  fi
 
   west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
 }
