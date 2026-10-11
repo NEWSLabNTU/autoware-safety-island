@@ -177,6 +177,8 @@ private:
   float stop_decel_mps2_ = SI_DEFAULT_STOP_DECEL_MPS2;
   // Fresh ego speed and monotonic time at the latch: the SI_STOP ramp origin.
   supervision::StopRamp stop_ramp_;
+  // X5H rpmsg-si fault event count already latched (si_channel_fault_events()).
+  unsigned si_fault_events_seen_ = 0;
 
   supervision::SourceWatch watch_heartbeat_;
   supervision::SourceWatch watch_steering_;
