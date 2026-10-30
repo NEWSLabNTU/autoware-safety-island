@@ -109,7 +109,14 @@ jobs:
       # AArch64 core; bootstrap-asi.sh adds this target for exactly this reason.
       - name: Add the Rust cross target this lane builds
         shell: bash
-        run: rustup target add aarch64-unknown-none
+        # For the toolchain nano-ros PINS (modules/nros/rust-toolchain.toml),
+        # which is the one corrosion and the Zephyr module build with --
+        # not just the runner's default.
+        run: |
+          tc="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' modules/nros/rust-toolchain.toml)"
+          rustup toolchain install "${tc}" --profile minimal
+          rustup target add --toolchain "${tc}" aarch64-unknown-none
+          rustup target add aarch64-unknown-none
 
       - name: Run Zephyr FVP validation
         shell: bash
@@ -245,7 +252,13 @@ jobs:
       # is not installed". bootstrap-asi.sh adds the same target for this lane.
       - name: Add the Rust cross target this lane builds
         shell: bash
-        run: rustup target add armv8r-none-eabihf
+        # For the toolchain nano-ros PINS (modules/nros/rust-toolchain.toml):
+        # corrosion's FindRust checks that one, not the runner's default.
+        run: |
+          tc="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' modules/nros/rust-toolchain.toml)"
+          rustup toolchain install "${tc}" --profile minimal
+          rustup target add --toolchain "${tc}" armv8r-none-eabihf
+          rustup target add armv8r-none-eabihf
 
       # The SDK store is cached too: re-downloading QEMU 11 and a 13.2 cross
       # toolchain on every run is the slowest part of this job by far.
