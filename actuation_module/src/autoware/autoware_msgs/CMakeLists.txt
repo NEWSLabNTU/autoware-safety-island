@@ -43,12 +43,13 @@ project(autoware_msgs LANGUAGES C CXX)
 # message (phase-380: no bound means an error, not a fallback buffer size),
 # and ROS's std_msgs/Header declares frame_id as an unbounded string, so
 # Trajectory, Odometry and AccelWithCovarianceStamped all failed the check.
-# nros-codegen.toml caps it. The config must be passed EXPLICITLY here: the
-# beside-package.xml auto-discovery in NanoRosVerbs.cmake only covers the
-# `_nros_generate_declared_interfaces` path used by interface CONSUMERS, and
-# this package calls nros_generate_interfaces() directly.
+# nros-codegen.toml caps it. It lives at the WORKSPACE ROOT
+# (actuation_module/, where `nros sync .` runs): nano-ros discovers it
+# ancestor-first from there (issue 1470), so the metadata probes of
+# controller_pkg read the same caps. It is still passed EXPLICITLY here: this
+# package calls nros_generate_interfaces() directly, outside that discovery.
 set(_nros_common SKIP_INSTALL
-    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/nros-codegen.toml")
+    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/../../../nros-codegen.toml")
 
 # NOTE: nros_generate_interfaces() does NOT walk DEPENDENCIES
 # transitively when building the FFI lib.rs include!() set. Every
