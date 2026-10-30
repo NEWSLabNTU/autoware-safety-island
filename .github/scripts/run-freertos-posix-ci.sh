@@ -29,6 +29,11 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}"
 
+# build.sh ran `nros sync` before configure; this asserts nothing it writes
+# is missing or stale afterwards (nano-ros's CI hook for the same check).
+echo "Phase 1b - nros sync --check"
+( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" sync --check . )
+
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/src/freertos_posix_entry/actuation_posix_entry"
 test -x "${entry}"

@@ -44,10 +44,14 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 #     designated initializers, which fails deep in the build with an error that
 #     reads as a codegen bug rather than a toolchain-age one (the same trap
 #     build.sh's SDK-first PATH order exists to avoid).
-# `--tool` takes ONE name (it is not repeatable — passing two prints the usage
-# and exits 0, which would look like success and leave the tool missing).
+# One tool per call keeps the failure message naming the tool that failed
+# (`--tool` is repeatable since nano-ros phase-447, but one plan hides which).
+#
+# Run from actuation_module/ so the committed nros-sdk.lock there governs the
+# versions (the lock is the project's record; `nros update` moves it).
 for tool in qemu arm-none-eabi-gcc; do
-  ( cd "${NROS}" && "${NROS_CLI}" setup --tool "${tool}" ) || {
+  ( cd "${ROOT_DIR}/actuation_module" && \
+      "${NROS_CLI}" setup --index "${NROS}/nros-sdk-index.toml" --tool "${tool}" ) || {
     echo "SDK provisioning failed for ${tool} — see the nros setup output above." >&2
     exit 1
   }
@@ -78,6 +82,11 @@ echo "QEMU: ${QEMU} ($("${QEMU}" --version | head -1))"
 
 echo "Phase 1 - AN536 (emulated Cortex-R52) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-an536 -d "${BUILD_ROOT}"
+
+# build.sh ran `nros sync` before configure; this asserts nothing it writes
+# is missing or stale afterwards (nano-ros's CI hook for the same check).
+echo "Phase 1b - nros sync --check"
+( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" sync --check . )
 
 echo "Phase 2 - runtime smoke on QEMU"
 entry="${BUILD_ROOT}/src/freertos_an536_entry/actuation_an536_entry"

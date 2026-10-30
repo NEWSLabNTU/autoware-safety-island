@@ -1,0 +1,9 @@
+[tool.arm-none-eabi-gcc]
+version = "13.2-nros5"
+provenance = "prebuilt"
+sha256 = "af5b2e04c6fd39e57a93671ed7e89e9e5d12ad50aad93d5c209d0d173976ea84"
+
+[tool.qemu]
+version = "11.0.0-nros7"
+provenance = "prebuilt"
+sha256 = "460a65abc578f598b8dab935d8c5dd9960b9b2e7d5a72e029ae7829a23b0ac3c"
