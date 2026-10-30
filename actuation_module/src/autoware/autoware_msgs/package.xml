@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026, NEWSLab NTU.
+  SPDX-License-Identifier: Apache-2.0
+  Phase 4 W5.a - workspace-mode identity for the vendored interface
+  aggregation package (nano_ros_workspace ORDER_FROM_DEPENDS requires a
+  package.xml per SUBDIR). The per-message packages under msg_ros/ carry
+  their own stubs for rosidl_adapter.
+-->
+<package format="3">
+  <name>autoware_msgs</name>
+  <version>0.1.0</version>
+  <description>Vendored ROS interface packages for the ASI controller (generated via nano-ros codegen).</description>
+  <maintainer email="cshih@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,32 @@
+# Serialized-size bounds for the messages the controller subscribes to.
+#
+# nano-ros requires every received message to carry a DERIVED upper bound: a
+# receive buffer cannot be sized from a type that has none, and phase-380 made
+# that an error rather than a silent fallback to DEFAULT_RX_BUF_SIZE. Three of
+# our subscriptions failed that check, all for the same reason -- ROS's
+# `std_msgs/Header` declares `frame_id` as an unbounded `string`:
+#
+#   autoware_planning_msgs/Trajectory              header.frame_id
+#   nav_msgs/Odometry                              header.frame_id, child_frame_id
+#   geometry_msgs/AccelWithCovarianceStamped       header.frame_id
+#
+# Capping here rather than in the `.msg` keeps the vendored upstream messages
+# untouched; the one local `.msg` override we do carry (msg_overrides/
+# Trajectory.msg, bounding the point sequence at 250) exists because there is
+# no field-cap equivalent for that shape.
+#
+# Keyed on the DECLARING type, so nested uses inherit -- one Header entry
+# covers all three subscriptions.
+#
+# A plain integer is an INLINE cap, which is what bounds. `heap` and `view`
+# caps are sizing hints that nothing enforces (RFC-0033) and deliberately do
+# NOT satisfy the bound.
+#
+# 64 bytes: Autoware frame ids in this system are short and fixed -- "map",
+# "odom", "base_link", "viewer". 64 leaves generous headroom while keeping the
+# derived receive buffers small, and it matches the width nano-ros's own
+# diagnostic-msgs config uses for comparable name fields.
+
+[fields]
+"std_msgs/Header.frame_id" = 64
+"nav_msgs/Odometry.child_frame_id" = 64
