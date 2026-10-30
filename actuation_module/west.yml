@@ -39,7 +39,10 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-10-30: 05b7f7d2648f, the pin NEWSLabNTU/simple-autoware-
+    # ON main, 2026-10-31: 4fcc75d413 (newest main with gate + post-submit
+    # green), the step after 05b7f7d below.
+    #
+    # Before that, 2026-10-30: 05b7f7d2648f, the pin NEWSLabNTU/simple-autoware-
     # safety-island main runs (play_launch v0.20.2). Moves across nano-ros
     # phase-427 (ComponentNode merged into rclcpp::Node), phase-486 W8
     # ([deploy.*] -> [image.*]), phase-492/503 (C API -> rclc_*, C++ headers
@@ -73,7 +76,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 05b7f7d2648f7968cb5fa9732461ff7551777768
+      revision: 4fcc75d413d9e06f84087d20b7777bdc3b216a99
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
