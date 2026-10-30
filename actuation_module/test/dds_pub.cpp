@@ -1,7 +1,7 @@
 // Copyright (c) 2026, NEWSLab NTU.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Phase 5 W5 — ported off the polling shim onto `nros::ComponentNode`.
+// Phase 5 W5 — ported off the polling shim onto `rclcpp::Node` (was `nros::ComponentNode`).
 // Publishes every controller input topic at 10 Hz so a host `dds_sub` /
 // the controller image can validate the ROS2 <-> Zephyr conversion.
 
@@ -9,8 +9,7 @@
 #include <cstdlib>
 #include <new>
 
-#include <nros/component_node.hpp>
-#include <nros/nros.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
@@ -20,26 +19,26 @@ using namespace common::logger;
 
 #define PUBLISH_PERIOD_MS (100)  // 10 Hz — realistic input cadence for the controller
 
-class DdsTestPub : public nros::ComponentNode {
+class DdsTestPub : public rclcpp::Node {
 public:
-  nros::Publisher<SteeringReportMsg> steering_pub;
-  nros::Publisher<TrajectoryMsg_Raw> trajectory_pub;
-  nros::Publisher<OdometryMsg> odometry_pub;
-  nros::Publisher<AccelerationMsg> acceleration_pub;
-  nros::Publisher<OperationModeStateMsg> operation_mode_pub;
+  rclcpp::Publisher<SteeringReportMsg> steering_pub;
+  rclcpp::Publisher<TrajectoryMsg_Raw> trajectory_pub;
+  rclcpp::Publisher<OdometryMsg> odometry_pub;
+  rclcpp::Publisher<AccelerationMsg> acceleration_pub;
+  rclcpp::Publisher<OperationModeStateMsg> operation_mode_pub;
 
-  explicit DdsTestPub(nros::NodeHandle h)
-  : nros::ComponentNode(h, "dds_test_pub")
+  explicit DdsTestPub(rclcpp::NodeHandle h)
+  : rclcpp::Node(h, "dds_test_pub")
   {
-    steering_pub = create_publisher<SteeringReportMsg>(
+    steering_pub = create_publisher_in<SteeringReportMsg>(
       "/vehicle/status/steering_status");
-    trajectory_pub = create_publisher<TrajectoryMsg_Raw>(
+    trajectory_pub = create_publisher_in<TrajectoryMsg_Raw>(
       "/planning/scenario_planning/trajectory");
-    odometry_pub = create_publisher<OdometryMsg>(
+    odometry_pub = create_publisher_in<OdometryMsg>(
       "/localization/kinematic_state");
-    acceleration_pub = create_publisher<AccelerationMsg>(
+    acceleration_pub = create_publisher_in<AccelerationMsg>(
       "/localization/acceleration");
-    operation_mode_pub = create_publisher<OperationModeStateMsg>(
+    operation_mode_pub = create_publisher_in<OperationModeStateMsg>(
       "/system/operation_mode/state");
   }
 };
@@ -53,7 +52,7 @@ static void spin_for_ms(long ms)
   const auto deadline =
     std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
   while (std::chrono::steady_clock::now() < deadline) {
-    (void)nros::spin_once(10);
+    (void)rclcpp::spin_once(10);
   }
 }
 
@@ -73,11 +72,11 @@ int main(void)
   }
 #endif
 
-  if (!nros::init().ok()) {
-    log_error("nros::init failed\n");
+  if (!rclcpp::init_in().ok()) {
+    log_error("rclcpp::init_in failed\n");
     std::exit(1);
   }
-  nros::NodeHandle handle(nros::global_handle());
+  rclcpp::NodeHandle handle(rclcpp::global_handle());
   auto * node = new (g_node_buf) DdsTestPub(handle);
   if (!node->ok()) {
     log_error("Failed to create DDS publisher node: %s (code=%d)\n",

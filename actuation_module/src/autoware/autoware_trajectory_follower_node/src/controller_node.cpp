@@ -51,12 +51,12 @@ extern "C" void asi_start_wall_clock_sync(void);
 namespace autoware::motion::control::trajectory_follower_node
 {
 // RFC-0044 construct-with-handle ctor. The entry hands the executor-bound
-// handle post-`nros::init`; `ComponentNode(handle, name)` creates the owned
+// handle post-`rclcpp::init_in`; `NodeWithTimers<1>(handle, name)` creates the
 // node, then the body wires the subscriptions / publishers / timer + MPC/PID.
 // The per-node pthread spin of the legacy DDS shim is gone -- the executor
 // drives us.
-Controller::Controller(nros::NodeHandle handle)
-: nros::ComponentNode(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
+Controller::Controller(rclcpp::NodeHandle handle)
+: rclcpp::NodeWithTimers<1>(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
   startup_config_(startupConfigFromParameters())
 {
 #if defined(ASI_FREERTOS_WALL_CLOCK)
@@ -169,7 +169,7 @@ Controller::Controller(nros::NodeHandle handle)
   // context (see header note).
   {
     const auto period_ms = static_cast<uint64_t>(ctrl_period * 1000);
-    create_timer_in<Controller, &Controller::callbackTimerControl>(
+    create_timer_in_group<Controller, &Controller::callbackTimerControl>(
       create_callback_group("control"), period_ms);
   }
 
@@ -184,24 +184,24 @@ Controller::Controller(nros::NodeHandle handle)
   // the controller only ever consumes the MOST RECENT sample of each input,
   // so any deeper reader history just buffers stale samples (and multiplies
   // the executor arena).
-  const nros::QoS latest_only = nros::QoS::default_profile().keep_last(1);
+  const rclcpp::QoS latest_only = rclcpp::QoS::default_profile().keep_last(1);
 
-  create_subscription<SteeringReportMsg, Controller, &Controller::on_steering_status>(
+  create_subscription_in<SteeringReportMsg, Controller, &Controller::on_steering_status>(
     topics::SUB_STEERING_STATUS, latest_only);
   if (supervision_mode_ == supervision::Mode::SI_CONTROL) {
     if (startup_config_.trajectory_source == StartupConfig::TrajectorySource::VP) {
       // VP's own path + speed schedule; the SI places it with the same-frame
       // ego pose (vp_reference.hpp), so no adapter sits between VP and SI.
-      create_subscription<DrivingReferenceMsg, Controller, &Controller::on_driving_reference>(
+      create_subscription_in<DrivingReferenceMsg, Controller, &Controller::on_driving_reference>(
         topics::SUB_DRIVING_REFERENCE, latest_only);
     } else {
-      create_subscription<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
+      create_subscription_in<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
         topics::SUB_TRAJECTORY, latest_only);
     }
   }
-  create_subscription<OdometryMsg, Controller, &Controller::on_odometry>(
+  create_subscription_in<OdometryMsg, Controller, &Controller::on_odometry>(
     topics::SUB_ODOMETRY, latest_only);
-  create_subscription<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
+  create_subscription_in<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
     topics::SUB_ACCELERATION, latest_only);
   // Durability must match the deployment's bridge. The operation mode is
   // published only when it changes: the classic demo bridge retains it with
@@ -210,13 +210,13 @@ Controller::Controller(nros::NodeHandle handle)
   // TRANSIENT_LOCAL request does not match at all (observed on the E2E rig
   // 2026-09-25, SI_OPERATION_MODE_DURABILITY=volatile).
   {
-    nros::QoS op_mode_qos = latest_only;
+    rclcpp::QoS op_mode_qos = latest_only;
     if (config.operation_mode_durability == StartupConfig::OpModeDurability::VOLATILE) {
       op_mode_qos.durability_volatile();
     } else {
       op_mode_qos.transient_local();
     }
-    create_subscription<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
+    create_subscription_in<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
       topics::SUB_OPERATION_MODE_STATE, op_mode_qos);
   }
 
@@ -238,18 +238,18 @@ Controller::Controller(nros::NodeHandle handle)
   // session/sequence/decision/source/cycle identity alongside the control
   // payload).
   if (supervision_mode_ == supervision::Mode::VP_CONTROL) {
-    create_subscription<DrivingCommandMsg, Controller, &Controller::on_driving_command>(
+    create_subscription_in<DrivingCommandMsg, Controller, &Controller::on_driving_command>(
       topics::SUB_DRIVING_COMMAND, latest_only);
   }
-  create_subscription<BoolMsg, Controller, &Controller::on_reenable>(
+  create_subscription_in<BoolMsg, Controller, &Controller::on_reenable>(
     topics::SUB_REENABLE, latest_only);
-  create_subscription<Float64StampedMsg, Controller, &Controller::on_heartbeat>(
+  create_subscription_in<Float64StampedMsg, Controller, &Controller::on_heartbeat>(
     topics::SUB_VP_HEARTBEAT, latest_only);
-  approved_request_pub_ = create_publisher<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
+  approved_request_pub_ = create_publisher_in<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
 
   // Publishers
   if (common::can::output_mode_uses_dds(output_mode_)) {
-    control_cmd_pub_ = create_publisher<ControlMsg>(topics::PUB_CONTROL_CMD);
+    control_cmd_pub_ = create_publisher_in<ControlMsg>(topics::PUB_CONTROL_CMD);
   }
 
   if (common::can::output_mode_uses_can(output_mode_)) {
@@ -265,9 +265,9 @@ Controller::Controller(nros::NodeHandle handle)
   }
 
   pub_processing_time_lat_ms_ =
-    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
+    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
   pub_processing_time_lon_ms_ =
-    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
+    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
 }
 
 StartupConfig Controller::startupConfigFromParameters()
@@ -1257,7 +1257,7 @@ void Controller::publishHold()
 }
 
 void Controller::publishProcessingTime(
-  const double t_ms, nros::Publisher<Float64StampedMsg>& pub)
+  const double t_ms, rclcpp::Publisher<Float64StampedMsg>& pub)
 {
   Float64StampedMsg msg{};
   msg.stamp = Clock::toRosTime(Clock::now());

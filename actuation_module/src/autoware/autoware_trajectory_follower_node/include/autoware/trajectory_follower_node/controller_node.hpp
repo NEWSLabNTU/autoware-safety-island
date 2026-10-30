@@ -38,11 +38,11 @@
 #include <vector>
 
 // nano-ros port (RFC-0044): the vendored controller is base-swapped off the
-// legacy `common/node` DDS shim onto `nros::ComponentNode`, the
+// legacy `common/node` DDS shim onto `rclcpp::NodeWithTimers<1>`, the
 // rclcpp-faithful IS-A-node base: identity in the ctor, typed member-callback
 // subscriptions, value-returning parameter facade. The MPC/PID control math
 // and the supervision logic (vp_si_control_contract) are untouched.
-#include <nros/component_node.hpp>
+#include <rclcpp/rclcpp.hpp>
 #include "autoware/autoware_msgs/messages.hpp"
 
 // SI_STOP deceleration when the stop_decel_mps2 parameter is unset. A target
@@ -65,15 +65,15 @@ namespace trajectory_follower = ::autoware::motion::control::trajectory_follower
 
 /// \classController
 /// \brief The node class used for generating longitudinal control commands (velocity/acceleration)
-class TRAJECTORY_FOLLOWER_PUBLIC Controller : public nros::ComponentNode
+class TRAJECTORY_FOLLOWER_PUBLIC Controller : public rclcpp::NodeWithTimers<1>
 {
 public:
   /// RFC-0044 construct-with-handle ctor: the generated entry placement-news
-  /// this node with the executor-bound handle *after* `nros::init`; the body
+  /// this node with the executor-bound handle *after* `rclcpp::init_in`; the body
   /// creates all entities and declares params. The startup selection
   /// (StartupConfig) is read from launch-seeded node parameters, see
   /// startupConfigFromParameters().
-  explicit Controller(nros::NodeHandle handle);
+  explicit Controller(rclcpp::NodeHandle handle);
   virtual ~Controller() {}
 
 private:
@@ -88,7 +88,7 @@ private:
 
   double timeout_thr_sec_;
   // Initialized from node parameters in the ctor's member-init list; the
-  // ComponentNode base (which owns declare_parameter) is constructed first.
+  // rclcpp::Node base (which owns declare_parameter) is constructed first.
   const StartupConfig startup_config_;
 
   std::optional<LongitudinalOutput> longitudinal_output_{std::nullopt};
@@ -102,7 +102,7 @@ private:
   StartupConfig startupConfigFromParameters();
 
   // Subscribers -- RFC-0044 typed member callbacks (`void on_X(const Msg&)`),
-  // wired via create_subscription<Msg, Controller, &Controller::on_X>(topic).
+  // wired via create_subscription_in<Msg, Controller, &Controller::on_X>(topic).
   void on_steering_status(const SteeringReportMsg& msg);
   void on_operation_mode_state(const OperationModeStateMsg& msg);
   void on_odometry(const OdometryMsg& msg);
@@ -140,14 +140,14 @@ private:
   // in controller_bringup/system.toml); the subscriptions stay in the node's
   // default context, so input deserialization cannot stall the control period.
 
-  // Publishers -- RFC-0044 value-typed `nros::Publisher<M>` members
-  // (default-constructed; assigned from create_publisher<M>(topic) in the ctor).
-  nros::Publisher<ControlMsg> control_cmd_pub_;
+  // Publishers -- RFC-0044 value-typed `rclcpp::Publisher<M>` members
+  // (default-constructed; assigned from create_publisher_in<M>(topic) in the ctor).
+  rclcpp::Publisher<ControlMsg> control_cmd_pub_;
   common::can::ControlCommandOutputMode output_mode_{common::can::configured_control_command_output_mode()};
   std::shared_ptr<common::can::ControlCommandCanOutput> can_output_;
-  nros::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
-  nros::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
-  nros::Publisher<ApprovedRequestMsg> approved_request_pub_;
+  rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
+  rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
+  rclcpp::Publisher<ApprovedRequestMsg> approved_request_pub_;
 
   // -------------------------------------------------------------------
   // Supervision (vp_si_control_contract, Safety Island issues #63/#64/#65)
@@ -299,7 +299,7 @@ private:
 
   //
   void publishProcessingTime(
-    const double t_ms, nros::Publisher<Float64StampedMsg>& pub);
+    const double t_ms, rclcpp::Publisher<Float64StampedMsg>& pub);
 
   //
   StopWatch<std::chrono::milliseconds> stop_watch_;

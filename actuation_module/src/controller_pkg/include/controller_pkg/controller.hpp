@@ -47,9 +47,9 @@ namespace controller_pkg {
 /// behaviour — the 5 subscriptions, 3 publishers, timer, MPC + PID
 /// controllers — comes from the base class; the node name and topic
 /// strings are sourced from `controller_pkg/node_identity.hpp`.
-/// Phase 242.5 (RFC-0044). The vendored base is now `nros::ComponentNode` (an
+/// Phase 242.5 (RFC-0044). The vendored base is now `rclcpp::NodeWithTimers<1>` (an
 /// IS-A-node, construct-with-handle component). `controller_pkg::Controller`
-/// inherits the base's `explicit Controller(nros::NodeHandle)` ctor so the
+/// inherits the base's `explicit Controller(rclcpp::NodeHandle)` ctor so the
 /// generated Zephyr Entry carrier can placement-new it with the executor handle.
 /// The pkg dir (`controller_pkg`) and registered class (`controller_pkg::Controller`)
 /// satisfy nano-ros's `<pkg-dir>::<UserClass>` identity rule. `NROS_COMPONENT`
@@ -64,7 +64,7 @@ class Controller final
     /// 5 subscriptions + 3 publishers + control timer, "Started"/"Live" once
     /// construction (entity creation) succeeded — a ctor throw ends the boot
     /// before the markers, which is exactly the failure CI should catch.
-    explicit Controller(nros::NodeHandle handle)
+    explicit Controller(rclcpp::NodeHandle handle)
         : ::autoware::motion::control::trajectory_follower_node::Controller(
               (common::logger::log_info("Starting Controller Node...\n"), handle))
     {
