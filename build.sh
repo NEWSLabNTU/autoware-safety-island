@@ -647,10 +647,15 @@ function build_freertos_posix() {
   #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
   #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
   #
-  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # Re-measured on nano-ros 05b7f7d2648f (2026-10-30, arena forced to 4 MiB):
+  #
+  #   freertos-posix:  91344/4194304 bytes claimed at first spin
+  #   freertos-an536:  90440/4194304 bytes claimed at first spin
+  #
+  # The two agree to within 1 KiB across a 4x difference in rx_buf, so the
   # claim does not scale with the buffer knob the derivation multiplies by 12.
   #
-  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # 131072 is ~1.4x the measured claim. Getting it too small is FATAL, not
   # advisory -- measured at 16 KiB:
   #
   #   arena exhausted: 66356 more bytes needed, 784/16384 in use
@@ -750,10 +755,15 @@ function build_freertos_armv8r_nros() {
   #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
   #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
   #
-  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # Re-measured on nano-ros 05b7f7d2648f (2026-10-30, arena forced to 4 MiB):
+  #
+  #   freertos-posix:  91344/4194304 bytes claimed at first spin
+  #   freertos-an536:  90440/4194304 bytes claimed at first spin
+  #
+  # The two agree to within 1 KiB across a 4x difference in rx_buf, so the
   # claim does not scale with the buffer knob the derivation multiplies by 12.
   #
-  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # 131072 is ~1.4x the measured claim. Getting it too small is FATAL, not
   # advisory -- measured at 16 KiB:
   #
   #   arena exhausted: 66356 more bytes needed, 784/16384 in use
