@@ -6,19 +6,19 @@ cmake_minimum_required(VERSION 3.22.1)
 
 # ---------------------------------------------------------------------------
 # Phase 4 W5.a — FreeRTOS POSIX simulator lane (nano-ros workspace mode).
-# Selected by -DNANO_ROS_PLATFORM=freertos (build.sh --platform freertos-posix).
+# Selected by -DNROS_PLATFORM=freertos (build.sh --platform freertos-posix).
 # The same controller_pkg / controller_bringup / autoware_msgs sources build
 # as a host process: the nros-board-freertos-posix board owns main() + the
 # scheduler, nodes run as FreeRTOS tasks over host CycloneDDS (nano-ros
 # phase-370). The Zephyr app below is untouched by this branch.
 # ---------------------------------------------------------------------------
-if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
+if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
   # Phase 4 W5.b — one workspace, one board per configure (the nano-ros
   # example-workspace contract). A cross board needs its CMAKE_TOOLCHAIN_FILE
   # set BEFORE project() (the first compiler probe); host-sim boards
   # (freertos-posix) need none.
-  if(NOT DEFINED NANO_ROS_BOARD)
-    set(NANO_ROS_BOARD freertos-posix)
+  if(NOT DEFINED NROS_BOARD)
+    set(NROS_BOARD freertos-posix)
   endif()
   # Every ARMv8-R cross board takes the same Cortex-R52 toolchain file: the
   # NXP S32Z270 (hardware) and QEMU's mps3-an536 (emulated, phase-6) differ in
@@ -27,7 +27,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
   # block.
   set(_asi_armv8r_boards "s32z270-freertos" "mps3-an536-freertos")
   set(_asi_is_armv8r FALSE)
-  if(NANO_ROS_BOARD IN_LIST _asi_armv8r_boards)
+  if(NROS_BOARD IN_LIST _asi_armv8r_boards)
     set(_asi_is_armv8r TRUE)
   endif()
   if(NOT CMAKE_TOOLCHAIN_FILE AND _asi_is_armv8r)
@@ -54,7 +54,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     # Cross target: no host rpath. Which entry leaf joins depends on the
     # board; the Eigen/pthread remedies below are shared by both because they
     # are properties of the arm-none-eabi ARMv8-R toolchain, not of the SoC.
-    if(NANO_ROS_BOARD STREQUAL "s32z270-freertos")
+    if(NROS_BOARD STREQUAL "s32z270-freertos")
       # The NXP-licensed board glue (RTD NETC netif override etc.) joins only
       # when its SDK env is provisioned — the pkg's own CMakeLists gates and
       # reports.
@@ -132,7 +132,7 @@ if(DEFINED NANO_ROS_PLATFORM AND NANO_ROS_PLATFORM STREQUAL "freertos")
     # (nano-ros issue 0353 rule; without it no capability reaches the build).
     SYSTEM   controller_bringup
     BACKEND  ${NROS_RMW}
-    PLATFORM "${NANO_ROS_PLATFORM}"
+    PLATFORM "${NROS_PLATFORM}"
     SUBDIRS  ${_asi_freertos_subdirs})
   return()
 endif()
@@ -240,7 +240,7 @@ else()
   # unaffected; the Zephyr lane's mirror sits in the wrong directory. Upstream
   # names the follow-up ("resolve from the entry's BRINGUP like
   # nano_ros_workspace(SYSTEM ...) does") — until that lands, lower it here.
-  if("param_services" IN_LIST NANO_ROS_FEATURES)
+  if("param_services" IN_LIST NROS_FEATURES)
     add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)
   endif()
 
