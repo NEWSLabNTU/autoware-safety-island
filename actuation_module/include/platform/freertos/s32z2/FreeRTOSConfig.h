@@ -39,7 +39,16 @@
 #define configMAX_TASK_NAME_LEN             32
 #define configUSE_16_BIT_TICKS              0
 #define configIDLE_SHOULD_YIELD             1
-#define configUSE_TIME_SLICING              1
+/* nano-ros issue 2017 (RFC-0108 D6): a tiered entry is a LEVEL image and its
+ * kernel must not time-slice a level against an equal-priority task mid
+ * callback. nano_ros_entry defines NROS_FREERTOS_LEVEL_IMAGE for it, and the
+ * board's freertos_run_tiers.c refuses to build against a config that ignores
+ * it. Same rule as the nano-ros board's own FreeRTOSConfig.h. */
+#if defined(NROS_FREERTOS_LEVEL_IMAGE) && NROS_FREERTOS_LEVEL_IMAGE
+#define configUSE_TIME_SLICING                  0
+#else
+#define configUSE_TIME_SLICING                  1
+#endif
 
 // CycloneDDS allocates everything (participant, readers/writers, history
 // caches, serdata, worker-thread stacks) through ddsrt_malloc -> pvPortMalloc,
