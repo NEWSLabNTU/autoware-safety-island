@@ -211,7 +211,8 @@ if(TARGET ${_component})
   foreach(_msgpkg builtin_interfaces std_msgs geometry_msgs nav_msgs
                   autoware_perception_msgs autoware_vehicle_msgs
                   autoware_planning_msgs autoware_control_msgs
-                  autoware_adapi_v1_msgs tier4_debug_msgs)
+                  autoware_adapi_v1_msgs tier4_debug_msgs
+                  visionpilot_msgs safety_island_msgs)
     if(TARGET ${_msgpkg}__nano_ros_cpp)
       target_link_libraries(${_component} PUBLIC ${_msgpkg}__nano_ros_cpp)
     endif()
