@@ -25,6 +25,12 @@ cargo build --release \
 ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
        "${NROS}/packages/cli/target/release/nros-launch-resolve"
 ( cd "${NROS}" && ./packages/cli/target/release/nros setup --source freertos-kernel )
+# Corrosion (the CMake road's Rust bridge) comes from the SDK store and a
+# configure no longer fetches it (nano-ros RFC-0104 D10). Provisioned from the
+# workspace root so actuation_module/nros-sdk.lock governs the version.
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS}/packages/cli/target/release/nros" setup \
+      --index "${NROS}/nros-sdk-index.toml" --tool corrosion )
 
 echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}"

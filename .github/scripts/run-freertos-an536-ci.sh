@@ -35,6 +35,8 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
        "${NROS}/packages/cli/target/release/nros-launch-resolve"
 ( cd "${NROS}" && "${NROS_CLI}" setup --source freertos-kernel )
 
+# Corrosion is needed by every CMake-road lane (see run-freertos-posix-ci.sh).
+#
 # Two tools this lane needs that a stock runner does not have, both from the
 # nano-ros SDK store so CI matches what a developer gets locally:
 #
@@ -49,7 +51,7 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 #
 # Run from actuation_module/ so the committed nros-sdk.lock there governs the
 # versions (the lock is the project's record; `nros update` moves it).
-for tool in qemu arm-none-eabi-gcc; do
+for tool in qemu arm-none-eabi-gcc corrosion; do
   ( cd "${ROOT_DIR}/actuation_module" && \
       "${NROS_CLI}" setup --index "${NROS}/nros-sdk-index.toml" --tool "${tool}" ) || {
     echo "SDK provisioning failed for ${tool} — see the nros setup output above." >&2

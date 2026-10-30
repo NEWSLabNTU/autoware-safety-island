@@ -407,6 +407,10 @@ function build_zephyr_actuation_module() {
   # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
   # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+  # The SystemModel nano_ros_entry reads is a build artifact only `nros sync`
+  # writes; since nano-ros issue 1575 a configure without it is refused, not
+  # silently tierless. Same step the FreeRTOS lanes run.
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
   local extra_conf_files=()
   # EXTRA_DTC_OVERLAY_FILE is a single cmake variable, so every overlay the
   # lane wants has to be collected and passed as one ';'-separated list —
