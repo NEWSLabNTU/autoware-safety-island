@@ -110,9 +110,11 @@ require_marker "${log}" "Actuation Safety Island is Live"
 require_marker "${log}" "Control command output mode: DDS_ONLY"
 # The [tiers.control] real-time model reached the board's scheduler.
 require_marker "${log}" "tier priority set tier=\`control\`"
-# No Autoware upstream here, so the loop takes the not-ready path every cycle
-# and must SAY so by commanding a stop (the 2026-08-24 safety hardening).
-require_marker "${log}" "Inputs not ready — commanding safe stop"
+# No Autoware upstream here, so the loop takes the not-ready path every cycle;
+# the supervisor (vp_si_control_contract) publishes HOLD with the stopped
+# payload there instead of nothing.
+require_marker "${log}" "Supervision mode: si"
+require_marker "${log}" "Control is skipped since input data is not ready."
 echo "AN536 smoke OK: R52 boot + lwIP + controller markers + control-loop spin"
 
 echo "FreeRTOS AN536 (emulated Cortex-R52) runtime validation OK"
