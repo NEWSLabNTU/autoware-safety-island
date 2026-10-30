@@ -44,11 +44,13 @@ jobs:
   build-zephyr:
     name: Zephyr Build (${{ matrix.name }})
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       # Pinned, so a tag always builds with the same toolchain. Move it to the
       # devcontainer-<sha> tag docker-build-push.yml published when .devcontainer changes.
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer-c92271b605bb3af960fdaffdedbe96e11efb4543
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
+      options: --user 0:0 --entrypoint=
     strategy:
       matrix:
         include:
@@ -76,7 +78,17 @@ jobs:
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
       - name: Initialize build submodules (private s32ct_config excluded)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: git submodule update --init --recursive zephyr
+
+      # phase-3 W1 — the Zephyr platforms build on nano-ros (host `nros` CLI
+      # + cargo cross-compile inside the west build). Mirror bootstrap-asi.sh.
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Initialize Zephyr workspace
         shell: bash
@@ -113,11 +125,13 @@ jobs:
   build-freertos:
     name: FreeRTOS POSIX Runtime Build
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       # Pinned, so a tag always builds with the same toolchain. Move it to the
       # devcontainer-<sha> tag docker-build-push.yml published when .devcontainer changes.
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer-c92271b605bb3af960fdaffdedbe96e11efb4543
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
@@ -134,7 +148,7 @@ jobs:
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
       - name: Initialize build submodules (private s32ct_config excluded)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: git submodule update --init --recursive zephyr
 
       - name: Run FreeRTOS POSIX validation
         shell: bash
