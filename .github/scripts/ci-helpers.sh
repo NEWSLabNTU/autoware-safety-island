@@ -17,6 +17,34 @@ set -euo pipefail
 # cannot hang the runner.
 CI_KILL_AFTER_SECONDS="${CI_KILL_AFTER_SECONDS:-5}"
 
+# Put the image's ROS / Autoware library directories on LD_LIBRARY_PATH.
+#
+# Two different things in this repo need it, and both failed the same way:
+#
+#   actuation_posix_entry: error while loading shared libraries: libiceoryx_binding_c.so
+#   cached idlc /opt/ros/humble/bin/idlc cannot run (... libiceoryx_binding_c.so ...)
+#
+# The first is the POSIX lane's own binary at run time; the second is a HOST
+# tool the Zephyr lane shells during cmake configure. A linker or a package
+# manager finding a library says nothing about the loader finding it.
+#
+# Both `lib` AND its multiarch subdirectory: these installs put the shared
+# objects in lib/x86_64-linux-gnu, and a path carrying only `lib` looks right
+# and still fails.
+add_ros_lib_paths() {
+  local p d
+  for p in /opt/autoware /opt/autoware/*/ "/opt/ros/${ROS_DISTRO:-humble}" /opt/ros/*/; do
+    for d in "${p}/lib" "${p}"/lib/*-linux-gnu; do
+      [ -d "${d}" ] || continue
+      case ":${LD_LIBRARY_PATH:-}:" in
+        *":${d}:"*) ;;
+        *) LD_LIBRARY_PATH="${d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
+      esac
+    done
+  done
+  export LD_LIBRARY_PATH
+}
+
 # Arm FVP pin for the Zephyr FVP jobs. The devcontainer installs this exact
 # version at /usr/local/bin (see .devcontainer/Dockerfile), so CI takes the
 # PATH branch; the download below stays as a fallback for images that do not
@@ -34,6 +62,16 @@ FVP_TARBALL="${ROOT_DIR:-${PWD}}/build/tools/fvp.tar.gz"
 ensure_fvp_available()
 {
   local fvp_bin
+
+  # Honour an ARMFVP_BIN_PATH the caller already set (activate-asi.sh exports
+  # one, and the licence-gated Arm download lands outside PATH). Without this
+  # the PATH lookup below misses a perfectly good local FVP and the CDN
+  # fallback re-downloads ~1 GB on every run.
+  if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/${FVP_BIN_NAME}" ]; then
+    export ARMFVP_BIN_PATH
+    return 0
+  fi
+
   fvp_bin="$(command -v "${FVP_BIN_NAME}" || true)"
   if [ -n "${fvp_bin}" ]; then
     ARMFVP_BIN_PATH="$(dirname "${fvp_bin}")"
@@ -154,6 +192,102 @@ require_marker() {
   if ! grep -Fq -- "$marker" "$log"; then
     dump_log "$log"
     echo "Missing marker in $log: $marker" >&2
+    exit 1
+  fi
+}
+
+# Assert a marker is ABSENT. The runtime phases are long-running images killed
+# by timeout, so a fatal error does not change the exit code and a
+# require_marker-only phase stays green through a crash.
+forbid_marker() {
+  local log="$1"
+  local marker="$2"
+  if grep -Fq -- "$marker" "$log"; then
+    dump_log "$log"
+    echo "Forbidden marker present in $log: $marker" >&2
+    exit 1
+  fi
+}
+
+# Assert no thread's stack high-water exceeds a percentage of its allocation.
+#
+# Three separate stack overflows were found in this repo by reading the Layer 1
+# report by eye — net_socket_service (1200 allocated, 2880 needed), main
+# (16 KiB allocated, 153 KB needed) and asi_sntp_resync (4096 allocated, 7024
+# needed). NONE printed a diagnostic: an overflow here corrupts whatever sits
+# adjacent and the image either hangs silently or dies somewhere unrelated. The
+# report is the only thing that makes them visible, so assert on it rather than
+# relying on someone reading the artifact.
+#
+# A thread already AT 100 % is the dangerous case and reads as exactly 100:
+# the analyzer clamps at the stack end, so the true requirement is unknown and
+# may be far higher. Treat any breach as fatal and name the numbers.
+#
+#   require_stack_headroom <log> <max_percent>
+require_stack_headroom() {
+  local log="$1"
+  local limit="$2"
+  local rows breach unparsed
+
+  # Format: " name : STACK: unused N usage U / T (P %); CPU: C %"
+  #
+  # Anchor the name capture on the " : STACK:" separator rather than taking a
+  # single token: Zephyr's idle threads are named "idle 00" .. "idle 03", with
+  # a space. The original single-token pattern never matched them, the line
+  # then reached awk unsubstituted, and `$1 >= lim` compared the STRING "idle"
+  # against "85" -- true, because 'i' sorts after '8'. Every healthy build
+  # therefore failed this assertion with garbage field values. Normalise to a
+  # fixed "OK <pct> <usage> <total> <name...>" shape so the numeric test can
+  # never see a non-numeric field.
+  rows=$(sed 's/\r$//' "$log" \
+    | grep -a "STACK: unused" \
+    | sed -E 's/^ *(.*[^ ]) *: STACK: unused [0-9]+ usage ([0-9]+) \/ ([0-9]+) \(([0-9]+) %\).*/OK \4 \2 \3 \1/')
+
+  # NO rows is not "no breaches". An assertion that passes when the report is
+  # empty is an assertion that stops existing the moment the analyzer does --
+  # a renamed marker, a Kconfig dropped from tracing_stats.conf, an image that
+  # prints "Thread analyze:" and nothing under it. Measured against the CI
+  # artifact this gate has been reading: 51 rows, worst thread 70%. A run that
+  # produces none has not measured anything.
+  #
+  # 8 is well under a healthy image's count and well above zero: four idle
+  # threads alone (one per core) plus main, and this lane reports 51.
+  local count
+  count=$(printf '%s\n' "${rows}" | grep -ac '^OK ' || true)
+  if [ "${count}" -lt 8 ]; then
+    dump_log "$log"
+    echo "Only ${count} thread-analyzer stack row(s) in $log — expected at least 8." >&2
+    echo "CONFIG_THREAD_ANALYZER selects INIT_STACKS / THREAD_STACK_INFO; with the" >&2
+    echo "analyzer off there is nothing to measure and this check would pass on" >&2
+    echo "an empty report." >&2
+    exit 1
+  fi
+
+  # Anything the pattern did not rewrite is an analyzer format this function
+  # does not understand. Fail loudly instead of letting it fall through the
+  # numeric test, which is exactly how the bug above stayed invisible.
+  unparsed=$(printf '%s\n' "${rows}" | grep -av '^OK ' || true)
+  if [ -n "${unparsed}" ]; then
+    dump_log "$log"
+    echo "Unrecognised thread-analyzer lines in $log:" >&2
+    printf '%s\n' "${unparsed}" >&2
+    exit 1
+  fi
+
+  breach=$(printf '%s\n' "${rows}" \
+    | awk -v lim="$limit" '$2 + 0 >= lim + 0 {
+        name = $5
+        for (i = 6; i <= NF; i++) name = name " " $i
+        printf "  %s: %s/%s bytes (%s%%)\n", name, $3, $4, $2
+      }')
+
+  if [ -n "${breach}" ]; then
+    dump_log "$log"
+    echo "Thread stack high-water at or above ${limit}% in $log:" >&2
+    echo "${breach}" >&2
+    echo "A thread at 100% is already overflowing — the analyzer clamps at the" >&2
+    echo "stack end, so its real requirement is unknown. Raise the stack and" >&2
+    echo "re-measure to find the true figure." >&2
     exit 1
   fi
 }

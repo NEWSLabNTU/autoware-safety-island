@@ -30,9 +30,11 @@ jobs:
   build-zephyr:
     name: Zephyr Build (${{ matrix.name }})
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
+      options: --user 0:0 --entrypoint=
     strategy:
       matrix:
         include:
@@ -53,17 +55,22 @@ jobs:
         shell: bash
         run: git config --global --add safe.directory '*'
 
-      - name: Resolve CycloneDDS pin
-        id: cdds
-        shell: bash
-        run: echo "sha=$(git rev-parse HEAD:cyclonedds)" >> "$GITHUB_OUTPUT"
-
       # Initialise only the public submodules. s32ct_config is a PRIVATE
       # submodule (NXP Confidential generated configs) that the repo-scoped CI
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
       - name: Initialize build submodules (private s32ct_config excluded)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: git submodule update --init --recursive zephyr
+
+      # phase-3 W1 — the Zephyr platforms build on nano-ros (host `nros` CLI
+      # + cargo cross-compile inside the west build). Mirror bootstrap-asi.sh.
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Restore Zephyr workspace cache
         id: zephyr-cache
@@ -72,15 +79,10 @@ jobs:
           path: |
             .west
             zephyr
+            modules
             actuation_module/zephyr_modules
           key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: zephyr-workspace-
-
-      - name: Restore CycloneDDS host tools cache
-        uses: actions/cache@v4
-        with:
-          path: build/cyclonedds_host
-          key: zephyr-cdds-host-${{ steps.cdds.outputs.sha }}
 
       - name: Initialize Zephyr workspace
         shell: bash
@@ -112,9 +114,11 @@ jobs:
   build-freertos:
     name: FreeRTOS POSIX Runtime Build
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ghcr.io/autowarefoundation/autoware-safety-island:devcontainer
+      # Image USER is `dev` (fixuid). GHA needs root in the container.
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
@@ -126,25 +130,12 @@ jobs:
         shell: bash
         run: git config --global --add safe.directory '*'
 
-      - name: Resolve CycloneDDS pin
-        id: cdds
-        shell: bash
-        run: echo "sha=$(git rev-parse HEAD:cyclonedds)" >> "$GITHUB_OUTPUT"
-
       # Initialise only the public submodules. s32ct_config is a PRIVATE
       # submodule (NXP Confidential generated configs) that the repo-scoped CI
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
       - name: Initialize build submodules (private s32ct_config excluded)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
-
-      - name: Restore CycloneDDS build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            build/cyclonedds_host
-            build/cyclonedds_target_out
-          key: cdds-${{ steps.cdds.outputs.sha }}
+        run: git submodule update --init --recursive zephyr
 
       - name: Run FreeRTOS POSIX validation
         shell: bash

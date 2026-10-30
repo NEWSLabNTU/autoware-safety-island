@@ -1,6 +1,11 @@
 name: Build and Test
 
 on:
+  # This fork lands work by fast-forwarding `main` rather than through pull
+  # requests, so `pull_request` alone never fires and the first signal on a
+  # commit would be the nightly, hours later.
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   schedule:
@@ -16,9 +21,13 @@ on:
 jobs:
   build-zephyr:
     name: Zephyr FVP
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      # Image USER is `dev` (fixuid pattern for local dev). GHA needs root
+      # inside the container so cache extraction + installs work and the
+      # workspace bind-mount is freely writable. (nano-ros branch carry-over.)
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
@@ -35,7 +44,28 @@ jobs:
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
       - name: Initialize build submodules (private s32ct_config excluded)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: git submodule update --init --recursive zephyr
+
+      # Same reason as the other two jobs: nano-ros's prebuilt SDK dists are
+      # .tar.zst and the devcontainer image has no zstd binary.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
+      # phase-3 W1 — the Zephyr platforms build on nano-ros: the host `nros`
+      # CLI (message codegen + entry orchestration) is a Rust binary built by
+      # build.sh's bootstrap hook, and the nano-ros runtime cross-compiles via
+      # cargo inside the west build. Mirror bootstrap-asi.sh's rustup step.
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Restore Zephyr workspace cache
         id: zephyr-cache
@@ -44,6 +74,7 @@ jobs:
           path: |
             .west
             zephyr
+            modules
             actuation_module/zephyr_modules
           key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: zephyr-workspace-
@@ -60,6 +91,26 @@ jobs:
           fi
           west zephyr-export
 
+      # west clones nano-ros as a manifest project and stops there; its OWN
+      # submodules stay empty. The Zephyr build then configures the CycloneDDS
+      # RMW and fails with "Cyclone DDS submodule not initialised". Runs after
+      # `west update` because that is what creates modules/nros, and stays
+      # unconditional because the cache-hit path skips the update entirely.
+      - name: Initialize nano-ros submodules (CycloneDDS backend)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C modules/nros submodule update --init --recursive third-party/dds/cyclonedds
+          # nros-launch-resolve's parser crates live in this nested submodule;
+          # the two FreeRTOS jobs already init it for the same reason.
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      # The Zephyr lane cross-compiles the nano-ros runtime for the FVP's
+      # AArch64 core; bootstrap-asi.sh adds this target for exactly this reason.
+      - name: Add the Rust cross target this lane builds
+        shell: bash
+        run: rustup target add aarch64-unknown-none
+
       - name: Run Zephyr FVP validation
         shell: bash
         run: .github/scripts/run-zephyr-fvp-ci.sh
@@ -74,10 +125,11 @@ jobs:
           retention-days: 7
 
   build-freertos:
-    name: FreeRTOS POSIX
-    runs-on: ubuntu-latest
+    name: FreeRTOS POSIX (nano-ros)
+    runs-on: ubuntu-24.04
     container:
       image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      options: --user 0:0 --entrypoint=
 
     steps:
       - name: Checkout repository
@@ -89,152 +141,126 @@ jobs:
         shell: bash
         run: git config --global --add safe.directory '*'
 
-      - name: Resolve CycloneDDS pin
-        id: cdds
+      # Phase-4 W5.a — the lane builds against the nano-ros submodule (the
+      # vendored cyclonedds/zephyr trees are not used here). The CLI's
+      # play_launch dep is the only nested submodule needed.
+      - name: Initialize build submodules
         shell: bash
-        run: echo "sha=$(git rev-parse HEAD:cyclonedds)" >> "$GITHUB_OUTPUT"
+        run: |
+          git submodule update --init modules/nros
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
 
-      # Initialise only the public submodules. s32ct_config is a PRIVATE
-      # submodule (NXP Confidential generated configs) that the repo-scoped CI
-      # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
-      - name: Initialize build submodules (private s32ct_config excluded)
+      # nano-ros ships its prebuilt SDK dists (QEMU, the 13.2 cross toolchain)
+      # as .tar.zst, and `tar` cannot unpack one without the zstd binary. The
+      # devcontainer image does not carry it, so `nros setup --tool qemu` fails
+      # with "this prebuilt dist is zstd-compressed, but the `zstd` binary is
+      # not on PATH" — after paying for the download.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
 
-      - name: Restore CycloneDDS build cache
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Restore nros CLI + cargo cache
         uses: actions/cache@v4
         with:
           path: |
-            build/cyclonedds_host
-            build/cyclonedds_target_out
-          key: cdds-${{ steps.cdds.outputs.sha }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            modules/nros/packages/cli/target
+            modules/nros/packages/cli/nros-launch-resolve/target
+          key: nros-cli-freertos-${{ hashFiles('actuation_module/west.yml') }}
+          restore-keys: nros-cli-freertos-
 
       - name: Run FreeRTOS POSIX validation
         shell: bash
         run: .github/scripts/run-freertos-posix-ci.sh
 
-  build-freertos-vcan:
-    name: FreeRTOS POSIX vcan
+  # Phase 6 — the EMULATED Cortex-R52 lane. This is the only job that RUNS the
+  # ARMv8-R build of the controller: `freertos-s32z2` targets the same CPU but
+  # can only be linked here, because no emulator models the S32Z270 RTU. QEMU's
+  # mps3-an536 is a dual Cortex-R52 with a LAN9118, so the same image shape that
+  # will one day be flashed to silicon is booted on every push.
+  #
+  # Both tools come from the nano-ros SDK store rather than apt: the machine
+  # needs QEMU >= 9.0 (Ubuntu 22.04 ships 6.2) and the entry codegen needs
+  # arm-none-eabi-gcc 13.2 (the system 10.3 rejects its C++ designated
+  # initializers). The script provisions and resolves both, and fails loudly
+  # naming the version if either is wrong.
+  build-freertos-an536:
+    name: FreeRTOS AN536 (emulated Cortex-R52)
     runs-on: ubuntu-24.04
+    container:
+      image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
+      options: --user 0:0 --entrypoint=
 
     steps:
-      - name: Load vcan on the runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends "linux-modules-extra-$(uname -r)"
-          sudo modprobe vcan
-          if ! ip link show vcan0 >/dev/null 2>&1; then
-            sudo ip link add vcan0 type vcan
-          fi
-          sudo ip link set up vcan0
-          ip link show vcan0
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: false
 
-      - name: Resolve CycloneDDS pin
-        id: cdds
+      - name: Trust workspace (container runs as root)
         shell: bash
-        run: echo "sha=$(git rev-parse HEAD:cyclonedds)" >> "$GITHUB_OUTPUT"
+        run: git config --global --add safe.directory '*'
 
-      - name: Initialize build submodules (private s32ct_config excluded)
-        shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
-
-      - name: Restore CycloneDDS build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            build/cyclonedds_host
-            build/cyclonedds_target_out
-          key: cdds-${{ steps.cdds.outputs.sha }}
-
-      - name: Run SocketCAN vcan roundtrip
-        shell: bash
-        env:
-          DEVCONTAINER_IMAGE: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
-        run: |
-          set +e
-          docker run --rm \
-            --entrypoint bash \
-            --network=host \
-            --cap-add=NET_ADMIN \
-            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
-            -w "${GITHUB_WORKSPACE}" \
-            -e GITHUB_WORKSPACE \
-            -e GITHUB_ACTIONS \
-            -e HOME=/tmp \
-            "${DEVCONTAINER_IMAGE}" \
-            -lc 'git config --global --add safe.directory "*" && .github/scripts/run-freertos-vcan-ci.sh'
-          rc=$?
-          set -e
-          sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}/build" 2>/dev/null || true
-          exit "${rc}"
-
-  build-zephyr-fvp-tap:
-    name: Zephyr FVP TAP
-    runs-on: ubuntu-24.04
-
-    steps:
-      # vcan must exist in the kernel the container shares; loading it inside
-      # the job container is not possible, so prepare it on the runner host as
-      # the FreeRTOS POSIX vcan job does and run the tunnel test with host
-      # networking. CI fails rather than skipping if vcan cannot be created.
-      - name: Load vcan on the runner
+      - name: Initialize build submodules
         shell: bash
         run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends "linux-modules-extra-$(uname -r)"
-          sudo modprobe vcan
-          if ! ip link show vcan0 >/dev/null 2>&1; then
-            sudo ip link add vcan0 type vcan
+          git submodule update --init modules/nros
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      # nano-ros ships its prebuilt SDK dists (QEMU, the 13.2 cross toolchain)
+      # as .tar.zst, and `tar` cannot unpack one without the zstd binary. The
+      # devcontainer image does not carry it, so `nros setup --tool qemu` fails
+      # with "this prebuilt dist is zstd-compressed, but the `zstd` binary is
+      # not on PATH" — after paying for the download.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           fi
-          sudo ip link set up vcan0
-          ip link show vcan0
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Initialize build submodules (private s32ct_config excluded)
+      # Corrosion cross-compiles the nano-ros runtime for the R52. The CI script
+      # runs bootstrap with --skip-rustup, so nothing else adds this target and
+      # corrosion's FindRust stops the configure with "Target armv8r-none-eabihf
+      # is not installed". bootstrap-asi.sh adds the same target for this lane.
+      - name: Add the Rust cross target this lane builds
         shell: bash
-        run: git submodule update --init --recursive cyclonedds zephyr freertos-kernel
+        run: rustup target add armv8r-none-eabihf
 
-      - name: Restore Zephyr workspace cache
+      # The SDK store is cached too: re-downloading QEMU 11 and a 13.2 cross
+      # toolchain on every run is the slowest part of this job by far.
+      - name: Restore nros CLI + cargo + SDK cache
         uses: actions/cache@v4
         with:
           path: |
-            .west
-            zephyr
-            actuation_module/zephyr_modules
-          key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
-          restore-keys: zephyr-workspace-
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.nros/sdk
+            modules/nros/packages/cli/target
+            modules/nros/packages/cli/nros-launch-resolve/target
+          key: nros-an536-${{ hashFiles('actuation_module/west.yml') }}
+          restore-keys: nros-an536-
 
-      - name: Run Zephyr FVP TAP tunnel
+      - name: Run AN536 (emulated Cortex-R52) validation
         shell: bash
-        env:
-          DEVCONTAINER_IMAGE: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
-        run: |
-          set +e
-          docker run --rm \
-            --entrypoint bash \
-            --network=host \
-            --cap-add=NET_ADMIN \
-            --device /dev/net/tun \
-            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
-            -w "${GITHUB_WORKSPACE}" \
-            -e GITHUB_WORKSPACE \
-            -e GITHUB_ACTIONS \
-            -e HOME=/tmp \
-            "${DEVCONTAINER_IMAGE}" \
-            -lc 'git config --global --add safe.directory "*" && .github/scripts/run-zephyr-fvp-tap-ci.sh'
-          rc=$?
-          set -e
-          sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}/build" 2>/dev/null || true
-          exit "${rc}"
+        run: .github/scripts/run-freertos-an536-ci.sh
