@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<package format="3">
+  <!--
+    Phase 2.B — nano-ros Bringup pkg for ASI's controller system.
+
+    PURE DECLARATIVE (RFC-0024 §11.1): this pkg carries ONLY package.xml +
+    system.toml + launch/*.launch.xml + config/. No Cargo.toml, no
+    CMakeLists.txt, no src/. It names the controller node, picks the RMW +
+    domain, and declares the topic remaps — replacing the imperative
+    main.cpp / Kconfig wiring with a declarative topology.
+
+    `nros check` (bringup mode) cross-validates:
+      * system.toml [system].name == this name element (controller_bringup),
+      * every [[component]].pkg appears as an exec_depend row below.
+
+    Per Phase 212.J.5 (RFC-0024 §11.1) a Bringup pkg OMITS the
+    buildtool_depend on ament_cmake: `nros launch` reads launch/ from the
+    source tree, not an install share path. Users wanting
+    `ros2 launch controller_bringup …` compatibility add it themselves.
+  -->
+  <name>controller_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Bringup pkg for the ASI controller system — declarative launch
+    topology (system.toml + launch/system.launch.xml) that names the
+    controller node, selects the cyclonedds RMW on domain 0, and remaps
+    its 5 subscription / 3 publisher topics. The remap entries are the
+    override points; defaults preserve Phase-1 behaviour.
+  </description>
+  <maintainer email="d10922013@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+
+  <!--
+    The Node pkg whose `controller_pkg::Controller` is instanced by the
+    [[component]] row in system.toml. Bringup pkgs declare their composed
+    Node pkgs as exec_depend rows (runtime composition, not build).
+  -->
+  <exec_depend>controller_pkg</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
