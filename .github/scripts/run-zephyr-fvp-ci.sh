@@ -322,6 +322,15 @@ cargo build --release \
 mkdir -p "${NROS}/packages/cli/target/release"
 ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
        "${NROS}/packages/cli/target/release/nros-launch-resolve"
+# build.sh builds the CLI too (a no-op after this); it is needed here first
+# for the corrosion provisioning, which the `nros sync` metadata probe uses.
+cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
+# Corrosion (the CMake road's Rust bridge) comes from the SDK store and a
+# configure no longer fetches it (nano-ros RFC-0104 D10). Provisioned from the
+# workspace root so actuation_module/nros-sdk.lock governs the version.
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS}/packages/cli/target/release/nros" setup \
+      --index "${NROS}/nros-sdk-index.toml" --tool corrosion )
 
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
