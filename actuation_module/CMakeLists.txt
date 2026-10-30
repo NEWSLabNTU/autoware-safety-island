@@ -218,6 +218,17 @@ else()
   # component, and the LAUNCH-only entry below assembles the bootable
   # image from controller_bringup's launch topology.
   find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
+  # On Zephyr, find_package(nano_ros) sets NROS_DEPLOY / NROS_LEAF_IMAGE_ID
+  # from the APP dir's own system.toml. This app has none (its images are
+  # rows in src/controller_bringup/system.toml), so both come back empty and
+  # shadow build.sh's -DNROS_DEPLOY=fvp; `nros ws board-facts` then sees four
+  # images and refuses as ambiguous (nano-ros 05b7f7d). Name ours again.
+  if(DEFINED CACHE{NROS_DEPLOY} AND NOT "$CACHE{NROS_DEPLOY}" STREQUAL "")
+    set(NROS_DEPLOY "$CACHE{NROS_DEPLOY}")
+  else()
+    set(NROS_DEPLOY fvp)
+  endif()
+  set(NROS_LEAF_IMAGE_ID "${NROS_DEPLOY}")
 
   # Phase 6 W6 — lower the param_services capability into OUR scope before the
   # node package is added.
