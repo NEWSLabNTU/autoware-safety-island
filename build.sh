@@ -469,7 +469,7 @@ function build_zephyr_actuation_module() {
     # Issue 0745 — the bringup declares [system].features=["param_services"]
     # (launch-param seeding); the Zephyr module lane has no bringup-driven
     # capability resolution yet, so mirror it explicitly.
-    -DNANO_ROS_FEATURES="param_services"
+    -DNROS_FEATURES="param_services"
   )
 
   local board_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_actuation.conf"
@@ -582,6 +582,19 @@ function build_zephyr_actuation_module() {
   west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
 }
 
+# Where the nros-provisioned FreeRTOS kernel is. Since nano-ros phase-484
+# `nros setup --source freertos-kernel` provisions it into the SDK store
+# (~/.nros/sources/freertos-kernel/<ver>), not into the checkout's
+# third-party/freertos/kernel, so ask the CLI's locate ladder instead of
+# guessing the path. --index pins the checkout's own index: without it a CLI
+# run outside the checkout reads the store's fetched one.
+function nros_freertos_kernel_dir() {
+  local nros_cli_bin="$1"
+  "${nros_cli_bin}" locate --index "${ROOT_DIR}/modules/nros/nros-sdk-index.toml" \
+      freertos-kernel 2>/dev/null \
+    || echo "${ROOT_DIR}/modules/nros/third-party/freertos/kernel"
+}
+
 function build_freertos_posix() {
   # Phase 4 W5.a — nano-ros workspace mode (nros-board-freertos-posix,
   # nano-ros phase-370): host process, board-owned main()/scheduler, nodes
@@ -610,7 +623,7 @@ function build_freertos_posix() {
 
   # FreeRTOS kernel source — nros-provisioned (phase-4 kernel-provenance
   # decision: nano-ros's index-pinned checkout is the SSOT).
-  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  export FREERTOS_DIR="${FREERTOS_DIR:-$(nros_freertos_kernel_dir "${nros_cli_bin}")}"
   if [ ! -d "${FREERTOS_DIR}/portable/ThirdParty/GCC/Posix" ]; then
     echo -e "${RED}FreeRTOS kernel missing at ${FREERTOS_DIR}.${NC}" 1>&2
     echo -e "${YELLOW}Run: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
@@ -652,8 +665,8 @@ function build_freertos_posix() {
   ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
 
   cmake -S actuation_module -B "${app_build_dir}" \
-    -DNANO_ROS_PLATFORM=freertos \
-    -DNANO_ROS_BOARD=freertos-posix \
+    -DNROS_PLATFORM=freertos \
+    -DNROS_BOARD=freertos-posix \
     -DNROS_DEPLOY=freertos-posix \
     -DNROS_RMW=cyclonedds \
     -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
@@ -707,7 +720,7 @@ function build_freertos_armv8r_nros() {
 
   # Kernel: nros-pinned checkout by default (link-complete CRx_No_GIC port);
   # the NXP provisioning script overrides FREERTOS_DIR + FREERTOS_PORT.
-  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  export FREERTOS_DIR="${FREERTOS_DIR:-$(nros_freertos_kernel_dir "${nros_cli_bin}")}"
   export FREERTOS_PORT="${FREERTOS_PORT:-GCC/ARM_CRx_No_GIC}"
   if [ ! -d "${FREERTOS_DIR}/portable/${FREERTOS_PORT}" ]; then
     echo -e "${RED}FreeRTOS port missing at ${FREERTOS_DIR}/portable/${FREERTOS_PORT}.${NC}" 1>&2
@@ -767,8 +780,8 @@ function build_freertos_armv8r_nros() {
   fi
 
   cmake -S actuation_module -B "${app_build_dir}" \
-    -DNANO_ROS_PLATFORM=freertos \
-    -DNANO_ROS_BOARD="${board}" \
+    -DNROS_PLATFORM=freertos \
+    -DNROS_BOARD="${board}" \
     -DNROS_DEPLOY="${deploy}" \
     "${_domain_arg[@]}" \
     -DNROS_RMW=cyclonedds \
