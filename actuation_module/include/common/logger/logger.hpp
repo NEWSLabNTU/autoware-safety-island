@@ -24,6 +24,9 @@
 #include "platform/platform_config.h"
 
 #include <rclc/log.h>
+#if defined(PLATFORM_ZEPHYR)
+#include <zephyr/sys/printk.h>
+#endif
 
 #define log_info_throttle(msg, ...) common::logger::log_info_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
 #define log_warn_throttle(msg, ...) common::logger::log_warn_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
@@ -48,7 +51,20 @@ inline void vemit_(rcl_log_severity_t severity, const char * format, va_list arg
     size_t len = 0;
     while (buffer[len] != '\0') { ++len; }
     if (len > 0 && buffer[len - 1] == '\n') { buffer[len - 1] = '\0'; }
+#if defined(PLATFORM_ZEPHYR)
+    // Zephyr: straight to the console. On nano-ros 05b7f7d / main the SMP FVP
+    // image delivers the first four nros_log records and then none: later
+    // records are parked in nros-log's early ring (NROS_LOG_EARLY_RECORDS = 4,
+    // issue 2000's "another thread is inside a sink" path) and never drained,
+    // while the controller runs on (a printk probe beside every record showed
+    // the full boot and the control loop). Until that is fixed upstream the
+    // island's own lines -- the ones CI greps -- bypass the dispatcher here.
+    const char * tag = severity >= RCLC_LOG_SEVERITY_ERROR ? "err"
+                     : severity >= RCLC_LOG_SEVERITY_WARN  ? "wrn" : "inf";
+    printk("<%s> asi: %s\n", tag, buffer);
+#else
     rclc_log_emit_fmt(default_logger_(), severity, "%s", buffer);
+#endif
 }
 
 inline void log_success(const char * format, ...) {
