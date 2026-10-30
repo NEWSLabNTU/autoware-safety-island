@@ -8,6 +8,21 @@
 
 #include <vector>
 
+// nros-codegen C++ headers, one per ROS package; the `...Msg` aliases
+// below re-expose them under ASI's legacy names.
+#include "autoware_adapi_v1_msgs.hpp"
+#include "autoware_control_msgs.hpp"
+#include "autoware_perception_msgs.hpp"
+#include "autoware_planning_msgs.hpp"
+#include "autoware_vehicle_msgs.hpp"
+#include "builtin_interfaces.hpp"
+#include "geometry_msgs.hpp"
+#include "nav_msgs.hpp"
+#include "safety_island_msgs.hpp"
+#include "std_msgs.hpp"
+#include "tier4_debug_msgs.hpp"
+#include "visionpilot_msgs.hpp"
+
 // ======================================================================
 using Float32MultiArrayStampedMsg     = tier4_debug_msgs::msg::Float32MultiArrayStamped;
 using Float32StampedMsg               = tier4_debug_msgs::msg::Float32Stamped;
