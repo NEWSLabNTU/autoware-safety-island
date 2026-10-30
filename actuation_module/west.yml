@@ -15,6 +15,8 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: newslab
+      url-base: https://github.com/NEWSLabNTU
 
   #
   # Please add items below based on alphabetical order
@@ -29,9 +31,62 @@ manifest:
       path: actuation_module/zephyr_modules/hal/hal_nxp
       groups:
         - hal
+    # nano-ros: external dep providing the RMW + nros-cpp API + Zephyr module.
+    # import: false is REQUIRED — nano-ros's own west.yml redefines zephyr at
+    # v3.7.0 with a different module allowlist; importing recursively would
+    # clobber the pin below. ASI stays the manifest authority; nano-ros is
+    # consumed only as a leaf project whose zephyr/module.yml is auto-
+    # discovered by the Zephyr module crawler.
+    # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
+    #
+    # ON main, 2026-09-05, carrying nano-ros #1062 — the fix that stops the
+    # metadata probe from reading this repo's C++ controller as C. The pin it
+    # replaced (91241878b) is an ancestor, so this only moves forward.
+    #
+    # Earlier, 2026-08-31. The three PRs that pin was waiting on are all in
+    # main now, under different hashes because the merge queue rebases:
+    #   #61 forward NROS_ZEPHYR_HEAP_SIZE to cargo  -> 6d95c1a8b
+    #   #71 starvation says so; impossible sizes fail -> ee0d1933a
+    #   #75 name chunks carry their handle           -> 0875ed688
+    # (which is why GitHub shows #61 and #71 as CLOSED rather than merged).
+    #
+    # The previous revision, 13eb682fe, had been ORPHANED for the second time:
+    # `fix/trace-names-bind-by-handle` no longer exists on the remote, so
+    # `git branch -r --contains 13eb682fe` was empty and a fresh clone could
+    # not fetch it. The build failed even WITH the commit in hand, because that
+    # commit's Cargo.lock was stale against its own manifests and `--locked`
+    # refused to update it. Two independent reasons the pin could not stand.
+    #
+    # The warning below is the rule that would have prevented both. It is kept
+    # rather than deleted: pinning a branch is still allowed, and this is the
+    # check that makes it safe.
+    #
+    # Anyone force-pushing a branch this file points at MUST repin in the same
+    # change. `git branch -r --contains <rev>` in modules/nros is the check;
+    # empty output means the pin is broken.
+    #
+    - name: nano-ros
+      remote: newslab
+      revision: af14492fe3e02efe74927318648768f30dc7b3fa
+      path: modules/nros
+      import: false
+    # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
+    # (NROS_BOARD_ZEPHYR_LINE = 3.7) and its own west.yml zephyr pin. The
+    # nano-ros platform-zephyr net code targets the 3.7+ net API
+    # (net_if_addr.ipv4 wrapper, ip_mreq); an older line (3.5.x) drifts at
+    # compile. Bump in lockstep with the zephyr-lang-rust rev below.
     - name: zephyr
-      revision: 339cd5a45fd2ebba064ef462b71c657336ca0dfe
+      revision: v3.7.0
       west-commands: scripts/west-commands.yml
+    # Zephyr Rust language support — REQUIRED: nano-ros's runtime is a Rust
+    # staticlib linked into the Zephyr app via this module; without it
+    # CONFIG_RUST is undefined and the nano-ros board conf's CONFIG_RUST(_ALLOC)
+    # abort kconfig. Pin matches nano-ros's own west.yml (the supported
+    # zephyr 3.7 x zephyr-lang-rust pair); bump in lockstep with the zephyr rev.
+    - name: zephyr-lang-rust
+      remote: upstream
+      revision: 404fcefdbab0f2711cd342a1fab9d2eda52a1ba9
+      path: modules/lang/rust
 
   group-filter:
     - -ci

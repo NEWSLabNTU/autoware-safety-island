@@ -1,0 +1,40 @@
+diff --git a/subsys/tracing/Kconfig b/subsys/tracing/Kconfig
+index 31017e6036f..361b3286dfe 100644
+--- a/subsys/tracing/Kconfig
++++ b/subsys/tracing/Kconfig
+@@ -161,6 +161,22 @@ config TRACING_BACKEND_RAM
+ 	  be dumped to a file at runtime with a debugger.
+ 	  See gdb dump binary memory documentation for example.
+ 
++config TRACING_BACKEND_CUSTOM
++	bool "Custom backend defined out of tree"
++	help
++	  Select a tracing backend that is registered with
++	  TRACING_BACKEND_DEFINE() outside the Zephyr tree.
++
++	  The backend name is a compile-time constant in tracing_core.c, so
++	  without this an application cannot select its own backend at all,
++	  even though TRACING_BACKEND_DEFINE() is available to it.
++
++config TRACING_BACKEND_CUSTOM_NAME
++	string "Name of the out-of-tree backend"
++	depends on TRACING_BACKEND_CUSTOM
++	help
++	  Must match the first argument given to TRACING_BACKEND_DEFINE().
++
+ config TRACING_BACKEND_ADSP_MEMORY_WINDOW
+ 	bool "Memory window in RAM"
+ 	depends on SOC_FAMILY_INTEL_ADSP
+diff --git a/subsys/tracing/tracing_core.c b/subsys/tracing/tracing_core.c
+index 85dae090526..6f6163e73ed 100644
+--- a/subsys/tracing/tracing_core.c
++++ b/subsys/tracing/tracing_core.c
+@@ -29,6 +29,8 @@
+ #define TRACING_BACKEND_NAME "tracing_backend_posix"
+ #elif defined CONFIG_TRACING_BACKEND_RAM
+ #define TRACING_BACKEND_NAME "tracing_backend_ram"
++#elif defined CONFIG_TRACING_BACKEND_CUSTOM
++#define TRACING_BACKEND_NAME CONFIG_TRACING_BACKEND_CUSTOM_NAME
+ #elif defined CONFIG_TRACING_BACKEND_ADSP_MEMORY_WINDOW
+ #define TRACING_BACKEND_NAME "tracing_backend_adsp_memory_window"
+ #else

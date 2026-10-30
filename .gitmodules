@@ -1,17 +1,14 @@
-[submodule "cyclonedds"]
-	path = cyclonedds
-	url = https://github.com/autowarefoundation/cyclonedds
-	branch = freertos-s32z2
 [submodule "zephyr"]
 	path = zephyr
 	url = https://github.com/zephyrproject-rtos/zephyr
-	branch = 339cd5a45fd2ebba064ef462b71c657336ca0dfe
-[submodule "freertos-kernel"]
-	path = freertos-kernel
-	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
-[submodule "actuation_module/freertos_s32z2/s32ct_config"]
-	path = actuation_module/freertos_s32z2/s32ct_config
+	branch = v3.7.0
+[submodule "actuation_module/src/s32z2_board_glue/s32ct_config"]
+	path = actuation_module/src/s32z2_board_glue/s32ct_config
 	url = https://github.com/autowarefoundation/autoware-safety-island-s32z2-config.git
+	branch = main
+[submodule "modules/nros"]
+	path = modules/nros
+	url = https://github.com/NEWSLabNTU/nano-ros.git
 	branch = main
 [submodule "actuation_module/freertos_x5h/rcar_bsp"]
 	path = actuation_module/freertos_x5h/rcar_bsp
