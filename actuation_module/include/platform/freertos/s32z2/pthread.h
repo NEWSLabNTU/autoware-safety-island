@@ -31,6 +31,21 @@
 #include <sys/types.h>
 #include <sys/_pthreadtypes.h>
 
+// newlib >= 4.x gates the pthread typedefs in <sys/_pthreadtypes.h> behind
+// _POSIX_THREADS, which a bare-metal arm-none-eabi build leaves undefined
+// (the SDK-provisioned gcc 13.2 does; the older system 10.3 the legacy lane
+// first built with defined them unconditionally). When newlib withholds
+// them, supply the same-width typedefs this shim's backing storage assumes.
+#ifndef _POSIX_THREADS
+typedef uint32_t pthread_t;
+typedef uint32_t pthread_mutex_t;
+typedef struct {
+    void *stackaddr;
+    uint32_t stacksize;
+    int is_initialized;
+} pthread_attr_t;
+#endif
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -39,12 +54,28 @@
 extern "C" {
 #endif
 
+// Port switch: the NXP GCC/ARM_CR52_GIC port needs its *Fpu task-create
+// variants (below); the upstream GCC/ARM_CRx_No_GIC port (the link-complete
+// default of the nano-ros lane, phase-4 W5.b) has plain xTaskCreate* with
+// configUSE_TASK_FPU_SUPPORT. The build defines ASI_S32Z2_NXP_PORT when
+// FREERTOS_PORT=GCC/ARM_CR52_GIC.
+#if defined(ASI_S32Z2_NXP_PORT)
+#define ASI_TASK_CREATE          xTaskCreateFpu
+#define ASI_TASK_CREATE_STATIC   xTaskCreateStaticFpu
+#else
+#define ASI_TASK_CREATE          xTaskCreate
+#define ASI_TASK_CREATE_STATIC   xTaskCreateStatic
+#endif
+// ASI_TASK_CREATE_STATIC is only expanded when the kernel config enables
+// configSUPPORT_STATIC_ALLOCATION (see pthread_create).
+
 // The ARM_CR52_GIC port disables FPEXC.EN per task and re-enables it lazily in
 // vPortUndefinedInstruction, which finds a task's FP save area via its TLS[0]
 // pointer. Only the *Fpu task-create variants set that pointer up, so every
 // thread that may execute floating point (all DDS/controller threads here)
 // must be created with them. xTaskCreateStaticFpu is defined in the port's
 // port.c but not declared in portmacro.h, so declare it here.
+#if defined(ASI_S32Z2_NXP_PORT)
 extern TaskHandle_t xTaskCreateStaticFpu(TaskFunction_t pxTaskCode,
                                          const char *pcName,
                                          uint32_t ulStackDepth,
@@ -52,6 +83,7 @@ extern TaskHandle_t xTaskCreateStaticFpu(TaskFunction_t pxTaskCode,
                                          UBaseType_t uxPriority,
                                          StackType_t *puxStackBuffer,
                                          StaticTask_t *pxTaskBuffer);
+#endif
 
 #undef PTHREAD_MUTEX_INITIALIZER
 #define PTHREAD_MUTEX_INITIALIZER ((pthread_mutex_t)0)
@@ -154,10 +186,16 @@ static inline int pthread_create(pthread_t *thread,
         return -1;
     }
     BaseType_t ok = pdFAIL;
+    // Caller-provided stacks need xTaskCreateStatic*, which only exists when
+    // the kernel config enables static allocation (the nros board bundle's
+    // FreeRTOSConfig.h does not). Without it, fall through to the dynamic
+    // path: attr->stacksize still sizes the heap-allocated stack, only the
+    // caller's stack buffer goes unused.
+#if defined(configSUPPORT_STATIC_ALLOCATION) && (configSUPPORT_STATIC_ALLOCATION == 1)
     if (attr != NULL && attr->stackaddr != NULL && attr->stacksize > 0) {
         StaticTask_t *tcb = (StaticTask_t *)pvPortMalloc(sizeof(StaticTask_t));
         if (tcb != NULL) {
-            info->task = xTaskCreateStaticFpu(
+            info->task = ASI_TASK_CREATE_STATIC(
                 pthread_s32z2_entry_,
                 "pthread",
                 (uint32_t)((size_t)attr->stacksize / sizeof(StackType_t)),
@@ -177,12 +215,14 @@ static inline int pthread_create(pthread_t *thread,
                 vPortFree(tcb);
             }
         }
-    } else {
+    } else
+#endif  // configSUPPORT_STATIC_ALLOCATION
+    {
         configSTACK_DEPTH_TYPE depth = (configSTACK_DEPTH_TYPE)configMINIMAL_STACK_SIZE;
         if (attr != NULL && attr->stacksize > 0) {
             depth = (configSTACK_DEPTH_TYPE)((size_t)attr->stacksize / sizeof(StackType_t));
         }
-        ok = xTaskCreateFpu(pthread_s32z2_entry_, "pthread", depth, info,
+        ok = ASI_TASK_CREATE(pthread_s32z2_entry_, "pthread", depth, info,
                             tskIDLE_PRIORITY + 1, &info->task);
     }
     if (ok != pdPASS) {

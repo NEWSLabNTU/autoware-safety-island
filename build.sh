@@ -19,8 +19,6 @@ NC='\033[0m'
 ROOT_DIR=$(dirname "$(realpath "$0")")
 set -e
 set -u
-CYCLONEDDS_HOST_BUILD_DIR=${CYCLONEDDS_HOST_BUILD_DIR:-"${ROOT_DIR}/build/cyclonedds_host"}
-CYCLONEDDS_HOST_PREFIX=${CYCLONEDDS_HOST_PREFIX:-"${CYCLONEDDS_HOST_BUILD_DIR}/out"}
 CYCLONEDDS_TARGET_BUILD_DIR=${CYCLONEDDS_TARGET_BUILD_DIR:-"${ROOT_DIR}/build/cyclonedds_target"}
 CYCLONEDDS_TARGET_PREFIX=${CYCLONEDDS_TARGET_PREFIX:-"${ROOT_DIR}/build/cyclonedds_target_out"}
 
@@ -31,17 +29,10 @@ BUILD_DIR_SET=0
 BUILD_PLATFORM="zephyr-fvp"
 BUILD_PLATFORM_SET=0
 NETWORK_PROFILE="default"
-PARAM_PROFILE="after"
-DDS_NETWORK_INTERFACE=""
-CONTROL_CMD_OUTPUT_MODE=""
-# Repeatable pass-through for ad hoc CMake cache entries (e.g. instrumented
-# CI builds), forwarded verbatim as -D<value> to the freertos-x5h cmake
-# configure call in build_freertos_x5h(). Empty by default and only ever
-# appended to by --cmake-define, so leaving it unused (as every platform
-# other than freertos-x5h does today) is behaviourally identical to it not
-# existing.
-EXTRA_CMAKE_ARGS=()
-RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-x5h")
+TRACE_ENABLED=0
+TRACE_STATS_ENABLED=0
+TRACE_RING_ENABLED=0
+RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-an536")
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -52,16 +43,16 @@ function usage() {
   echo -e "${GREEN}    --platform         ${NC}Runtime target: ${RUNTIME_TARGET_LIST[*]}."
   echo -e "${GREEN}                         default: zephyr-fvp.${NC}"
   echo -e "${GREEN}    --network          ${NC}Network profile: default, tap. tap is valid for zephyr-fvp."
-  echo -e "${GREEN}    --dds-interface    ${NC}DDS interface/IP selector for FreeRTOS targets."
-  echo -e "${GREEN}    --control-output   ${NC}Control output: DDS_ONLY, CAN_ONLY, DDS_AND_CAN."
-  echo -e "${GREEN}                         FreeRTOS and zephyr-fvp (CAN modes on FVP need --network tap).${NC}"
-  echo -e "${GREEN}    --cmake-define     ${NC}Extra CMake cache entry KEY=VALUE, forwarded as -DKEY=VALUE."
-  echo -e "${GREEN}                         Repeatable. freertos-x5h only."
-  echo -e "${GREEN}    --param-profile    ${NC}Actuation parameter profile: after (default), before."
-  echo -e "${GREEN}                         freertos-x5h only (MRM before/after demo).${NC}"
   echo -e "${GREEN}    -t                 ${NC}Zephyr target board: ${ZEPHYR_TARGET_LIST[*]}"
   echo -e "${GREEN}                         default: ${ZEPHYR_TARGET_LIST[0]}.${NC}"
   echo -e "${GREEN}    -d                 ${NC}Build directory. Default: ${BUILD_DIR}."
+  echo -e "${GREEN}    --trace-stats      ${NC}Thread runtime scheduling statistics only (no CTF)."
+  echo -e "${GREEN}    --trace-ring       ${NC}CTF into an overwrite-oldest RAM ring (flight recorder)."
+  echo -e "${GREEN}    --trace            ${NC}Zephyr FVP only: build with CTF tracing + thread runtime"
+  echo -e "${GREEN}                         stats, streaming the trace to uart1. See"
+  echo -e "${GREEN}                         documentation/design/rt_evaluation_zephyr.rst.${NC}"
+  echo -e "${GREEN}    --run              ${NC}Zephyr only: start the model for an already-built -d"
+  echo -e "${GREEN}                         directory, in the same environment the build had.${NC}"
   echo -e "${GREEN}    -c                 ${NC}Clean all builds and exit."
   echo -e "${GREEN}    -h                 ${NC}Display the usage and exit."
   echo ""
@@ -76,16 +67,13 @@ function usage() {
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
   echo -e "    zephyr-s32z      Zephyr on S32Z hardware."
   echo -e "    freertos-posix   FreeRTOS POSIX runtime for local validation."
-  echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware."
-  echo -e "    freertos-x5h     FreeRTOS on R-Car X5H hardware (full actuation module + CycloneDDS + lwIP-over-RPMsg)."
+  echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware (nano-ros lane, phase-4 W5.b)."
+  echo -e "    freertos-an536   FreeRTOS on QEMU mps3-an536 (emulated Cortex-R52; phase-6)."
   echo ""
   echo -e "${GREEN}    Examples:${NC}"
   echo -e "    $0 --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap"
-  echo -e "    $0 --platform zephyr-fvp --network tap --control-output CAN_ONLY -d build/zephyr-fvp-tap-can"
-  echo -e "    $0 --platform freertos-posix -d build/freertos-posix --dds-interface wlp2s0 --control-output DDS_ONLY"
-  echo -e "    $0 --platform freertos-s32z2 -d build/freertos-s32z2 --dds-interface 192.168.0.105"
-  echo -e "    $0 --platform freertos-x5h -d build/freertos-x5h"
-  echo -e "    $0 --platform freertos-x5h -d build/freertos-x5h-diag --cmake-define X5H_DIAG_TASK_TABLE=ON --cmake-define CONFIG_DDS_LOG_LEVEL=3"
+  echo -e "    $0 --platform freertos-posix -d build/freertos-posix"
+  echo -e "    $0 --platform freertos-s32z2 -d build/freertos-s32z2"
 }
 
 function require_arg() {
@@ -128,33 +116,12 @@ function parse_args() {
         NETWORK_PROFILE="$2"
         shift 2
         ;;
-      --dds-interface)
-        require_arg "$1" "${2:-}"
-        DDS_NETWORK_INTERFACE="$2"
-        shift 2
-        ;;
-      --control-output)
-        require_arg "$1" "${2:-}"
-        CONTROL_CMD_OUTPUT_MODE="$2"
-        shift 2
-        ;;
-      --cmake-define)
-        require_arg "$1" "${2:-}"
-        EXTRA_CMAKE_ARGS+=("-D$2")
-        shift 2
-        ;;
-      --param-profile)
-        require_arg "$1" "${2:-}"
-        case "$2" in
-          before|after)
-            PARAM_PROFILE="$2"
-            ;;
-          *)
-            echo -e "${RED}--param-profile must be 'before' or 'after', got '$2'${NC}" 1>&2
-            exit 1
-            ;;
-        esac
-        shift 2
+      --run)
+        # Start the model for an ALREADY-BUILT -d directory, in the same
+        # environment a build gets. See ZEPHYR_RUN_ONLY in
+        # build_zephyr_actuation_module for why the run has to come from here.
+        ZEPHYR_RUN_ONLY=1
+        shift
         ;;
       --unit-test)
         BUILD_TEST_FLAG=1
@@ -174,6 +141,21 @@ function parse_args() {
         ;;
       --dds-loopback-test)
         BUILD_TEST_FLAG=5
+        shift
+        ;;
+      --trace)
+        TRACE_ENABLED=1
+        shift
+        ;;
+      --trace-ring)
+        # Implies --trace: the ring chooses WHERE the stream goes, it does not
+        # turn tracing on.
+        TRACE_ENABLED=1
+        TRACE_RING_ENABLED=1
+        shift
+        ;;
+      --trace-stats)
+        TRACE_STATS_ENABLED=1
         shift
         ;;
       -t)
@@ -250,13 +232,13 @@ function normalize_platform() {
         BUILD_DIR="build/freertos-s32z2"
       fi
       ;;
-    freertos-x5h)
+    freertos-an536)
       if [ "${ZEPHYR_TARGET_SET}" = "1" ]; then
         echo -e "${RED}-t is only valid for Zephyr platforms${NC}" 1>&2
         exit 1
       fi
       if [ "${BUILD_DIR_SET}" = "0" ]; then
-        BUILD_DIR="build/freertos-x5h"
+        BUILD_DIR="build/freertos-an536"
       fi
       ;;
     *)
@@ -277,145 +259,289 @@ function normalize_platform() {
     exit 1
   fi
 
-  if [ -n "${DDS_NETWORK_INTERFACE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ] && [ "${BUILD_PLATFORM}" != "freertos-x5h" ]; then
-    echo -e "${RED}--dds-interface is only valid for --platform freertos-posix, freertos-s32z2, or freertos-x5h${NC}" 1>&2
+  if [ "${BUILD_PLATFORM}" = "freertos-s32z2" ] && [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}Test build options are not supported for --platform freertos-s32z2${NC}" 1>&2
     exit 1
   fi
-
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ] && [ "${BUILD_PLATFORM}" != "freertos-posix" ] && [ "${BUILD_PLATFORM}" != "freertos-s32z2" ] && [ "${BUILD_PLATFORM}" != "freertos-x5h" ] && [ "${BUILD_PLATFORM}" != "zephyr-fvp" ]; then
-    echo -e "${RED}--control-output is only valid for --platform freertos-posix, freertos-s32z2, freertos-x5h, or zephyr-fvp${NC}" 1>&2
-    exit 1
-  fi
-
-  if [ "${#EXTRA_CMAKE_ARGS[@]}" -gt 0 ] && [ "${BUILD_PLATFORM}" != "freertos-x5h" ]; then
-    echo -e "${RED}--cmake-define is only valid for --platform freertos-x5h${NC}" 1>&2
-    exit 1
-  fi
-
-  if [ "${BUILD_PLATFORM}" = "zephyr-fvp" ]; then
-    case "${CONTROL_CMD_OUTPUT_MODE}" in
-      CAN_ONLY|DDS_AND_CAN)
-        if [ "${NETWORK_PROFILE}" != "tap" ] && [ "${BUILD_TEST_FLAG}" != "4" ]; then
-          echo -e "${RED}zephyr-fvp CAN output requires --network tap (native loopback is --can-output-test only)${NC}" 1>&2
-          exit 1
-        fi
-        ;;
-    esac
-  fi
-
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ]; then
-    case "${CONTROL_CMD_OUTPUT_MODE}" in
-      DDS_ONLY|CAN_ONLY|DDS_AND_CAN) ;;
-      *)
-        echo -e "${RED}Invalid control output mode: ${CONTROL_CMD_OUTPUT_MODE}${NC}" 1>&2
-        echo -e "${YELLOW}Valid modes: DDS_ONLY CAN_ONLY DDS_AND_CAN${NC}" 1>&2
-        exit 1
-        ;;
-    esac
-  fi
-
-  case "${BUILD_PLATFORM}" in
-    freertos-s32z2|freertos-x5h)
-      if [ "${BUILD_TEST_FLAG}" != "0" ]; then
-        echo -e "${RED}Test build options are not supported for --platform ${BUILD_PLATFORM}${NC}" 1>&2
-        exit 1
-      fi
-      ;;
-  esac
 }
 
 function clean() {
   rm -rf "${ROOT_DIR}"/build "${ROOT_DIR}"/install
 }
 
-function build_cyclonedds_host() {
-  if [ -x "${CYCLONEDDS_HOST_PREFIX}/bin/idlc" ]; then
-    echo -e "${GREEN}CycloneDDS host tools already built at ${CYCLONEDDS_HOST_PREFIX}${NC}"
-    return
+function require_nros_checkout() {
+  if [ ! -d "${ROOT_DIR}"/modules/nros ]; then
+    echo -e "${RED}nano-ros checkout missing at modules/nros.${NC}" 1>&2
+    echo -e "${YELLOW}Run \`west update\` to fetch nano-ros from the manifest.${NC}" 1>&2
+    exit 1
   fi
-
-  echo -e "${GREEN}Building CycloneDDS host tools...${NC}"
-  cmake cyclonedds -B "${CYCLONEDDS_HOST_BUILD_DIR}" \
-    -DBUILD_IDLC=ON -DBUILD_SHARED_LIBS=ON \
-    -DCMAKE_INSTALL_PREFIX="${CYCLONEDDS_HOST_PREFIX}" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DENABLE_SECURITY=OFF -DENABLE_SSL=OFF -DENABLE_SHM=OFF \
-    -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF -DBUILD_DDSPERF=OFF
-  cmake --build "${CYCLONEDDS_HOST_BUILD_DIR}" --target install -j"$(nproc)"
 }
 
-function build_cyclonedds_target_posix() {
-  if [ -f "${CYCLONEDDS_TARGET_PREFIX}/lib/libddsc.a" ]; then
-    echo -e "${GREEN}CycloneDDS POSIX target library already built at ${CYCLONEDDS_TARGET_PREFIX}${NC}"
-    return
-  fi
+# Phase 5 W1 — messages resolve from the AMENT environment (the vendored
+# msg_ros/ copies are gone). A sourced ROS 2 + Autoware env wins; otherwise
+# compose existence-gated defaults (/opt/ros/humble + the newest
+# /opt/autoware/<ver>, which is the devcontainer layout too), then verify the
+# packages the codegen needs actually resolve so the failure is one clear
+# message here instead of a cmake FATAL_ERROR four levels down.
+# Build the in-tree nros CLI, and decide honestly whether its staleness gate
+# applies to us.
+#
+# The gate compares a SOURCE STAMP embedded at build time against one recomputed
+# at use time, over `cli-source-dirs.txt` plus all of packages/cli. It exists to
+# stop a nano-ros DEVELOPER running a CLI older than sources they just edited.
+#
+# It misfires on a CONSUMER, because our own build mutates the stamped tree:
+# `nros sync` writes into it AFTER the CLI is built, so the stamp has already
+# moved by the time codegen checks it. Neither `cargo build` nor
+# `cargo clean -p nros-cli` fixes that — both were measured, and both still end
+# in "in-tree nros CLI is STALE" (it is what broke the FVP demo immediately
+# after the 2026-08-29 pin move, presenting as a build failure with no clue).
+#
+# So: skip the gate ONLY when modules/nros is CLEAN, which is exactly the case
+# the gate cannot be protecting — we are consuming a pinned upstream and have
+# edited nothing. If the submodule is dirty, someone IS developing nano-ros
+# here, the gate is doing its job, and we leave it alone.
+function build_nros_cli() {
+  local manifest="$1"
+  echo -e "${GREEN}Building host nros CLI...${NC}"
+  cargo build --release --manifest-path "${manifest}" -p nros-cli
 
-  echo -e "${GREEN}Building CycloneDDS POSIX target library...${NC}"
-  cmake cyclonedds -B "${CYCLONEDDS_TARGET_BUILD_DIR}" \
-    -DBUILD_SHARED_LIBS=OFF -DENABLE_SECURITY=OFF \
-    -DENABLE_SSL=OFF -DENABLE_SHM=OFF -DENABLE_IPV6=OFF \
-    -DBUILD_IDLC=OFF -DBUILD_DDSPERF=OFF \
-    -DCMAKE_INSTALL_PREFIX="${CYCLONEDDS_TARGET_PREFIX}" \
-    -DCMAKE_BUILD_TYPE=Debug
-  cmake --build "${CYCLONEDDS_TARGET_BUILD_DIR}" --target install -j"$(nproc)"
+  if [ -z "$(git -C "${ROOT_DIR}/modules/nros" status --porcelain 2>/dev/null)" ]; then
+    export NROS_SKIP_STALE_CHECK=1
+  else
+    echo -e "${YELLOW}modules/nros has local changes — leaving the CLI staleness gate ON.${NC}"
+  fi
+}
+
+# Message-source resolution (AMENT_PREFIX_PATH). Sourced rather than inline so
+# the FVP CI script resolves the SAME prefixes before `west build --target run`
+# re-enters cmake.
+# shellcheck source=scripts/ament-env.sh
+. "${ROOT_DIR}/scripts/ament-env.sh"
+
+# --run: start the model for an ALREADY-BUILT -d directory. Needs only the
+# build dir and ARMFVP_BIN_PATH, so it runs BEFORE anything that touches
+# cargo. It used to run after build_nros_cli, and that "~0.1 s no-op" waits
+# on the shared ~/.cargo package-cache lock whenever another session's build
+# or test holds it: a model launch that needs no compiler at all sat blocked
+# on one for as long as the other session kept it.
+function run_zephyr_model() {
+  if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
+    echo -e "${RED}--run: no ELF at ${BUILD_DIR}/zephyr/zephyr.elf — build first.${NC}" 1>&2
+    exit 1
+  fi
+  local ninja_file="${BUILD_DIR}/build.ninja"
+  if [ ! -f "${ninja_file}" ]; then
+    echo -e "${RED}--run: no build.ninja in ${BUILD_DIR}.${NC}" 1>&2
+    exit 1
+  fi
+  # The `run_armfvp` custom command, verbatim: `cd <dir> && <fvp> -C ... -a elf`.
+  # Ninja escapes `$` as `$$` and a literal space in a path as `$ `; undo both.
+  local run_cmd
+  run_cmd="$(awk '/Custom command for zephyr\/CMakeFiles\/run_armfvp/{f=1} f && /^  COMMAND = /{sub(/^  COMMAND = /,""); print; exit}' \
+             "${ninja_file}" | sed 's/\$\$/$/g; s/\$ / /g')"
+  if [ -z "${run_cmd}" ]; then
+    echo -e "${RED}--run: no run_armfvp command in ${ninja_file}.${NC}" 1>&2
+    echo -e "${YELLOW}The board's run target is what supplies the model command line.${NC}" 1>&2
+    exit 1
+  fi
+  # ARMFVP-NOTFOUND is what cmake records when no model was on PATH at
+  # CONFIGURE time. Substitute the one resolved now rather than failing with
+  # a shell "command not found", which says nothing about the cause.
+  if [ "${run_cmd#*ARMFVP-NOTFOUND}" != "${run_cmd}" ]; then
+    if [ -n "${ARMFVP_BIN_PATH:-}" ] && [ -x "${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R" ]; then
+      run_cmd="${run_cmd//ARMFVP-NOTFOUND/${ARMFVP_BIN_PATH}/FVP_BaseR_AEMv8R}"
+    else
+      echo -e "${RED}--run: this build dir was configured with no FVP on PATH${NC}" 1>&2
+      echo -e "${YELLOW}(cmake recorded ARMFVP-NOTFOUND). Set ARMFVP_BIN_PATH, or rebuild"\
+" with the model installed.${NC}" 1>&2
+      exit 1
+    fi
+  fi
+  echo -e "${GREEN}Starting the model for ${BUILD_DIR}...${NC}"
+  # Subshell: the recorded command begins with a `cd`, and that must not
+  # follow us back into the rest of this script.
+  ( eval "${run_cmd}" )
 }
 
 function build_zephyr_actuation_module() {
-  echo -e "${GREEN}Building Zephyr Actuation Module...${NC}"
-  export PATH="${CYCLONEDDS_HOST_PREFIX}"/bin:$PATH
-  export LD_LIBRARY_PATH="${CYCLONEDDS_HOST_PREFIX}"/lib:${LD_LIBRARY_PATH:-}
+  echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
+  # Phase 3 W1 (nano-ros branch) — the Zephyr platforms run on nano-ros:
+  # messages come from `nros_generate_interfaces()` (host `nros` CLI) and the
+  # RMW is the nano-ros Zephyr module, so the vendored-CycloneDDS host tooling
+  # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
+  # here. The FreeRTOS platforms below still use it unchanged.
+  require_nros_checkout
+  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
+    run_zephyr_model
+    return
+  fi
+  # Build the host `nros` CLI if missing or stale (full host provisioning is
+  # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
+  # — inlined from the retired bootstrap-nano-ros-shim.sh.
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  if [ ! -f "${nros_cli_manifest}" ]; then
+    echo -e "${RED}nano-ros CLI manifest missing (${nros_cli_manifest}) — bump the west.yml nano-ros revision.${NC}" 1>&2
+    exit 1
+  fi
+  # Always run cargo: a fresh CLI is a ~0.1 s no-op, and any partial check
+  # misses part of the CLI's real input closure (its own source stamp hashes
+  # the cli-source-dirs.txt dirs OUTSIDE packages/cli too — an mtime probe on
+  # packages/cli alone let a pin bump through to a "CLI is STALE" codegen
+  # failure, 2026-08-23).
+  build_nros_cli "${nros_cli_manifest}"
+  # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
+  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
+  # resolution (phase-5 W1) and resolved/validated here.
   export CMAKE_PREFIX_PATH=""
-  export AMENT_PREFIX_PATH=""
-  local target_base="${ZEPHYR_TARGET%%@*}"
+  resolve_ament_env
+  # The nros CLI must be on PATH for the module's SDK-store lookups
+  # (`find_program(nros)` feeds `nros sdk-path cyclonedds` → host idlc hints;
+  # a fresh configure without it dies "host Cyclone idlc not found" even with
+  # a fully provisioned store). The posix lane has always done this; the
+  # zephyr lane coasted on stale CMake caches until the phase-5 W1 clean
+  # reconfigure exposed it.
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
+  # Board-facts lane (nano-ros phase-351 W5): `nros ws board-facts` resolves
+  # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
+  # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   local extra_conf_files=()
+  # EXTRA_DTC_OVERLAY_FILE is a single cmake variable, so every overlay the
+  # lane wants has to be collected and passed as one ';'-separated list —
+  # a second -D would silently drop the first.
+  local extra_dtc_overlays=()
+
+  # Zephyr 3.7 hardware-model-v2 board identifiers: the HWMv1 short name
+  # `fvp_baser_aemv8r_smp` is ambiguous (`fvp_baser_aemv8r` defines multiple
+  # SoCs) — `west build -b` needs the full board/soc/variant id. The board
+  # conf files in actuation_module/boards/ carry the HWMv2 basename too.
+  local board_id="${ZEPHYR_TARGET}"
+  local conf_base="${ZEPHYR_TARGET%%@*}"
+  if [ "${ZEPHYR_TARGET}" = "fvp_baser_aemv8r_smp" ]; then
+    board_id="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
+    conf_base="fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp"
+  fi
+
+  # nano-ros overlay (Kconfig surface for the module) is always on for the
+  # Zephyr platforms.
+  extra_conf_files+=("${ROOT_DIR}/actuation_module/nano_ros_overlay.conf")
+
+  # The Autoware trajectory follower declares ~150 node parameters (MPC
+  # lateral + PID longitudinal); nano-ros's parameter server is a static
+  # pool sized at Rust build time (nros-params build.rs, default 32 ->
+  # declare_parameter fails with ErrorCode::Full = -5 at boot).
+  #
+  # ZEPHYR LANE NOTE (nano-ros issues 0749/0756): these knobs reach the
+  # Zephyr Rust lane only since nano-ros d1c5b3b3b (before that the curated
+  # cargo env dropped them and every Zephyr image silently built the crate
+  # defaults). 256 used to HANG boot right after dds_create_participant —
+  # the param store was constructed on a task stack (~8.5 KiB/slot, issue
+  # 0756) — fixed upstream at pin ba9dba805; unpinned back to 256 so all
+  # ~150 controller parameters get declared slots.
+  # nano-ros build knobs (parameter pool, executor sizing, the Zephyr heap
+  # funnel). Sourced rather than inline so the FVP CI script can resolve the
+  # SAME values before `west build --target run` re-enters cmake.
+  # shellcheck source=scripts/zephyr-nros-knobs.sh
+  . "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
+  # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
+  # resolves the codegen tool from `_NANO_ROS_CODEGEN_TOOL` (then $NROS_CLI,
+  # then PATH); see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.
+  local nros_codegen="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
 
   # Build command with common arguments
   local build_args=(
     -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
-    -DCYCLONEDDS_SRC="${ROOT_DIR}"/cyclonedds
+    # Name WHICH deploy this build is. The bringup carries four
+    # ([deploy.fvp|freertos-posix|s32z2|an536]) and `nros ws board-facts`
+    # refuses when several resolve differently — correct of it, but the cmake
+    # wrapper then soft-skips and the image silently loses its board facts
+    # (nano-ros issue 0755). Adding [deploy.an536] made the set ambiguous and
+    # broke this lane exactly that way, so every lane now says which it is.
+    # `fvp` for both Zephyr targets: the bringup declares one Zephyr deploy
+    # and the S32Z board reuses it (there is no [deploy.s32z]).
+    -DNROS_DEPLOY="fvp"
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
     "-DBUILD_TEST=${BUILD_TEST_FLAG}"
+    # Issue 0745 — the bringup declares [system].features=["param_services"]
+    # (launch-param seeding); the Zephyr module lane has no bringup-driven
+    # capability resolution yet, so mirror it explicitly.
+    -DNANO_ROS_FEATURES="param_services"
   )
 
-  local board_conf="${ROOT_DIR}/actuation_module/boards/${target_base}_actuation.conf"
+  local board_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_actuation.conf"
   if [ -f "${board_conf}" ]; then
     extra_conf_files+=("${board_conf}")
   fi
 
-  local use_udp_tunnel=0
+  # The FVP's SMSC 91C111 ethernet model defaults to disabled
+  # (bp.smsc_91c111.enabled=0); without it Zephyr's eth_smsc91x probe fails
+  # ("Identification value not in BSR", MAC 00:00:00:00:00:00) and the net
+  # stack times out waiting for the interface. Enable it for every FVP run;
+  # promiscuous so the guest sees DDS multicast frames off the host bridge.
+  export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1"
+
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
-    extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/fvp_baser_aemv8r_smp_tap_network.conf")
+    extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/${conf_base}_tap_network.conf")
     local fvp_tap_interface="${FVP_TAP_INTERFACE:-tap0}"
-    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
-    if [ "${BUILD_TEST_FLAG}" = "4" ] || [ "${CONTROL_CMD_OUTPUT_MODE}" = "CAN_ONLY" ] || [ "${CONTROL_CMD_OUTPUT_MODE}" = "DDS_AND_CAN" ]; then
-      use_udp_tunnel=1
-    fi
+    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
   fi
 
   # Add device tree overlay only for ARM board variant
   if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
-    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${ROOT_DIR}"/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay)
+    extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay")
   fi
 
-  local can_loopback_conf="${ROOT_DIR}/actuation_module/boards/${target_base}_can_loopback.conf"
-  local can_loopback_overlay="${ROOT_DIR}/actuation_module/boards/${target_base}_can_loopback.overlay"
-  if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${use_udp_tunnel}" != "1" ]; then
+  local can_loopback_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.conf"
+  local can_loopback_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.overlay"
+  if [ "${BUILD_TEST_FLAG}" = "4" ]; then
     if [ -f "${can_loopback_conf}" ]; then
       extra_conf_files+=("${can_loopback_conf}")
     fi
     if [ -f "${can_loopback_overlay}" ]; then
-      build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${can_loopback_overlay}")
+      extra_dtc_overlays+=("${can_loopback_overlay}")
     fi
   fi
 
-  if [ "${use_udp_tunnel}" = "1" ]; then
-    if [ "${CONTROL_CMD_OUTPUT_MODE}" = "DDS_AND_CAN" ]; then
-      extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/fvp_baser_aemv8r_smp_output_dds_and_can.conf")
-    else
-      extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/fvp_baser_aemv8r_smp_output_can_only.conf")
+  # Real-time evaluation profile (documentation/design/rt_evaluation_zephyr.rst): CTF
+  # task timeline + thread runtime stats, streamed to uart1 so the console on
+  # uart0 stays clean. The tracing buffer is irq_lock-protected only, which is
+  # safe solely because prj_actuation.conf pins CONFIG_SMP=n.
+  # Layer 1 on its own: scheduling statistics, no CTF. Cheap enough for CI,
+  # and separable so the two layers can be bisected independently.
+  if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
+    extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_stats.conf")
+  fi
+
+  if [ "${TRACE_ENABLED}" = "1" ]; then
+    local tracing_conf="${ROOT_DIR}/actuation_module/tracing.conf"
+    local tracing_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_tracing.overlay"
+    if [ ! -f "${tracing_overlay}" ]; then
+      echo -e "${RED}--trace has no uart overlay for ${conf_base}; supported on the FVP board only.${NC}" 1>&2
+      exit 1
     fi
-    extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/fvp_baser_aemv8r_smp_can_udp_tunnel.conf")
+    extra_conf_files+=("${tracing_conf}")
+    # AFTER tracing.conf, because it must override CONFIG_TRACING_BACKEND_UART.
+    # Zephyr selects the backend with an #elif chain that tests UART first, so
+    # leaving it enabled silently wins and the ring is never chosen.
+    if [ "${TRACE_RING_ENABLED}" = "1" ]; then
+      extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_ring.conf")
+    fi
+    extra_dtc_overlays+=("${tracing_overlay}")
+    # -d may be given as either a relative or an absolute path, so resolve
+    # rather than prefixing ROOT_DIR blindly.
+    local trace_out="${TRACE_OUT_FILE:-$(realpath -m "${BUILD_DIR}")/trace.ctf}"
+    mkdir -p "$(dirname "${trace_out}")"
+    # board.cmake aims every FVP PL011 at stdout (out_file=-); send uart1 to a
+    # file instead so the CTF octet stream is not interleaved with the console.
+    # armfvp.cmake reads ARMFVP_EXTRA_FLAGS from the environment at CONFIGURE
+    # time and bakes it into the `run` target, so exporting it here is what
+    # makes a later `west build --target run` pick it up.
+    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.pl011_uart1.out_file=${trace_out}"
+    echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
   fi
 
   if [ "${#extra_conf_files[@]}" -gt 0 ]; then
@@ -424,218 +550,252 @@ function build_zephyr_actuation_module() {
     build_args+=(-DEXTRA_CONF_FILE="${extra_conf_file}")
   fi
 
-  west build -p auto -d "${BUILD_DIR}" -b "${ZEPHYR_TARGET}" actuation_module/ -- "${build_args[@]}"
+  if [ "${#extra_dtc_overlays[@]}" -gt 0 ]; then
+    local extra_dtc_overlay
+    extra_dtc_overlay=$(IFS=';'; echo "${extra_dtc_overlays[*]}")
+    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${extra_dtc_overlay}")
+  fi
+
+  # --run: start the model WITHOUT re-entering the build graph.
+  #
+  # `west build --target run` rebuilds first, and that rebuild cannot be made
+  # to succeed from here. Measured, in a clean build dir, build then run:
+  #
+  #   nros-cpp: nros_config_generated.h was written by another crate with
+  #   DIFFERENT probed sizes ... NROS_EXECUTOR_SIZE: on-disk=477088 vs
+  #   would-write=477336
+  #
+  # The two numbers come from two nros-c compilations that coexist in one build
+  # dir with different feature sets -- their own generated headers say so:
+  #
+  #   NROS_CONFIG_VARIANT "alloc_..._param_services_platform_zephyr_..."  -> 477336
+  #   NROS_CONFIG_VARIANT "critical_section_..._platform_zephyr_..."      -> 477088
+  #
+  # and both write the SAME shared header. Whichever build script runs second
+  # trips nano-ros's C/C++ agreement guard. The guard is right; what it catches
+  # is upstream, and it is reached on any second cargo invocation because the
+  # writer declares `rerun-if-changed` on the header it writes.
+  #
+  # So do not invoke cargo again to start a model that is already built. CMake
+  # records the FVP command line in build.ninja; run exactly that.
+
+  west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
 }
 
 function build_freertos_posix() {
-  echo -e "${GREEN}Building FreeRTOS POSIX runtime...${NC}"
-  if [ "${BUILD_TEST_FLAG}" = "5" ]; then
-    echo -e "${RED}--dds-loopback-test is not supported by the FreeRTOS POSIX CMake path${NC}" 1>&2
+  # Phase 4 W5.a — nano-ros workspace mode (nros-board-freertos-posix,
+  # nano-ros phase-370): host process, board-owned main()/scheduler, nodes
+  # as FreeRTOS tasks over HOST CycloneDDS (self-provisioned from the
+  # pinned fork; no vendored-cyclonedds involvement).
+  echo -e "${GREEN}Building FreeRTOS POSIX runtime (nano-ros workspace mode)...${NC}"
+  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only; the FreeRTOS POSIX lane builds the controller image${NC}" 1>&2
     exit 1
   fi
 
+  require_nros_checkout
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  # Always run cargo (no-op when fresh; see the zephyr lane note).
+  build_nros_cli "${nros_cli_manifest}"
+  # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
+  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
+  # resolution (phase-5 W1) and resolved/validated here.
+  export CMAKE_PREFIX_PATH=""
+  resolve_ament_env
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+  # `nros sync` spawns its own cmake probes that resolve the codegen tool
+  # from PATH/~/.nros/bin — our -D_NANO_ROS_CODEGEN_TOOL doesn't reach them.
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
+
+  # FreeRTOS kernel source — nros-provisioned (phase-4 kernel-provenance
+  # decision: nano-ros's index-pinned checkout is the SSOT).
+  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  if [ ! -d "${FREERTOS_DIR}/portable/ThirdParty/GCC/Posix" ]; then
+    echo -e "${RED}FreeRTOS kernel missing at ${FREERTOS_DIR}.${NC}" 1>&2
+    echo -e "${YELLOW}Run: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
+    exit 1
+  fi
+
+  # Same sizing knobs as the Zephyr lane (environment wins over defaults):
+  # the controller declares 150+ parameters and 8.8 KiB trajectory samples.
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
+  # case (nano-ros issue 0900), so the DERIVED size is
+  # MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048 -- about 1 MB on this lane and
+  # 3.4 MB on an536, for an image that owns no action client, no action server
+  # and no service (`ros2 node info /controller`: five subscriptions, three
+  # publishers).
+  #
+  # What it actually claims, from the runtime's own advisory:
+  #
+  #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
+  #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
+  #
+  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # claim does not scale with the buffer knob the derivation multiplies by 12.
+  #
+  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # advisory -- measured at 16 KiB:
+  #
+  #   arena exhausted: 66356 more bytes needed, 784/16384 in use
+  #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
+  #
+  # so raise it, do not trim it, if this image ever grows an entity.
+  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
+
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
 
-  build_cyclonedds_host
-  build_cyclonedds_target_posix
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
 
-  export PATH="${CYCLONEDDS_HOST_PREFIX}"/bin:$PATH
-  export LD_LIBRARY_PATH="${CYCLONEDDS_HOST_PREFIX}"/lib:${LD_LIBRARY_PATH:-}
-  local freertos_args=(
-    actuation_module/freertos
-    -B "${app_build_dir}"
-    -DCDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}"
-    -DCDDS_TARGET_PREFIX="${CYCLONEDDS_TARGET_PREFIX}"
-    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
-  )
-
-  if [ -n "${DDS_NETWORK_INTERFACE}" ]; then
-    freertos_args+=(-DCONFIG_DDS_NETWORK_INTERFACE="${DDS_NETWORK_INTERFACE}")
-  fi
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ]; then
-    freertos_args+=(-DCONFIG_CONTROL_CMD_OUTPUT_MODE="${CONTROL_CMD_OUTPUT_MODE}")
-  fi
-
-  cmake "${freertos_args[@]}"
-  cmake --build "${app_build_dir}" -j"$(nproc)"
+  cmake -S actuation_module -B "${app_build_dir}" \
+    -DNANO_ROS_PLATFORM=freertos \
+    -DNANO_ROS_BOARD=freertos-posix \
+    -DNROS_DEPLOY=freertos-posix \
+    -DNROS_RMW=cyclonedds \
+    -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
+    -DNROS_CLI_BIN="${nros_cli_bin}" \
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
+  cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
 }
 
-function build_freertos_s32z2() {
-  echo -e "${GREEN}Building FreeRTOS S32Z2 target...${NC}"
-  echo -e "${YELLOW}This target requires NXP S32Z2 RTD, FreeRTOS, lwIP, and S32 Config Tools output.${NC}"
+# The two ARMv8-R lanes — NXP S32Z270 hardware and QEMU mps3-an536 — differ in
+# board name, entry target and whether an NXP SDK is involved. Everything else
+# (CLI, ament env, cross toolchain discovery, kernel/port, sizing knobs, the
+# cmake invocation) is identical, so it lives here once.
+#
+#   $1 board name        e.g. s32z270-freertos
+#   $2 entry target      e.g. actuation_s32z2_entry
+#   $3 human label       e.g. "S32Z2"
+#   $4 deploy name       e.g. s32z2   (the [deploy.*] block in the bringup)
+function build_freertos_armv8r_nros() {
+  local board="$1"
+  local entry_target="$2"
+  local label="$3"
+  local deploy="$4"
+  echo -e "${GREEN}Building FreeRTOS ${label} runtime (nano-ros lane)...${NC}"
+  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only; this lane builds the controller image${NC}" 1>&2
+    exit 1
+  fi
+
+  require_nros_checkout
+  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
+  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
+  # Always run cargo (no-op when fresh; see the zephyr lane note).
+  build_nros_cli "${nros_cli_manifest}"
+  export CMAKE_PREFIX_PATH=""
+  resolve_ament_env
+  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
+  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
+
+  # Cross toolchain: prefer the SDK-provisioned arm-none-eabi-gcc (13.2 —
+  # what nano-ros builds and tests the s32z270 bundle with). The system
+  # 10.3 rejects the entry codegen's C++ designated initializers. Newest
+  # version first, matching nano-ros activate.sh; a system cross-gcc still
+  # resolves when the store has none. Provision with:
+  #   (cd modules/nros && nros setup --tool arm-none-eabi-gcc)
+  local sdk_gcc_bin
+  sdk_gcc_bin=$(find "${NROS_HOME:-$HOME/.nros}/sdk/arm-none-eabi-gcc" \
+      -maxdepth 2 -type d -name bin 2>/dev/null | sort -Vr | head -1)
+  if [ -n "${sdk_gcc_bin}" ] && [ -x "${sdk_gcc_bin}/arm-none-eabi-gcc" ]; then
+    export PATH="${sdk_gcc_bin}:${PATH}"
+  fi
+
+  # Kernel: nros-pinned checkout by default (link-complete CRx_No_GIC port);
+  # the NXP provisioning script overrides FREERTOS_DIR + FREERTOS_PORT.
+  export FREERTOS_DIR="${FREERTOS_DIR:-${ROOT_DIR}/modules/nros/third-party/freertos/kernel}"
+  export FREERTOS_PORT="${FREERTOS_PORT:-GCC/ARM_CRx_No_GIC}"
+  if [ ! -d "${FREERTOS_DIR}/portable/${FREERTOS_PORT}" ]; then
+    echo -e "${RED}FreeRTOS port missing at ${FREERTOS_DIR}/portable/${FREERTOS_PORT}.${NC}" 1>&2
+    echo -e "${YELLOW}Default kernel: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
+    echo -e "${YELLOW}NXP port: scripts/provision-nxp-freertos.sh${NC}" 1>&2
+    exit 1
+  fi
+
+  # Same sizing knobs as the other nros lanes (environment wins).
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  # 64 KiB, not the 16 KiB the other lanes use. A real Autoware trajectory
+  # serialises to ~13 KiB and this lane talks to a real Autoware; at 16 KiB the
+  # island reported NO trajectory at all while the same topic read a clean
+  # 10 Hz on the host (the class nano-ros issue 0749 documents: an undersized
+  # subscription buffer discards the sample silently, after Cyclone ACKed it).
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-65536}"
+  # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
+  # case (nano-ros issue 0900), so the DERIVED size is
+  # MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048 -- about 1 MB on this lane and
+  # 3.4 MB on an536, for an image that owns no action client, no action server
+  # and no service (`ros2 node info /controller`: five subscriptions, three
+  # publishers).
+  #
+  # What it actually claims, from the runtime's own advisory:
+  #
+  #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
+  #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
+  #
+  # The two agree to within 300 bytes across a 4x difference in rx_buf, so the
+  # claim does not scale with the buffer knob the derivation multiplies by 12.
+  #
+  # 131072 is 1.5x the measured claim. Getting it too small is FATAL, not
+  # advisory -- measured at 16 KiB:
+  #
+  #   arena exhausted: 66356 more bytes needed, 784/16384 in use
+  #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
+  #
+  # so raise it, do not trim it, if this image ever grows an entity.
+  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
-  local cdds_target_build_dir="${FREERTOS_S32Z2_CDDS_TARGET_BUILD_DIR:-${app_build_dir}/cdds_target}"
-  local cdds_target_prefix="${FREERTOS_S32Z2_CDDS_TARGET_PREFIX:-${app_build_dir}/cdds_target_out}"
 
-  build_cyclonedds_host
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
 
-  FREERTOS_S32Z2_BUILD_ROOT="${app_build_dir}" \
-  FREERTOS_S32Z2_CDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}" \
-  FREERTOS_S32Z2_CDDS_TARGET_BUILD_DIR="${cdds_target_build_dir}" \
-  FREERTOS_S32Z2_CDDS_TARGET_PREFIX="${cdds_target_prefix}" \
-    "${ROOT_DIR}/actuation_module/freertos_s32z2/scripts/build-cdds-target.sh"
-
-  local freertos_args=(
-    actuation_module/freertos_s32z2
-    -B "${app_build_dir}"
-    -DCMAKE_TOOLCHAIN_FILE="${ROOT_DIR}/actuation_module/freertos_s32z2/cmake/arm-cortex-r52.cmake"
-    -DCDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}"
-    -DCDDS_TARGET_PREFIX="${cdds_target_prefix}"
-  )
-
-  if [ -n "${DDS_NETWORK_INTERFACE}" ]; then
-    freertos_args+=(-DCONFIG_DDS_NETWORK_INTERFACE="${DDS_NETWORK_INTERFACE}")
-  fi
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ]; then
-    freertos_args+=(-DCONFIG_CONTROL_CMD_OUTPUT_MODE="${CONTROL_CMD_OUTPUT_MODE}")
+  # ROS domain. The bringup's `[deploy.<t>].domain_id` does NOT reach this lane:
+  # nano-ros hardcodes the FreeRTOS app config's domain to 0 and the typed
+  # path's runtime domain comes from the compile-time NROS_ENTRY_DOMAIN_ID,
+  # which is fed by this cmake knob (nano-ros issue 0831). Default 0 keeps CI
+  # as-is; the demo stack bridges Autoware (domain 1) to the island on domain 2,
+  # so a demo build sets NROS_DOMAIN_ID=2.
+  local _domain_arg=()
+  if [ -n "${NROS_DOMAIN_ID:-}" ]; then
+    _domain_arg=(-DNROS_DOMAIN_ID="${NROS_DOMAIN_ID}")
+    echo -e "${GREEN}ROS domain ${NROS_DOMAIN_ID} (NROS_ENTRY_DOMAIN_ID)${NC}"
   fi
 
-  cmake "${freertos_args[@]}"
-  cmake --build "${app_build_dir}" -j"$(nproc)"
+  cmake -S actuation_module -B "${app_build_dir}" \
+    -DNANO_ROS_PLATFORM=freertos \
+    -DNANO_ROS_BOARD="${board}" \
+    -DNROS_DEPLOY="${deploy}" \
+    "${_domain_arg[@]}" \
+    -DNROS_RMW=cyclonedds \
+    -DFREERTOS_PORT="${FREERTOS_PORT}" \
+    -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
+    -DNROS_CLI_BIN="${nros_cli_bin}" \
+    -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
+  cmake --build "${app_build_dir}" --target "${entry_target}" -j"$(nproc)"
 }
 
-function build_freertos_x5h() {
-  echo -e "${GREEN}Building FreeRTOS X5H target...${NC}"
-  echo -e "${YELLOW}Full-linked actuation module + CycloneDDS + lwIP-over-RPMsg. Network bring-up (RPMsg netif) is live, not stubbed.${NC}"
+# Phase 4 W5.b — the NXP S32Z270 lane. Without the NXP SDK the image
+# LINK-COMPLETES against the bundle's in-tree GCC/ARM_CRx_No_GIC port and weak
+# netif stubs; hardware provisioning (scripts/provision-nxp-freertos.sh) points
+# FREERTOS_DIR/FREERTOS_PORT at the patched NXP GCC/ARM_CR52_GIC port and
+# enables src/s32z2_board_glue via S32_RTD_PATH.
+function build_freertos_s32z2_nros() {
+  build_freertos_armv8r_nros s32z270-freertos actuation_s32z2_entry "S32Z2" s32z2
+}
 
-  # Task 8's frozen wire constants (CR52 172.16.52.2, Linux 172.16.52.1, DDS
-  # domain 2, multicast disabled both sides) are asserted here, before any
-  # compiling starts, precisely because this checker needs no build
-  # artifacts at all -- it only greps/xpaths source files
-  # (CMakeLists.txt, scripts/build-edge-ecu-peer-arm64.sh,
-  # edge_ecu_peer/cyclonedds-x5h.xml). Run unconditionally rather than
-  # gating it on the ELF the way check-elf-contract.sh/check-image-budget.sh
-  # are gated below: a wire-constant regression is worth catching before
-  # spending build time, not after.
-  "${ROOT_DIR}/actuation_module/freertos_x5h/scripts/check-dds-config.sh"
-
-  local app_build_dir
-  app_build_dir=$(realpath -m "${BUILD_DIR}")
-
-  local toolchain_bin
-  toolchain_bin=$("${ROOT_DIR}/actuation_module/freertos_x5h/scripts/fetch-toolchain.sh")
-  export PATH="${toolchain_bin}:${PATH}"
-
-  local x5h_dir="${ROOT_DIR}/actuation_module/freertos_x5h"
-  local rcar_bsp_dir="${x5h_dir}/rcar_bsp/FreeRTOS/Demo/R-Car_Gen5_CR52"
-  local cdds_target_build_dir="${FREERTOS_X5H_CDDS_TARGET_BUILD_DIR:-${app_build_dir}/cdds_target}"
-  local cdds_target_prefix="${FREERTOS_X5H_CDDS_TARGET_PREFIX:-${app_build_dir}/cdds_target_out}"
-
-  # autoware_msgs's IDL -> C generation (pulled in transitively via
-  # actuation_x5h's CMakeLists.txt) runs the host idlc, and CycloneDDS's own
-  # target build runs it too (on its own internal .idl files) -- both need
-  # the host tools built first. PATH/LD_LIBRARY_PATH are exported at the
-  # shell level (not just via CMake's ENV{PATH}, which only reaches the
-  # configure-time process) so the generated Makefiles' add_custom_command
-  # invocations of idlc -- run later by `cmake --build`, in a separate
-  # process tree -- can find it too. Mirrors build_freertos_s32z2()'s
-  # identical export pair.
-  build_cyclonedds_host
-  export PATH="${CYCLONEDDS_HOST_PREFIX}"/bin:$PATH
-  # Only prepend a ":" separator when LD_LIBRARY_PATH already has a value
-  # (review round 1 fix): the old unconditional
-  # "${CYCLONEDDS_HOST_PREFIX}/lib:${LD_LIBRARY_PATH:-}" left a trailing
-  # colon whenever LD_LIBRARY_PATH was unset (the common case), which the
-  # dynamic loader treats as an empty path component meaning "the current
-  # working directory" -- silently adding CWD to the loader search path.
-  if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-    export LD_LIBRARY_PATH="${CYCLONEDDS_HOST_PREFIX}"/lib:"${LD_LIBRARY_PATH}"
-  else
-    export LD_LIBRARY_PATH="${CYCLONEDDS_HOST_PREFIX}"/lib
-  fi
-
-  FREERTOS_X5H_BUILD_ROOT="${app_build_dir}" \
-  FREERTOS_X5H_CDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}" \
-  FREERTOS_X5H_CDDS_TARGET_BUILD_DIR="${cdds_target_build_dir}" \
-  FREERTOS_X5H_CDDS_TARGET_PREFIX="${cdds_target_prefix}" \
-    "${x5h_dir}/scripts/build-cdds-target.sh"
-
-  # -S points at the vendor's own BSP directory, not
-  # actuation_module/freertos_x5h: the vendor's CMakeLists.txt derives its
-  # BSP_DIR/FREERTOS_DIR from CMAKE_SOURCE_DIR, which is fixed to whatever
-  # -S names for the whole invocation and cannot be overridden from a child
-  # add_subdirectory() scope. -DCMAKE_PROJECT_INCLUDE pulls
-  # actuation_x5h back in via a deferred include() -- see
-  # actuation_module/freertos_x5h/cmake/inject_actuation_x5h.cmake for the
-  # full rationale. BOARD/RAM_REGION/MFIS_CHAN/UART_ID/CACHE/ENABLE_OPENAMP
-  # match Task 2's scripts/build-bsp-rpmsg-sample.sh (see AUDIT.md Section 6).
-  local x5h_args=(
-    -S "${rcar_bsp_dir}"
-    -B "${app_build_dir}"
-    -DCMAKE_TOOLCHAIN_FILE="${rcar_bsp_dir}/toolchain_arm_none_eabi.cmake"
-    -DCMAKE_PROJECT_INCLUDE="${x5h_dir}/cmake/inject_actuation_x5h.cmake"
-    -DBOARD=x5h_ironhide
-    -DENABLE_OPENAMP=1
-    -DRAM_REGION=2
-    -DMFIS_CHAN=1
-    -DUART_ID=1
-    -DCACHE=1
-    -DCDDS_HOST_PREFIX="${CYCLONEDDS_HOST_PREFIX}"
-    -DCDDS_TARGET_PREFIX="${cdds_target_prefix}"
-  )
-
-  if [ -n "${DDS_NETWORK_INTERFACE}" ]; then
-    x5h_args+=(-DCONFIG_DDS_NETWORK_INTERFACE="${DDS_NETWORK_INTERFACE}")
-  fi
-  if [ -n "${CONTROL_CMD_OUTPUT_MODE}" ]; then
-    x5h_args+=(-DCONFIG_CONTROL_CMD_OUTPUT_MODE="${CONTROL_CMD_OUTPUT_MODE}")
-  fi
-  x5h_args+=(-DACTUATION_PARAM_PROFILE="${PARAM_PROFILE}")
-  # e.g. --cmake-define X5H_DIAG_TASK_TABLE=ON --cmake-define
-  # CONFIG_DDS_LOG_LEVEL=3 for an instrumented build into its own -d
-  # directory; empty by default, so the default configuration's argv (and
-  # therefore its byte-identical output) is unchanged when this is absent.
-  if [ "${#EXTRA_CMAKE_ARGS[@]}" -gt 0 ]; then
-    x5h_args+=("${EXTRA_CMAKE_ARGS[@]}")
-  fi
-
-  cmake "${x5h_args[@]}"
-  # --target actuation_x5h, not a bare `cmake --build`: the vendor -S
-  # directory also defines its own hello_world/rpmsg_sample/etc. targets,
-  # and a bare build would compile all of them too.
-  cmake --build "${app_build_dir}" --target actuation_x5h -j"$(nproc)"
-
-  # Review finding (Minor #1): netif_only_x5h is EXCLUDE_FROM_ALL (see its
-  # CMakeLists.txt block) precisely so a bare `cmake --build` of this same
-  # configure does not compile it as a side effect of building
-  # actuation_x5h -- but that also meant nothing ever built or contract/
-  # budget-checked it automatically; it silently bit-rotted between manual
-  # `--target netif_only_x5h` invocations. Build it explicitly here, in the
-  # same configure (per the controller's ruling that this must be a second
-  # target, not a second configure), so every build.sh run proves both
-  # artifacts still build and pass both gates.
-  cmake --build "${app_build_dir}" --target netif_only_x5h -j"$(nproc)"
-
-  # A future rcar_bsp submodule bump is loud in most ways a layout change
-  # could break this target (renamed sources fail to configure, a second
-  # -T fails to link, a new vendor project() call duplicates a target) --
-  # but a bump that silently shifts .text or .resource_table to a different
-  # address is not loud at all unless something checks for it. Run the
-  # frozen-layout contract here so that check happens on every build, not
-  # only when someone remembers to run it by hand. Pass RPMSG_ETH_SERVICE's
-  # literal ("rpmsg-eth", rpmsg_netif_core.h) so the contract also confirms
-  # the service-name string made it into .rodata on both ELFs -- safe to
-  # rely on now that check-elf-contract.sh's SVC check no longer has the
-  # SIGPIPE-under-pipefail false-failure bug (see that script's own
-  # top-of-file comment).
-  "${x5h_dir}/scripts/check-elf-contract.sh" "${app_build_dir}/actuation_x5h.elf" rpmsg-eth "${PARAM_PROFILE}"
-  "${x5h_dir}/scripts/check-elf-contract.sh" "${app_build_dir}/netif_only_x5h.elf" rpmsg-eth "${PARAM_PROFILE}"
-
-  # Task 6: the checker's optional service-name argument takes exactly one
-  # name, so the second endpoint's string ("rpmsg-si") needs its own
-  # invocation rather than a second argument to the calls above.
-  "${x5h_dir}/scripts/check-elf-contract.sh" "${app_build_dir}/actuation_x5h.elf" rpmsg-si
-  "${x5h_dir}/scripts/check-elf-contract.sh" "${app_build_dir}/netif_only_x5h.elf" rpmsg-si
-
-  # Task 4's memory-risk gate: the full lwIP + CycloneDDS + actuation module
-  # link must fit the frozen 10 MiB Core1 boot-slot window. Checked on both
-  # ELFs for the same reason as above: netif_only_x5h must not silently grow
-  # past budget just because nothing was watching it.
-  "${x5h_dir}/scripts/check-image-budget.sh" "${app_build_dir}/actuation_x5h.elf"
-  "${x5h_dir}/scripts/check-image-budget.sh" "${app_build_dir}/netif_only_x5h.elf"
+# Phase 6 A5 — the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
+# phase-385). Same CPU and kernel port as the S32Z2 lane above, but nothing is
+# licensed or hardware-gated: the board bundle carries startup, GICv3, tick and
+# the LAN9118 netif, so this image BOOTS. Run it with:
+#   qemu-system-arm -machine mps3-an536 -nographic \
+#       -semihosting-config enable=on,target=native -kernel <image>
+function build_freertos_an536_nros() {
+  build_freertos_armv8r_nros mps3-an536-freertos actuation_an536_entry "AN536 (emulated R52)" an536
 }
 
 ## MAIN ##
@@ -646,23 +806,17 @@ normalize_platform
 cd "${ROOT_DIR}"
 mkdir -p build
 
-if [ "${PARAM_PROFILE}" != "after" ] && [ "${BUILD_PLATFORM}" != "freertos-x5h" ]; then
-  echo -e "${RED}--param-profile is only supported for --platform freertos-x5h${NC}" 1>&2
-  exit 1
-fi
-
 case "${BUILD_PLATFORM}" in
   zephyr-fvp|zephyr-s32z)
-    build_cyclonedds_host
     build_zephyr_actuation_module
     ;;
   freertos-posix)
     build_freertos_posix
     ;;
   freertos-s32z2)
-    build_freertos_s32z2
+    build_freertos_s32z2_nros
     ;;
-  freertos-x5h)
-    build_freertos_x5h
+  freertos-an536)
+    build_freertos_an536_nros
     ;;
 esac

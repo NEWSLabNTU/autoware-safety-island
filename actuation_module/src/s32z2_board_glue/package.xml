@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>s32z2_board_glue</name>
+  <version>0.1.0</version>
+  <description>NXP-licensed S32Z270 board glue for the nano-ros FreeRTOS lane (RTD NETC netif override; env-gated on the NXP SDK)</description>
+  <maintainer email="dev@newslabntu.org">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+</package>
