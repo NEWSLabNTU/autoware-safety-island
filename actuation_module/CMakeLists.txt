@@ -154,6 +154,16 @@ endif()
 include(${_nros_repo}/zephyr/cmake/nano_ros_use_board.cmake)
 nano_ros_use_board(fvp-aemv8r-smp)
 
+# The bringup's capabilities as Kconfig, set before find_package(Zephyr) where
+# Kconfig runs -- what `nros build` writes into the west application it
+# generates (nano-ros issues 1702/1706, builder/west_app.rs). This app is
+# hand-written, so it states them itself: controller_bringup declares
+# features = ["param_services"] and its launch file seeds parameters, which
+# implies the parameter store. Without these the runtime is built with neither,
+# and the nros heap default does not account for the store.
+set(CONFIG_NROS_CAPABILITY_PARAM_SERVICES y CACHE STRING "declared by controller_bringup" FORCE)
+set(CONFIG_NROS_PARAM_STORE y CACHE STRING "controller_bringup's launch seeds parameters" FORCE)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 if(BUILD_TEST STREQUAL "4" OR BUILD_TEST STREQUAL "5")
   set(EIGEN3_INCLUDE_DIR "")
