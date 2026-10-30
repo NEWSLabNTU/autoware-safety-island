@@ -3,7 +3,7 @@
 
 // Phase 5 W5 — one logging spine: the `log_*` API surface stays (20+
 // vendored Autoware TUs call it), but the sink is nano-ros's `nros_log`
-// dispatcher (`nros_log_emit_fmt` through the per-platform writer chain:
+// dispatcher (`rclc_log_emit_fmt` through the per-platform writer chain:
 // POSIX stderr / Zephyr LOG / board fn-ptr on the FreeRTOS family). The
 // old ASI-local implementation (colors, HH:MM:SS.mmm prefix, stderr) is
 // gone — timestamps/format now come from the platform sink.
@@ -23,7 +23,7 @@
 #include <pthread.h>
 #include "platform/platform_config.h"
 
-#include <nros/log.h>
+#include <rclc/log.h>
 
 #define log_info_throttle(msg, ...) common::logger::log_info_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
 #define log_warn_throttle(msg, ...) common::logger::log_warn_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
@@ -32,15 +32,15 @@ namespace common::logger {
 
 // Lazy, idempotent sink bring-up. Hosted POSIX wires the dispatcher from
 // .init_array; the no_std lanes (FreeRTOS/S32Z2) need the explicit
-// `nros_log_init()` after the board's platform-log writer registers —
+// `rclc_log_init()` after the board's platform-log writer registers —
 // calling it from a magic static covers both (idempotent upstream).
-inline nros_logger_t default_logger_() {
-    static const bool init_once = (nros_log_init(), true);
+inline rclc_logger_t default_logger_() {
+    static const bool init_once = (rclc_log_init(), true);
     (void)init_once;
-    return nros_log_default_logger();
+    return rclc_log_default_logger();
 }
 
-inline void vemit_(nros_log_severity_t severity, const char * format, va_list args) {
+inline void vemit_(rcl_log_severity_t severity, const char * format, va_list args) {
     char buffer[1024];
     vsnprintf(buffer, sizeof(buffer), format, args);
     // Callers historically embed a trailing '\n'; the sink adds its own
@@ -48,14 +48,14 @@ inline void vemit_(nros_log_severity_t severity, const char * format, va_list ar
     size_t len = 0;
     while (buffer[len] != '\0') { ++len; }
     if (len > 0 && buffer[len - 1] == '\n') { buffer[len - 1] = '\0'; }
-    nros_log_emit_fmt(default_logger_(), severity, "%s", buffer);
+    rclc_log_emit_fmt(default_logger_(), severity, "%s", buffer);
 }
 
 inline void log_success(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
+    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -64,7 +64,7 @@ inline void log_info(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
+    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -73,7 +73,7 @@ inline void log_warn(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vemit_(NROS_LOG_SEVERITY_WARN, format, args);
+    vemit_(RCLC_LOG_SEVERITY_WARN, format, args);
     va_end(args);
     #endif
 }
@@ -82,7 +82,7 @@ inline void log_error(const char * format, ...) {
     #if CONFIG_LOG_LEVEL >= 1
     va_list args;
     va_start(args, format);
-    vemit_(NROS_LOG_SEVERITY_ERROR, format, args);
+    vemit_(RCLC_LOG_SEVERITY_ERROR, format, args);
     va_end(args);
     #endif
 }
@@ -93,7 +93,7 @@ inline void log_debug(const char * format, ...) {
     va_start(args, format);
     // INFO severity on purpose: the nros default threshold is INFO with no
     // C-side setter; ASI's compile-time gate is the debug switch.
-    vemit_(NROS_LOG_SEVERITY_INFO, format, args);
+    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
 }
@@ -129,7 +129,7 @@ inline void log_info_throttle_(const char * file, int line, const char * format,
     if (should_print) {
         va_list args;
         va_start(args, format);
-        vemit_(NROS_LOG_SEVERITY_INFO, format, args);
+        vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
         va_end(args);
     }
 }
@@ -166,7 +166,7 @@ inline void log_warn_throttle_(const char * file, int line, const char * format,
     if (should_print) {
         va_list args;
         va_start(args, format);
-        vemit_(NROS_LOG_SEVERITY_WARN, format, args);
+        vemit_(RCLC_LOG_SEVERITY_WARN, format, args);
         va_end(args);
     }
 }
