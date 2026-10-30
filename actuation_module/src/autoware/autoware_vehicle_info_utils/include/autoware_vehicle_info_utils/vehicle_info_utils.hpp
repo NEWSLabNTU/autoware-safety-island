@@ -29,7 +29,7 @@ class VehicleInfoUtils
 public:
   /// Constructor
   // NOTE(soblin): this throws which should be replaced with a factory
-  explicit VehicleInfoUtils(Node & node);
+  explicit VehicleInfoUtils(AsiNode & node);
   
   /// Default constructor
   VehicleInfoUtils();

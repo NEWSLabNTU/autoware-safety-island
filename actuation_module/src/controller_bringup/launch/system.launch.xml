@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<!--
+  Phase 2.B — ASI controller launch topology.
+
+  ROS 2 launch XML schema, VERBATIM (nano-ros RFC-0024 §11.5). Stock
+  nav2 / Autoware launch.xml pastes in and Just Works modulo unsupported
+  tags. Supported here: <arg>, <node>, <param>, <remap>, $(var ...).
+
+  This file is the declarative replacement for the imperative wiring that
+  used to live in main.cpp:
+    * <node name="controller">   — I2: the node name (was the
+      `Node("controller", …)` ctor literal, now node_identity.hpp's
+      DEFAULT_NODE_NAME, overridden here).
+    * <remap from=… to=…>        — I3: the 5 subscription + 3 publisher
+      topics. Every `from=` is the node's declared default (the exact
+      string in controller_pkg/include/controller_pkg/node_identity.hpp);
+      `to=` defaults to the same string so behaviour is UNCHANGED. The
+      remap rows are the override points — edit `to=` to retopic without
+      touching C++.
+
+  2.B.2 — output-mode launch-arg surface. ASI's DDS-only / CAN-only /
+  DDS+CAN selection used to be the Kconfig `choice CONTROL_CMD_OUTPUT_MODE`.
+  It is lifted to the `control_output` launch arg below and passed to the
+  node as a param. The CAN path is a hardware sink, NOT a ROS topic, so it
+  is expressed as a node param rather than a <remap> (RFC workspace_mode
+  open question — "the CAN path stays outside the ROS-node identity").
+-->
+<launch>
+  <!-- 2.B.2 — output mode. Values: DDS_ONLY | CAN_ONLY | DDS_AND_CAN.
+       Maps the retiring Kconfig choice CONTROL_CMD_OUTPUT_MODE:
+         DDS_ONLY    ⇒ CONTROL_CMD_OUTPUT_DDS_ONLY    (default)
+         CAN_ONLY    ⇒ CONTROL_CMD_OUTPUT_CAN_ONLY
+         DDS_AND_CAN ⇒ CONTROL_CMD_OUTPUT_DDS_AND_CAN -->
+  <arg name="control_output" default="DDS_ONLY"/>
+  <!-- Supervision startup selection (vp_si_control_contract; the DDS build
+       reads the same four from SI_* environment variables). Empty = unset:
+       both supervision_mode and trajectory_source empty selects the build
+       default (si / autoware); a half-set pair or an invalid value is fatal.
+         supervision_mode           si | vp
+         trajectory_source          autoware | vp   (vp required by mode vp)
+         legacy_control_cmd         always | stop_only
+         operation_mode_durability  transient_local | volatile -->
+  <arg name="supervision_mode" default=""/>
+  <arg name="trajectory_source" default=""/>
+  <arg name="legacy_control_cmd" default=""/>
+  <arg name="operation_mode_durability" default=""/>
+
+  <node pkg="controller_pkg" exec="controller" name="controller">
+    <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
+    <param name="control_output" value="$(var control_output)"/>
+    <param name="supervision_mode" value="$(var supervision_mode)"/>
+    <param name="trajectory_source" value="$(var trajectory_source)"/>
+    <param name="legacy_control_cmd" value="$(var legacy_control_cmd)"/>
+    <param name="operation_mode_durability" value="$(var operation_mode_durability)"/>
+    <!-- Phase 4 profiling — explicit control period (s). The code default is
+         0.15 (a TODO from the port; stock Autoware runs 0.03). Declared here
+         so the deployment, not a C++ literal, owns the control rate. -->
+    <param name="ctrl_period" value="0.03"/>
+    <!-- phase-7 W12 — MPC prediction horizon (steps; lookahead is
+         N * mpc_prediction_dt, so 50 * 0.1 = 5.0 s). Compiled default is 50.
+         Seeded here because W11 identified it as the dominant cost lever:
+         the QP builds Cex (dim_y*N x dim_x*N) and Qex (dim_y*N square), and
+         H = B'C'QCB + R costs ~1.5M double MACs at N=50, which is where the
+         227.5 ms mpc_lateral phase goes. Declared so the sweep can vary it
+         without editing vendored Autoware, and so the value is owned by the
+         deployment rather than a C++ literal. -->
+    <param name="mpc_prediction_horizon" value="50"/>
+
+    <!-- I3 subscriptions (5) — from= MUST match node_identity.hpp exactly. -->
+    <remap from="/vehicle/status/steering_status" to="/vehicle/status/steering_status"/>
+    <remap from="/planning/scenario_planning/trajectory" to="/planning/scenario_planning/trajectory"/>
+    <remap from="/localization/kinematic_state" to="/localization/kinematic_state"/>
+    <remap from="/localization/acceleration" to="/localization/acceleration"/>
+    <remap from="/system/operation_mode/state" to="/system/operation_mode/state"/>
+    <remap from="/vehicle/driving_reference" to="/vehicle/driving_reference"/>
+    <remap from="/vehicle/driving_command" to="/vehicle/driving_command"/>
+    <remap from="/control/safety_island/reenable" to="/control/safety_island/reenable"/>
+    <remap from="/safety_island/vp_heartbeat" to="/safety_island/vp_heartbeat"/>
+
+    <!-- I3 publishers (3) — from= MUST match node_identity.hpp exactly. -->
+    <remap from="/control/trajectory_follower/control_cmd" to="/control/trajectory_follower/control_cmd"/>
+    <remap from="/control/trajectory_follower/lateral/debug/processing_time_ms" to="/control/trajectory_follower/lateral/debug/processing_time_ms"/>
+    <remap from="/control/trajectory_follower/longitudinal/debug/processing_time_ms" to="/control/trajectory_follower/longitudinal/debug/processing_time_ms"/>
+    <remap from="/control/safety_island/approved_request" to="/control/safety_island/approved_request"/>
+  </node>
+</launch>

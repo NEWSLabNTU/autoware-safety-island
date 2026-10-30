@@ -1,18 +1,20 @@
-// Copyright (c) 2022-2025, Arm Limited.
+// Copyright (c) 2022-2026, Arm Limited / NEWSLab NTU.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Phase 1C re-home of common/dds/network_config.cpp. Body is identical
+// to the original; only the header path changed. Kept as a separate TU
+// (rather than a #include of the original) so common/dds/ can be
+// deleted cleanly once the cutover finishes.
 
-// This file is Zephyr-only. For FreeRTOS, configure_network() is provided as a
-// static inline stub in include/platform/freertos/freertos_network.h.
 #if !defined(PLATFORM_ZEPHYR)
 #  error "network_config.cpp must only be compiled for the Zephyr platform"
 #endif
 
-#include <cerrno>
 #include <vector>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/ethernet.h>
 
-#include "common/dds/network_config.hpp"
+#include "common/net/network_config.hpp"
 #include "common/logger/logger.hpp"
 using namespace common::logger;
 
@@ -33,14 +35,6 @@ static int setup_iface(
   struct net_if * iface, const char * addr, const char * gw, const char * netmask, uint16_t tag)
 {
   struct in_addr inaddr;
-
-  if (!net_if_is_up(iface)) {
-    const int ret = net_if_up(iface);
-    if (ret < 0 && ret != -EALREADY) {
-      log_error("Cannot bring up interface %p: %d", iface, ret);
-      return 1;
-    }
-  }
 
   if (net_addr_pton(AF_INET, addr, &inaddr)) {
     log_error("Invalid address: %s", addr);
@@ -92,19 +86,23 @@ static void handler(
   for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
     char buf[NET_IPV4_ADDR_LEN];
 
-    if (iface->config.ip.ipv4->unicast[i].addr_type != NET_ADDR_DHCP) {
+    // Zephyr 3.7 (HWMv2) wraps each IPv4 unicast entry in
+    // `struct net_if_addr_ipv4` — the `net_if_addr` moved under `.ipv4`, and
+    // the netmask is now per-address (`.netmask`), not a single
+    // `net_if_ipv4.netmask`.
+    if (iface->config.ip.ipv4->unicast[i].ipv4.addr_type != NET_ADDR_DHCP) {
       continue;
     }
 
     log_info("  IP address: %s\n",
       net_addr_ntop(AF_INET,
-          &iface->config.ip.ipv4->unicast[i].address.in_addr,
+          &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
               buf, sizeof(buf)));
     log_info("  Lease time: %u seconds\n",
        iface->config.dhcpv4.lease_time);
     log_info("  Netmask:    %s\n",
       net_addr_ntop(AF_INET,
-               &iface->config.ip.ipv4->netmask,
+               &iface->config.ip.ipv4->unicast[i].netmask,
                buf, sizeof(buf)));
     log_info("  Gateway:    %s\n",
       net_addr_ntop(AF_INET,

@@ -37,7 +37,12 @@
 #include <utility>
 #include <vector>
 
-#include "common/node/node.hpp"
+// nano-ros port (RFC-0044): the vendored controller is base-swapped off the
+// legacy `common/node` DDS shim onto `nros::ComponentNode`, the
+// rclcpp-faithful IS-A-node base: identity in the ctor, typed member-callback
+// subscriptions, value-returning parameter facade. The MPC/PID control math
+// and the supervision logic (vp_si_control_contract) are untouched.
+#include <nros/component_node.hpp>
 #include "autoware/autoware_msgs/messages.hpp"
 
 // SI_STOP deceleration when the stop_decel_mps2 parameter is unset. A target
@@ -60,10 +65,15 @@ namespace trajectory_follower = ::autoware::motion::control::trajectory_follower
 
 /// \classController
 /// \brief The node class used for generating longitudinal control commands (velocity/acceleration)
-class TRAJECTORY_FOLLOWER_PUBLIC Controller : public Node
+class TRAJECTORY_FOLLOWER_PUBLIC Controller : public nros::ComponentNode
 {
 public:
-  explicit Controller(const StartupConfig & config);
+  /// RFC-0044 construct-with-handle ctor: the generated entry placement-news
+  /// this node with the executor-bound handle *after* `nros::init`; the body
+  /// creates all entities and declares params. The startup selection
+  /// (StartupConfig) is read from launch-seeded node parameters, see
+  /// startupConfigFromParameters().
+  explicit Controller(nros::NodeHandle handle);
   virtual ~Controller() {}
 
 private:
@@ -77,6 +87,8 @@ private:
   }
 
   double timeout_thr_sec_;
+  // Initialized from node parameters in the ctor's member-init list; the
+  // ComponentNode base (which owns declare_parameter) is constructed first.
   const StartupConfig startup_config_;
 
   std::optional<LongitudinalOutput> longitudinal_output_{std::nullopt};
@@ -84,16 +96,22 @@ private:
   std::shared_ptr<trajectory_follower::LongitudinalControllerBase> longitudinal_controller_;
   std::shared_ptr<trajectory_follower::LateralControllerBase> lateral_controller_;
 
-  // Subscribers
-  static void callbackSteeringStatus(const SteeringReportMsg* msg, void* arg);
-  static void callbackOperationModeState(const OperationModeStateMsg* msg, void* arg);
-  static void callbackOdometry(const OdometryMsg* msg, void* arg);
-  static void callbackAcceleration(const AccelWithCovarianceStampedMsg* msg, void* arg);
-  static void callbackTrajectory(const TrajectoryMsg_Raw* msg, void* arg);
-  static void callbackDrivingReference(const DrivingReferenceMsg* msg, void* arg);
-  static void callbackDrivingCommand(const DrivingCommandMsg* msg, void* arg);
-  static void callbackReenable(const BoolMsg* msg, void* arg);
-  static void callbackHeartbeat(const Float64StampedMsg* msg, void* arg);
+  // The startup selection, read once from node parameters before any
+  // subscription is created (the nros twin of StartupConfig::fromEnvironment:
+  // the deployment's launch file owns it). Invalid values are fatal.
+  StartupConfig startupConfigFromParameters();
+
+  // Subscribers -- RFC-0044 typed member callbacks (`void on_X(const Msg&)`),
+  // wired via create_subscription<Msg, Controller, &Controller::on_X>(topic).
+  void on_steering_status(const SteeringReportMsg& msg);
+  void on_operation_mode_state(const OperationModeStateMsg& msg);
+  void on_odometry(const OdometryMsg& msg);
+  void on_acceleration(const AccelWithCovarianceStampedMsg& msg);
+  void on_trajectory(const TrajectoryMsg_Raw& msg);
+  void on_driving_reference(const DrivingReferenceMsg& msg);
+  void on_driving_command(const DrivingCommandMsg& msg);
+  void on_reenable(const BoolMsg& msg);
+  void on_heartbeat(const Float64StampedMsg& msg);
 
   // Current Data
   TrajectoryMsg current_trajectory_;
@@ -117,13 +135,19 @@ private:
   bool has_accel_ = false;
   bool has_operation_mode_ = false;
 
-  // Publishers
-  std::shared_ptr<Publisher<ControlMsg>> control_cmd_pub_;
+  // The control timer runs in its OWN callback group (RFC-0047) so the
+  // deployment can bind it to a real-time tier ([tiers.control] + group_tiers
+  // in controller_bringup/system.toml); the subscriptions stay in the node's
+  // default context, so input deserialization cannot stall the control period.
+
+  // Publishers -- RFC-0044 value-typed `nros::Publisher<M>` members
+  // (default-constructed; assigned from create_publisher<M>(topic) in the ctor).
+  nros::Publisher<ControlMsg> control_cmd_pub_;
   common::can::ControlCommandOutputMode output_mode_{common::can::configured_control_command_output_mode()};
   std::shared_ptr<common::can::ControlCommandCanOutput> can_output_;
-  std::shared_ptr<Publisher<Float64StampedMsg>> pub_processing_time_lat_ms_;
-  std::shared_ptr<Publisher<Float64StampedMsg>> pub_processing_time_lon_ms_;
-  std::shared_ptr<Publisher<ApprovedRequestMsg>> approved_request_pub_;
+  nros::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
+  nros::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
+  nros::Publisher<ApprovedRequestMsg> approved_request_pub_;
 
   // -------------------------------------------------------------------
   // Supervision (vp_si_control_contract, Safety Island issues #63/#64/#65)
@@ -275,7 +299,7 @@ private:
 
   //
   void publishProcessingTime(
-    const double t_ms, const std::shared_ptr<Publisher<Float64StampedMsg>> pub);
+    const double t_ms, nros::Publisher<Float64StampedMsg>& pub);
 
   //
   StopWatch<std::chrono::milliseconds> stop_watch_;
