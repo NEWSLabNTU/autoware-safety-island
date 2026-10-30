@@ -15,6 +15,9 @@ services:
       # hard-codes autoware-main.yaml, so this copy replaces it; see the TODO in
       # launch/autoware-main.yaml.
       - ./launch/autoware-main.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/autoware-main.yaml:ro
+      # demo/component_state_monitor_topics.yaml (relaxed control-command rate
+      # checks for the slow FVP island) is not mounted: it was written for the
+      # universe-20250207 layout and is not yet re-checked against 2.0.0.
     env_file:
       - common.env
     command: >
