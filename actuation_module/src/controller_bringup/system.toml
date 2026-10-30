@@ -6,7 +6,7 @@
 #
 # This file is the SSoT for the system's identity (name), RMW backend,
 # ROS domain, default launch file, the composed node set, and the FVP
-# deploy target. It replaces the imperative knobs that used to live in
+# images. It replaces the imperative knobs that used to live in
 # main.cpp + Kconfig.
 
 [system]
@@ -17,7 +17,7 @@ name           = "controller_bringup"
 # the runtime get/set surface. Without it the entry cannot seed
 # ctrl_period/control_output and the node runs on compiled defaults.
 features       = ["param_services"]
-# ASI runs Cyclone DDS on Zephyr (Phase 1 runtime). A [deploy.<t>] block
+# ASI runs Cyclone DDS on Zephyr (Phase 1 runtime). An [image.<id>] row
 # may override per target; this is the system default.
 rmw            = "cyclonedds"
 # Default ROS_DOMAIN_ID. Embedded targets (FVP/Zephyr) BAKE this at build
@@ -81,47 +81,47 @@ priority = 80
 # capture — see documentation/design/upstream-zephyr-issues.md issue 4.
 priority = 9
 
-# FVP deploy target — ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr.
-# board cross-refs the `nros-board-fvp-aemv8r-smp` crate (Phase 215
-# nano_ros_use_board(fvp-aemv8r-smp), wired by the Phase 2.C Entry pkg).
-[deploy.fvp]
-kind   = "zephyr"
-target = "fvp_baser_aemv8r_smp"
+# Images (nano-ros phase-486 W8 retired `[deploy.<t>]`; each target is now an
+# `[image.<id>]` row naming a nano-ros BOARD id). The ids are the tokens
+# build.sh passes as NROS_DEPLOY and the Zephyr entry names as DEPLOY.
+
+# FVP image -- ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr. The board id's
+# descriptor supplies the Zephyr board (fvp_baser_aemv8r_smp) and the board
+# bundle's prj.conf / overlay (nano_ros_use_board(fvp-aemv8r-smp) in
+# actuation_module/CMakeLists.txt).
+[image.fvp]
 board  = "fvp-aemv8r-smp"
 launch = "system.launch.xml"
 
-# Phase 4 W5.a — FreeRTOS POSIX simulator (nano-ros phase-370 board).
-# kind "embedded", not "self": the controller runs as a FreeRTOS TASK under
-# the scheduler the board's main() starts — over HOST CycloneDDS sockets.
-# No netstack/site block: the board declares supported_netstacks = [] (the
-# host kernel owns the stack); FREERTOS_DIR flows via env at configure time.
-[deploy.freertos-posix]
-kind  = "embedded"
+# Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
+# controller runs as a FreeRTOS TASK under the scheduler the board's main()
+# starts -- over HOST CycloneDDS sockets. No netstack/site block: the board
+# declares supported_netstacks = [] (the host kernel owns the stack);
+# FREERTOS_DIR flows via env at configure time.
+[image.freertos-posix]
 board = "freertos-posix"
 
-# Phase 4 W5.b — NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
+# Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree
 # GCC/ARM_CRx_No_GIC port; hardware runs the NXP-provisioned GCC/ARM_CR52_GIC
 # port + the RTD NETC glue (src/s32z2_board_glue, env-gated on the NXP SDK).
-[deploy.s32z2]
-kind  = "embedded"
+[image.s32z2]
 board = "s32z270-freertos"
 
-# phase-6 A2 — the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
-# phase-385). Same CPU and kernel port as [deploy.s32z2] above, but nothing
+# phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
+# phase-385). Same CPU and kernel port as [image.s32z2] above, but nothing
 # about it is licensed or hardware-gated: it boots, schedules on a GICv3 +
 # generic-timer tick, and runs CycloneDDS over an emulated LAN9118. It exists
-# so the ARMv8-R code path — which the S32Z2 lane can only LINK today — has
+# so the ARMv8-R code path -- which the S32Z2 lane can only LINK today -- has
 # runtime coverage in CI without a board.
-[deploy.an536]
-kind  = "embedded"
+[image.an536]
 board = "mps3-an536-freertos"
 # Domain 2 for the demo stack (Autoware on 1, island on 2, `domain_bridge`
-# relaying between them) — the same split the FVP lane gets from its tap conf's
+# relaying between them) -- the same split the FVP lane gets from its tap conf's
 # CONFIG_NROS_CYCLONE_DOMAIN_ID=2.
 #
 # DECLARED HERE, BUT NOT WHAT APPLIES. The RFC-0004 ladder
-# ([deploy.<t>].domain_id over [system].domain_id) does not reach the FreeRTOS
+# ([image.<id>].domain_id over [system].domain_id) does not reach the FreeRTOS
 # typed path: nano-ros hardcodes the app config's domain to 0 and takes the
 # runtime domain from the compile-time NROS_ENTRY_DOMAIN_ID instead. So the
 # value that actually lands is build.sh's NROS_DOMAIN_ID knob. Filed upstream
