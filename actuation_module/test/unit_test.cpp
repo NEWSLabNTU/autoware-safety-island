@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Phase 5 W5 — ported off the polling shim (`common/node/node_nros.hpp`)
-// onto the executor-dispatch `nros::ComponentNode` the production image
-// uses. Callback dispatch now happens inside `nros::spin_once()` on the
+// onto the executor-dispatch `rclcpp::Node` (was `nros::ComponentNode`) the production image
+// uses. Callback dispatch now happens inside `rclcpp::spin_once()` on the
 // main thread, so the test state needs no mutex and the wait helper must
 // spin the executor rather than sleep.
 //
@@ -11,7 +11,7 @@
 //   * the spin()/stop() thread-management test — there is no per-node poll
 //     thread to start/stop; the executor is driven by spin_once.
 //   * the stop_timer test — a ComponentNode timer lives with its node
-//     (nros::Timer's dtor cancels it); there is no mid-life stop API.
+//     (rclcpp::Timer's dtor cancels it); there is no mid-life stop API.
 
 #include <cassert>
 #include <chrono>
@@ -19,8 +19,7 @@
 #include <cstdlib>
 #include <new>
 
-#include <nros/component_node.hpp>
-#include <nros/nros.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
@@ -63,15 +62,15 @@ static TestState g_state;
         } \
     } while (0)
 
-class TestNode : public nros::ComponentNode {
+class TestNode : public rclcpp::NodeWithTimers<1> {
 public:
-    nros::Publisher<PoseStampedMsg> pose_pub;
+    rclcpp::Publisher<PoseStampedMsg> pose_pub;
 
-    explicit TestNode(nros::NodeHandle h)
-    : nros::ComponentNode(h, "test_node")
+    explicit TestNode(rclcpp::NodeHandle h)
+    : rclcpp::NodeWithTimers<1>(h, "test_node")
     {
-        create_wall_timer<TestNode, &TestNode::on_tick>(100);  // 10 Hz timer
-        pose_pub = create_publisher<PoseStampedMsg>("test_pose");
+        create_wall_timer_in<TestNode, &TestNode::on_tick>(100);  // 10 Hz timer
+        pose_pub = create_publisher_in<PoseStampedMsg>("test_pose");
         NROS_SUBSCRIBE(PoseStampedMsg, on_pose, "test_pose");
         // Backs the parameter write on_tick exercises from dispatch context.
         (void)declare_parameter<int64_t>("int_param", 0);
@@ -100,7 +99,7 @@ public:
     template <typename T>
     bool set_param(const char * name, T value)
     {
-        return nros::detail::node_param_set(node().ffi_handle(), name, value).ok();
+        return rclcpp::detail::node_param_set(ffi_handle(), name, value).ok();
     }
 };
 
@@ -111,7 +110,7 @@ static bool spin_until(bool (*check)(), int timeout_ms = 2000)
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() < deadline) {
-        (void)nros::spin_once(10);
+        (void)rclcpp::spin_once(10);
         if (check()) return true;
     }
     return false;
@@ -235,11 +234,11 @@ int main()
     }
 #endif
 
-    if (!nros::init().ok()) {
-        log_error("nros::init failed\n");
+    if (!rclcpp::init_in().ok()) {
+        log_error("rclcpp::init_in failed\n");
         std::exit(1);
     }
-    nros::NodeHandle handle(nros::global_handle());
+    rclcpp::NodeHandle handle(rclcpp::global_handle());
     auto * node = new (g_node_buf) TestNode(handle);
     ASSERT_MSG(node->ok(), "TestNode construction should succeed");
 

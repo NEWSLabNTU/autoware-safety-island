@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Phase 5 W5 — ported off the polling shim (`common/node/node_nros.hpp`)
-// onto the executor-dispatch `nros::ComponentNode` the production image
+// onto the executor-dispatch `rclcpp::Node` (was `nros::ComponentNode`) the production image
 // uses. The test keeps its own imperative `main()` (no generated Entry):
-// `nros::init()` + a bounded `nros::spin_once()` loop replace the shim's
+// `rclcpp::init_in()` + a bounded `rclcpp::spin_once()` loop replace the shim's
 // poll thread.
 
 #include <atomic>
 #include <cstdlib>
 #include <new>
 
-#include <nros/component_node.hpp>
-#include <nros/nros.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
@@ -24,16 +23,16 @@ using namespace common::logger;
 
 static std::atomic<int> steering_report_count{0};
 
-class LoopbackNode : public nros::ComponentNode {
+class LoopbackNode : public rclcpp::Node {
 public:
-  nros::Publisher<SteeringReportMsg> pub;
+  rclcpp::Publisher<SteeringReportMsg> pub;
 
-  explicit LoopbackNode(nros::NodeHandle h)
-  : nros::ComponentNode(h, "dds_loopback_test")
+  explicit LoopbackNode(rclcpp::NodeHandle h)
+  : rclcpp::Node(h, "dds_loopback_test")
   {
     NROS_SUBSCRIBE(SteeringReportMsg, on_steering_report,
                    "/vehicle/status/steering_status");
-    pub = create_publisher<SteeringReportMsg>("/vehicle/status/steering_status");
+    pub = create_publisher_in<SteeringReportMsg>("/vehicle/status/steering_status");
   }
 
   void on_steering_report(const SteeringReportMsg & msg)
@@ -64,11 +63,11 @@ int main(void)
   }
 #endif
 
-  if (!nros::init().ok()) {
-    log_error("nros::init failed\n");
+  if (!rclcpp::init_in().ok()) {
+    log_error("rclcpp::init_in failed\n");
     std::exit(1);
   }
-  nros::NodeHandle handle(nros::global_handle());
+  rclcpp::NodeHandle handle(rclcpp::global_handle());
   auto * node = new (g_node_buf) LoopbackNode(handle);
   if (!node->ok()) {
     log_error("Failed to create DDS loopback node: %s (code=%d)\n",
@@ -89,7 +88,7 @@ int main(void)
       return 1;
     }
     for (int i = 0; i < 100; ++i) {
-      (void)nros::spin_once(10);
+      (void)rclcpp::spin_once(10);
     }
   }
 

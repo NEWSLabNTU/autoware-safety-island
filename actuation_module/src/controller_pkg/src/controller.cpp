@@ -7,7 +7,7 @@
 //
 // `NROS_COMPONENT(Controller)` emits:
 //   * the C-ABI factory `__nros_component_factory_controller_pkg(storage, handle)`
-//     that placement-news `controller_pkg::Controller(nros::NodeHandle(handle))`,
+//     that placement-news `controller_pkg::Controller(rclcpp::NodeHandle(handle))`,
 //   * the `"controller_pkg::Controller"` class-name marker (lint / identity rule),
 //   * the `shape:"rclcpp"` marker (the construct-with-handle IS-A-node shape).
 //
@@ -20,7 +20,7 @@
 
 #include "controller_pkg/controller.hpp"
 
-#include <nros/component_node.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 using namespace controller_pkg;  // so NROS_COMPONENT(Controller) names controller_pkg::Controller
 
