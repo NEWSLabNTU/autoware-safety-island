@@ -93,12 +93,14 @@ public:
                  msg.pose.position.x, msg.pose.position.y, msg.pose.position.z);
     }
 
-    // The value-returning ComponentNode facade has no public set_parameter;
-    // the backing ParameterServer (protected `params_`) does.
+    // The value-returning ComponentNode facade has no public set_parameter.
+    // Since nano-ros phase-426 W4 the node's parameters live in the
+    // executor-owned store (the owned `params_` server is gone), so write
+    // through the same forwarder the facade's declare/get use.
     template <typename T>
     bool set_param(const char * name, T value)
     {
-        return params_.set_parameter(name, value).ok();
+        return nros::detail::node_param_set(node().ffi_handle(), name, value).ok();
     }
 };
 
