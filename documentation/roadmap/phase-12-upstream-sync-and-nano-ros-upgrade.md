@@ -1,7 +1,8 @@
 # Phase 12 - Upstream sync, nano-ros upgrade, contribute-back plan
 
-Status: IN PROGRESS (2026-10-31). Branch `nano-ros-rebase` carries step A
-and step B (nano-ros upgrade, see B. Progress); step C is not started.
+Status: A and B done (2026-10-31). Branch `nano-ros-rebase` carries step A
+and step B (nano-ros now at main 4fcc75d413, see B. Progress); step C is
+not started.
 
 Inputs:
 
@@ -253,6 +254,32 @@ Known gaps at this pin:
   41042777043 also took the full 60 s.
 - 11 linked-only types carry no derived bound (sizing descriptor
   `[types.refused]`); a warning, no caps were demanded by codegen.
+
+#### Step 2 - nano-ros main 4fcc75d413 (2026-10-31)
+
+Target: the newest nano-ros `main` whose gate and post-submit runs were
+green when the step started (4fcc75d413, 173 commits past 05b7f7d; main
+had moved past the plan's 375fd91f41). One commit: submodule + west.yml
+(e79dbde); CI run 41088981842 green on all three lanes.
+The changelog fragments in between (phase-515 rclcpp/rclc parity,
+`ParameterCallbackHandle` -> `OnSetParametersCallbackToken` (#2114),
+parameter-path stack fixes #2104/#2118, phase-517 release pin
+0.6.0-nros5, phase-520 `nros_boot`) touch no API this repo uses, and the
+SDK tools in nros-sdk.lock are unchanged, so no source change was needed.
+
+Behaviour checks at 4fcc75d413 (same setup as step 1): `ros2 node info
+/controller` 7 subscribers + 4 publishers; steering and acceleration
+samples received; control_cmd 30.5 Hz (min 27 ms, max 41 ms); AN536 QEMU
+markers all present. Zephyr FVP (local, at 9be6bcfa4f, same code): full
+boot to "Actuation Safety Island is Live", CAN loopback test passes,
+stats variant passes with the worst stack at 70 %.
+
+Memory: unchanged from step 1 - arena 91,344 B (posix) / 90,440 B
+(an536) claimed at first spin; parameter store 2,246,656 B + 34,416 B on
+the AN536; AN536 heap peak 539 KB.
+
+The step-1 gaps (metadata probe recorder cap, nros_log records lost on
+the SMP FVP image) are unchanged at this pin.
 
 ## C. Contribute back to autowarefoundation (ranked)
 
