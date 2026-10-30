@@ -1,7 +1,7 @@
 # Phase 12 - Upstream sync, nano-ros upgrade, contribute-back plan
 
-Status: PLAN (2026-10-30). Branch `nano-ros-rebase` carries step A; steps
-B and C are not started.
+Status: IN PROGRESS (2026-10-31). Branch `nano-ros-rebase` carries step A
+and step B (nano-ros upgrade, see B. Progress); step C is not started.
 
 Inputs:
 
@@ -147,6 +147,112 @@ where a per-image `domain_id` goes; `nros setup board <id>` spelling.
    in use.
 5. Re-measure the arena (7 subs / 4 pubs) on AN536 and S32Z2.
 6. Bump to nano-ros main 375fd91f41.
+
+### Progress
+
+#### Step 1 - 05b7f7d2648f (2026-10-30)
+
+Done on `nano-ros-rebase`; CI run 41083138193 (c837c49) green on all three
+lanes. Commits, in order:
+
+- pin: modules/nros and west.yml together (LOCKSTEP kept; the Zephyr lane
+  still consumes nano-ros as a west project). This commit also carries the
+  nros-codegen.toml move (staged early by mistake; the follow-up commit
+  only fixes the path autoware_msgs passes).
+- C++ API: `nros::ComponentNode` -> `rclcpp::NodeWithTimers<1>` (controller,
+  unit_test, dds_sub) or `rclcpp::Node` (dds_pub, dds_loopback_test);
+  `create_subscription<M,C,&C::f>` -> `create_subscription_in`,
+  `create_publisher<M>` -> `create_publisher_in`, `create_timer_in` ->
+  `create_timer_in_group`, `create_wall_timer<C,&C::f>(ms)` ->
+  `create_wall_timer_in`, `nros::init()` -> `rclcpp::init_in()`,
+  `<nros/*.hpp>` -> `<rclcpp/rclcpp.hpp>`; `AsiNode` = `rclcpp::Node`.
+  Every call site was converted by hand: the old names still compile.
+- logger: `nros_log_*` -> `rclc_log_*`, `<rclc/log.h>`,
+  `rcl_log_severity_t`, `RCLC_LOG_SEVERITY_*`.
+- bringup: `[deploy.*]` -> `[image.<id>]` with nano-ros board ids (fvp ->
+  `fvp-aemv8r-smp`, freertos-posix, s32z2 -> `s32z270-freertos`, an536 ->
+  `mps3-an536-freertos`); `kind` and the Zephyr `target` are gone. Image
+  ids are unchanged, so build.sh's `NROS_DEPLOY` and the entries' `DEPLOY`
+  tokens did not move.
+- nros-codegen.toml at the workspace root (`actuation_module/`).
+- build: `NANO_ROS_PLATFORM/BOARD/FEATURES` are refused (phase-484 W8) ->
+  `NROS_*`; the FreeRTOS kernel is provisioned into the SDK store, so
+  build.sh asks `nros locate freertos-kernel` (index pinned) for
+  `FREERTOS_DIR`.
+- FreeRTOS: `include/platform/freertos/FreeRTOSConfig.h` (a stale copy of
+  the board's) deleted. It shadowed the board config for the entry TUs
+  only; with configSTACK_DEPTH_TYPE uint16_t vs uint32_t the image
+  segfaulted in xTaskCreateStatic. The S32Z2 config honours
+  `NROS_FREERTOS_LEVEL_IMAGE` (issue 2017; `freertos_run_tiers.c` #errors
+  otherwise).
+- `actuation_module/nros-sdk.lock` committed (qemu 11.0.0-nros7,
+  arm-none-eabi-gcc 13.2-nros5, corrosion 0.6.1-nros1), written by
+  `nros setup --index ../modules/nros/nros-sdk-index.toml --tool ...` run
+  in `actuation_module/`; the CI scripts provision from there.
+- CI: every lane provisions corrosion (a configure no longer fetches it);
+  build.sh's Zephyr lane runs `nros sync .` before west (a missing
+  SystemModel is refused since issue 1575); the FreeRTOS lanes run
+  `nros sync --check .` after the build; both cross lanes add their Rust
+  target to the toolchain nano-ros pins (`rust-toolchain.toml`, 1.99.0),
+  which corrosion's FindRust checks.
+- Zephyr: `find_package(nano_ros)` sets `NROS_DEPLOY` /
+  `NROS_LEAF_IMAGE_ID` from the app dir's own system.toml; actuation_module
+  has none, so both came back empty and `nros ws board-facts` refused four
+  images as ambiguous. actuation_module/CMakeLists.txt restores `fvp`.
+  It also sets `CONFIG_NROS_CAPABILITY_PARAM_SERVICES` and
+  `CONFIG_NROS_PARAM_STORE` before `find_package(Zephyr)`, as the
+  application `nros build` generates would.
+- CAN test: nano-ros now starts the `zephyr,canbus` controller in an
+  APPLICATION SYS_INIT (RFC-0109 D10), and Zephyr changes the mode of a
+  stopped controller only, so can_output_test stops it before
+  `can_set_mode(LOOPBACK)`.
+- tap profile: states `CONFIG_NROS_DOMAIN_ID=2` beside
+  `CONFIG_NROS_CYCLONE_DOMAIN_ID=2` (a disagreement is refused at
+  configure since issue 1550).
+- logger: on Zephyr the island's `log_*` lines go to printk. The SMP FVP
+  image delivered the first four nros_log records and then none (four is
+  `NROS_LOG_EARLY_RECORDS`, the ring issue 2000 parks records in while
+  another thread is inside a sink), although the controller ran on - a
+  printk probe beside every record showed the full boot and the control
+  loop. Seen on 05b7f7d and on main 9be6bcfa4f. Upstream bug, not filed
+  yet; Rust-side nros_log records on that image are still lost.
+
+Behaviour checks (freertos-posix, local, ROS_DOMAIN_ID 77, CycloneDDS on
+`lo`, host ROS 2 Humble + Autoware 1.5.0 msgs):
+
+- `ros2 node info /controller`: 7 subscribers, 4 publishers, the expected
+  topics and types.
+- subscriptions receive: with `ros2 topic pub` on
+  /vehicle/status/steering_status and /localization/acceleration the
+  "Waiting for steering/acceleration data" lines stop; stopping the
+  publishers latches `SI_STOP: acceleration`, as designed.
+- timer: `ros2 topic hz /control/trajectory_follower/control_cmd` =
+  30.6 Hz (min 28 ms, max 52 ms) for `ctrl_period` 0.03 s.
+- AN536 under QEMU: every CI marker, `tier priority set tier=control
+  prio=7`, `kernel time slicing OFF`, heap peak 539 KB of 32 MB.
+
+Memory (runtime advisory, arena forced to 4 MiB): 91,344 B claimed at
+first spin on freertos-posix, 90,440 B on freertos-an536 (was 88,780 /
+88,484). `NROS_EXECUTOR_ARENA_SIZE` stays 131072. New at this pin: the
+parameter store is carved from the executor backing, 256 slots =
+2,285,568 B (posix) / 2,246,656 B (an536) plus ~35 KB of services. That
+is `NROS_MAX_PARAMETERS=256` x ~8.9 KB per slot; it fits the AN536
+(32 MB heap) and has to be checked against the S32Z2 memory map.
+
+Known gaps at this pin:
+
+- `nros sync` reports "no producer for controller_pkg::controller": the
+  metadata probe panics in `census_hooks.rs` because the metadata
+  recorder holds 32 entities (`DEFAULT_MAX_METADATA_ENTITIES`) and the
+  controller declares 150+ parameters. Non-fatal (the build and runtime
+  are unaffected), but the image has no source metadata; unchanged on
+  nano-ros main as of 96c5736474.
+- `NROS_ENTRY_SPIN_MS` is read only by the Rust `nros::main!`; the C++
+  FreeRTOS entry ignores it, so the posix smoke runs to the 60 s CI
+  timeout (accepted by `is_success_or_timeout`). Not new: the af14492 run
+  41042777043 also took the full 60 s.
+- 11 linked-only types carry no derived bound (sizing descriptor
+  `[types.refused]`); a warning, no caps were demanded by codegen.
 
 ## C. Contribute back to autowarefoundation (ranked)
 
