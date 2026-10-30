@@ -9,6 +9,13 @@
 // On the FreeRTOS POSIX simulator, the host system clock is already correct.
 // SNTP synchronization is not needed. On real FreeRTOS hardware (Phase 5),
 // this should be replaced with an actual SNTP or NTP client.
+static inline int platform_sync_clock_via_sntp(double * correction_s) {
+    if (correction_s != nullptr) {
+        *correction_s = 0.0;
+    }
+    return 0;
+}
+
 static inline int platform_init_clock_via_sntp(void) {
     common::logger::log_info("FreeRTOS sim: SNTP disabled, using host system clock\n");
     return 0;

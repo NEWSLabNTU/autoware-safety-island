@@ -1,0 +1,15 @@
+/*
+ * Copyright (c) 2026, Arm Limited.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Route the CTF trace stream to uart1 so it stays off the console (uart0).
+ * The FVP board dts already enables uart1 at 115200; board.cmake points every
+ * PL011 at stdout, so the capture side also needs
+ * `-C bp.pl011_uart1.out_file=<file>` — ./build.sh --trace adds it.
+ */
+
+/ {
+	chosen {
+		zephyr,tracing-uart = &uart1;
+	};
+};
