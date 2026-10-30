@@ -352,6 +352,12 @@ static void test_zephyr_can_output_loopback()
 
   const struct device * device = common::can::platform::can_device();
   ASSERT_MSG(device_is_ready(device), "Zephyr CAN device is ready");
+  // nano-ros (RFC-0109 D10, phase-514 W5) now starts the `zephyr,canbus`
+  // controller in an APPLICATION SYS_INIT, before main(). Zephyr only changes
+  // the mode of a STOPPED controller (-EBUSY otherwise), so stop it first;
+  // output.init() below starts it again, as on a cold boot.
+  const int stop_rc = ::can_stop(device);
+  ASSERT_MSG(stop_rc == 0 || stop_rc == -EALREADY, "Zephyr CAN controller stops for the mode change");
   ASSERT_MSG(::can_set_mode(device, CAN_MODE_LOOPBACK) == 0, "Zephyr CAN loopback mode is set");
 
   add_zephyr_can_filter(common::can::kLateralCommandCanId);
