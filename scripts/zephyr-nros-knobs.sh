@@ -20,7 +20,22 @@
 # Every value stays `${VAR:-default}` so an explicit environment override still
 # wins, exactly as when these lived inline.
 
-export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+# Parameter store slots. ONE number for every lane (build.sh's FreeRTOS lanes
+# repeat it): 149 + 15 (10 %) margin = 164.
+#
+# 149 = the distinct names controller_pkg::Controller declares at construction
+# (trajectory follower + MPC lateral + PID longitudinal + vehicle info),
+# counted on freertos-posix at nano-ros 4fcc75d413 from every
+# nros_cpp_node_declare_param_* call. Bound measured there: 148 slots refuse a
+# declaration, 149 and 164 refuse none.
+#
+# Too small is SILENT: rclcpp::Node::declare_parameter<T>() returns the
+# compiled default when the store is full, so a launch-seeded value is lost
+# without a log line. Raise this when the controller grows a parameter.
+#
+# Each slot costs ~8,928 B of the executor backing (static .bss), so the old
+# 256 cost 2,285,568 B; 164 costs 1,464,192 B.
+export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
 # Executor sizing (nros-node build.rs): the controller registers 5
 # subscriptions + timers + publishers (default MAX_CBS=4 → creation fails
 # with TransportError at boot), and /planning trajectories run 9-14 KiB

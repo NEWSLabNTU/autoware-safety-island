@@ -635,8 +635,10 @@ function build_freertos_posix() {
   fi
 
   # Same sizing knobs as the Zephyr lane (environment wins over defaults):
-  # the controller declares 150+ parameters and 8.8 KiB trajectory samples.
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  # the controller receives 8.8 KiB trajectory samples. NROS_MAX_PARAMETERS
+  # is the one number all lanes use, sized in scripts/zephyr-nros-knobs.sh
+  # (149 declared + margin).
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
   # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
@@ -738,8 +740,9 @@ function build_freertos_armv8r_nros() {
     exit 1
   fi
 
-  # Same sizing knobs as the other nros lanes (environment wins).
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-256}"
+  # Same sizing knobs as the other nros lanes (environment wins);
+  # NROS_MAX_PARAMETERS is sized in scripts/zephyr-nros-knobs.sh.
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   # 64 KiB, not the 16 KiB the other lanes use. A real Autoware trajectory
   # serialises to ~13 KiB and this lane talks to a real Autoware; at 16 KiB the

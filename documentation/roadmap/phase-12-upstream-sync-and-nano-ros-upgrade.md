@@ -1,8 +1,8 @@
 # Phase 12 - Upstream sync, nano-ros upgrade, contribute-back plan
 
 Status: A and B done (2026-10-31). Branch `nano-ros-rebase` carries step A
-and step B (nano-ros now at main 4fcc75d413, see B. Progress); step C is
-not started.
+and step B (nano-ros now at main 4fcc75d413, parameter store sized to 164
+slots; see B. Progress); step C is not started.
 
 Inputs:
 
@@ -279,7 +279,63 @@ Memory: unchanged from step 1 - arena 91,344 B (posix) / 90,440 B
 the AN536; AN536 heap peak 539 KB.
 
 The step-1 gaps (metadata probe recorder cap, nros_log records lost on
-the SMP FVP image) are unchanged at this pin.
+the SMP FVP image) are unchanged at this pin. Both are now filed upstream:
+nano-ros issue 2165 (Zephyr SMP image stops logging after four records)
+and issue 2166 (the metadata probe recorder holds 32 entities and panics),
+through nano-ros PR 2882.
+
+#### Step 3 - parameter store sized to the controller (2026-10-31)
+
+`NROS_MAX_PARAMETERS` = 164 on every lane (scripts/zephyr-nros-knobs.sh for
+Zephyr; build.sh for freertos-posix, freertos-an536 and freertos-s32z2).
+Before this step it was 256.
+
+- Count: `controller_pkg::Controller` declares 149 distinct parameters
+  (trajectory follower, MPC lateral, PID longitudinal, vehicle info). The
+  names were read from every `nros_cpp_node_declare_param_*` call: 149 on
+  freertos-posix (gdb), and the same 149 out of 189 calls on AN536 (QEMU
+  gdbstub). The repeated calls are vehicle-info parameters that more than
+  one sub-controller declares; each repeat returns `ALREADY_EXISTS`.
+- Margin: 15 slots (10 %), so 164.
+- Checking that no declaration hits a full store: a breakpoint on the
+  instruction where each declare entry point produces `NROS_CPP_RET_FULL`.
+  On freertos-posix: 148 slots -> a full-store refusal; 149 -> none;
+  164 -> none. On AN536 (QEMU): 164 -> none. This needs a debugger
+  because a full store is silent: `rclcpp::Node::declare_parameter<T>()`
+  returns the compiled default and logs nothing.
+
+| image | slots | parameter store | state + services | executor backing (.bss) |
+|---|---|---|---|---|
+| freertos-posix | 256 -> 164 | 2,285,568 -> 1,464,192 B | 35,408 B | 2,472,896 -> 1,651,520 B (before = after + 92 x 8,928) |
+| freertos-an536 | 256 -> 164 | 2,246,656 -> 1,439,264 B | 34,416 B | 2,424,376 -> 1,617,000 B |
+| freertos-s32z2 | 256 -> 164 | same as AN536 | same as AN536 | 2,424,376 -> 1,617,000 B |
+
+S32Z2 (s32z270-freertos, build only, link-complete against the board
+bundle's GCC/ARM_CRx_No_GIC port without the NXP SDK; built locally with
+the SDK's arm-none-eabi-gcc 13.2-nros5). The board linker script
+(nano-ros `packages/boards/nros-board-s32z270-freertos/config/s32z270_rtu.ld`)
+puts `.text` and the read-only sections in FLASH (0x3180_0000, 4 MiB of
+SRAM), and `.data`, `.bss` and `._check_stack` in RAM (0x31C0_0000,
+3,584 KiB = 3,670,016 B). The executor backing
+(`__nros_tier_executor_storage`, the parameter store's home) and the
+FreeRTOS heap (`ucHeap`, 640 KiB) are both `.bss`, so both are in RAM:
+
+| | 256 slots | 164 slots |
+|---|---|---|
+| FLASH used (.text .. .got + .data LMA) | 1,646,384 B | 1,646,376 B of 4,194,304 |
+| RAM: .data | 14,632 B | 14,632 B |
+| RAM: .bss | 3,203,676 B | 2,396,284 B |
+| RAM: ._check_stack | 8,192 B | 8,192 B |
+| RAM used / free | 3,226,500 / 443,516 B | 2,419,108 / 1,250,908 B |
+
+256 slots fit too, but they used 88 % of RAM. 164 slots return 807,392 B
+of RAM. The 640 KiB FreeRTOS heap is the board's DDS default
+(`NROS_FREERTOS_DDS_HEAP_KB`). This repository's
+`include/platform/freertos/s32z2/FreeRTOSConfig.h` asks for 3 MiB, but it
+comes from the retired CMake tree and is evidently not what gets compiled:
+`ucHeap` is 640 KiB. Against the
+AN536 heap peak of 539 KB it leaves about 100 KB, and the freed RAM is
+where to grow it if hardware needs more.
 
 ## C. Contribute back to autowarefoundation (ranked)
 
