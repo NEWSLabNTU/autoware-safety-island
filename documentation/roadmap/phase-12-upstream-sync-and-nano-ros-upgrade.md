@@ -288,7 +288,8 @@ through nano-ros PR 2882.
 
 `NROS_MAX_PARAMETERS` = 164 on every lane (scripts/zephyr-nros-knobs.sh for
 Zephyr; build.sh for freertos-posix, freertos-an536 and freertos-s32z2).
-Before this step it was 256.
+Before this step it was 256. Commit e2be2be; CI run 41149995746 green on
+all three lanes.
 
 - Count: `controller_pkg::Controller` declares 149 distinct parameters
   (trajectory follower, MPC lateral, PID longitudinal, vehicle info). The
