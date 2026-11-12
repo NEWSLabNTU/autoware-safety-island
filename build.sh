@@ -291,7 +291,7 @@ function require_nros_checkout() {
 # stop a nano-ros DEVELOPER running a CLI older than sources they just edited.
 #
 # It misfires on a CONSUMER, because our own build mutates the stamped tree:
-# `nros sync` writes into it AFTER the CLI is built, so the stamp has already
+# `nros configure` writes into it AFTER the CLI is built, so the stamp has already
 # moved by the time codegen checks it. Neither `cargo build` nor
 # `cargo clean -p nros-cli` fixes that — both were measured, and both still end
 # in "in-tree nros CLI is STALE" (it is what broke the FVP demo immediately
@@ -407,10 +407,10 @@ function build_zephyr_actuation_module() {
   # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
   # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-  # The SystemModel nano_ros_entry reads is a build artifact only `nros sync`
+  # The SystemModel nano_ros_entry reads is a build artifact only `nros configure`
   # writes; since nano-ros issue 1575 a configure without it is refused, not
   # silently tierless. Same step the FreeRTOS lanes run.
-  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" configure . )
   local extra_conf_files=()
   # EXTRA_DTC_OVERLAY_FILE is a single cmake variable, so every overlay the
   # lane wants has to be collected and passed as one ';'-separated list —
@@ -454,6 +454,13 @@ function build_zephyr_actuation_module() {
   # then PATH); see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.
   local nros_codegen="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
 
+  # The bringup image this build is: [image.fvp], or [image.fvp-tap] (domain 2)
+  # for the TAP network profile.
+  local zephyr_image="fvp"
+  if [ "${NETWORK_PROFILE}" = "tap" ]; then
+    zephyr_image="fvp-tap"
+  fi
+
   # Build command with common arguments
   local build_args=(
     -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
@@ -465,7 +472,7 @@ function build_zephyr_actuation_module() {
     # broke this lane exactly that way, so every lane now says which it is.
     # `fvp` for both Zephyr targets: the bringup declares one Zephyr deploy
     # and the S32Z board reuses it (there is no [deploy.s32z]).
-    -DNROS_DEPLOY="fvp"
+    -DNROS_DEPLOY="${zephyr_image}"
     -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
@@ -475,6 +482,21 @@ function build_zephyr_actuation_module() {
     # capability resolution yet, so mirror it explicitly.
     -DNROS_FEATURES="param_services"
   )
+
+  # nano-ros 0a4cfcc063 (phase-530 W4): the Zephyr module hook runs
+  # `nros configure` for the image this west build is, before Kconfig, and
+  # seeds every reader from its answer. The controller image is the bringup's
+  # [image.fvp], so it names the bringup and the image; without them the
+  # inventory is composed after its readers ran and the promise check refuses
+  # the configure. The test images (--unit-test, --dds-*, --can-output-test)
+  # are hand-written mains that are not the bringup's image, so they stay
+  # guests and name neither.
+  if [ "${BUILD_TEST_FLAG}" = "0" ]; then
+    build_args+=(
+      -DNROS_IMAGE_SYSTEM_DIR="${ROOT_DIR}/actuation_module/src/controller_bringup"
+      -DNROS_IMAGE="${zephyr_image}"
+    )
+  fi
 
   local board_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_actuation.conf"
   if [ -f "${board_conf}" ]; then
@@ -621,7 +643,7 @@ function build_freertos_posix() {
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-  # `nros sync` spawns its own cmake probes that resolve the codegen tool
+  # `nros configure` spawns its own cmake probes that resolve the codegen tool
   # from PATH/~/.nros/bin — our -D_NANO_ROS_CODEGEN_TOOL doesn't reach them.
   export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
 
@@ -668,12 +690,24 @@ function build_freertos_posix() {
   #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
   #
   # so raise it, do not trim it, if this image ever grows an entity.
-  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
+  # Every subscription the controller creates is KEEP_LAST(1) (latest_only;
+  # the sidecar records depth 1 on all seven). nano-ros prices the executor
+  # arena per subscription at the depth it is told, and without a contract
+  # stating qos.depth on every endpoint it is told nothing and prices ROS's
+  # KEEP_LAST(10): 7 x 181,336 B = 1.27 MB at 16 KiB rx. The arena oracle then
+  # refuses the stated arena below. State the one depth instead.
+  export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
+  # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
+  # model's requirement is a compile error, and the model prices more than the
+  # measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
+  # rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
+  # to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
+  # in the environment still wins (and is refused if it is below the model).
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
 
-  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" configure . )
 
   cmake -S actuation_module -B "${app_build_dir}" \
     -DNROS_PLATFORM=freertos \
@@ -777,12 +811,24 @@ function build_freertos_armv8r_nros() {
   #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
   #
   # so raise it, do not trim it, if this image ever grows an entity.
-  export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
+  # Every subscription the controller creates is KEEP_LAST(1) (latest_only;
+  # the sidecar records depth 1 on all seven). nano-ros prices the executor
+  # arena per subscription at the depth it is told, and without a contract
+  # stating qos.depth on every endpoint it is told nothing and prices ROS's
+  # KEEP_LAST(10): 7 x 181,336 B = 1.27 MB at 16 KiB rx. The arena oracle then
+  # refuses the stated arena below. State the one depth instead.
+  export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
+  # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
+  # model's requirement is a compile error, and the model prices more than the
+  # measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
+  # rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
+  # to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
+  # in the environment still wins (and is refused if it is below the model).
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
 
-  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" sync . )
+  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" configure . )
 
   # ROS domain. The bringup's `[deploy.<t>].domain_id` does NOT reach this lane:
   # nano-ros hardcodes the FreeRTOS app config's domain to 0 and the typed

@@ -273,14 +273,14 @@ else()
   # play_launch model (upstream rule: SystemModels are build artifacts,
   # never committed). Both entries — this Zephyr one and the
   # freertos_posix_entry pkg — now read the SAME authored bringup,
-  # including the [tiers.control] RT model.
+  # including the [tasks.control] RT model.
   nano_ros_entry(
     NAME    actuation_entry
     BOARD   zephyr
     BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup"
     LAUNCH  default
     TYPED
-    DEPLOY  fvp)
+    DEPLOY  ${NROS_DEPLOY})
 
   # The network-readiness prologue (previously in main.cpp) is now a STRONG
   # override of the weak `nros_board_network_wait()` hook the generated entry's

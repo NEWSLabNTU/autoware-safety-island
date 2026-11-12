@@ -221,7 +221,7 @@ say "provisioning SDK store (cyclonedds idlc + rosidl)…"
 
 # ---- 6c. FreeRTOS POSIX lane (phase-4 W5.a) ----
 # Kernel source (nros-provisioned SSOT) + the launch-resolver helper that
-# `nros sync` requires beside the nros binary (nano-ros issue-0285 rule:
+# `nros configure` requires beside the nros binary (nano-ros issue-0285 rule:
 # resolved by absolute sibling path, never $PATH).
 say "provisioning FreeRTOS kernel + nros-launch-resolve…"
 ( cd "${ROOT}/modules/nros" && "${NROS_CLI}" setup --source freertos-kernel )

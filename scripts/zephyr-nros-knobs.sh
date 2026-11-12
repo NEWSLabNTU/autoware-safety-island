@@ -69,7 +69,19 @@ export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
 # The earlier 1008-byte figure quoted for this knob came from the DDS-LOOPBACK
 # TEST image in stats.log, not the controller -- a different image with a
 # fraction of the entities.
-export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-131072}"
+# Every subscription the controller creates is KEEP_LAST(1) (latest_only;
+# the sidecar records depth 1 on all seven). nano-ros prices the executor
+# arena per subscription at the depth it is told, and without a contract
+# stating qos.depth on every endpoint it is told nothing and prices ROS's
+# KEEP_LAST(10): 7 x 181,336 B = 1.27 MB at 16 KiB rx. The arena oracle then
+# refuses the stated arena below. State the one depth instead.
+export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
+# nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
+# model's requirement is a compile error, and the model prices more than the
+# measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
+# rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
+# to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
+# in the environment still wins (and is refused if it is below the model).
 # Zephyr heap for the nros allocator funnel. nano-ros phase-391 W3 moved
 # Zephyr allocation onto an rlsf-backed funnel and turned COMMON_LIBC_MALLOC
 # OFF, which retires CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE — the 16 MiB arena

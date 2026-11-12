@@ -8,6 +8,6 @@ version = "0.6.1-nros1"
 provenance = "source"
 
 [tool.qemu]
-version = "11.0.0-nros7"
+version = "11.0.0-nros8"
 provenance = "prebuilt"
-sha256 = "460a65abc578f598b8dab935d8c5dd9960b9b2e7d5a72e029ae7829a23b0ac3c"
+sha256 = "340c22d567a833ab454dd435672548a385d5ba543f73a4bf980e86320c735a25"

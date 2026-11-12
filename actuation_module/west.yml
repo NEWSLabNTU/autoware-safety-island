@@ -39,7 +39,14 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-10-31: 4fcc75d413 (newest main with gate + post-submit
+    # ON main, 2026-11-13: c229eae090, 1393 commits past 4fcc75d413 (main
+    # 0a4cfcc063 plus nano-ros PRs 3640 and 3642, both found on this port).
+    # Moves across phase-530 (`nros configure` replaces `nros sync`; every
+    # hooked host configure runs it), phase-536 (tiers are sched tasks),
+    # RFC-0121 D2 (a system.toml lives only in a bringup) and the stricter
+    # promise and arena checks. See documentation/roadmap/phase-13-*.
+    #
+    # Before that, ON main, 2026-10-31: 4fcc75d413 (newest main with gate + post-submit
     # green), the step after 05b7f7d below.
     #
     # Before that, 2026-10-30: 05b7f7d2648f, the pin NEWSLabNTU/simple-autoware-
@@ -76,7 +83,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 4fcc75d413d9e06f84087d20b7777bdc3b216a99
+      revision: c229eae0905762a106788efd4cbe9f2e9f31ab69
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

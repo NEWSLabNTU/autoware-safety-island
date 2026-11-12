@@ -164,7 +164,7 @@ Controller::Controller(rclcpp::NodeHandle handle)
   }
 
   // Timer -- RFC-0044 typed member timer, in its own callback group
-  // (RFC-0047) so the bringup's [tiers.control] binds it to a real-time
+  // (RFC-0047) so the bringup's [tasks.control] binds it to a real-time
   // scheduling context; the subscriptions below stay in the node's default
   // context (see header note).
   {

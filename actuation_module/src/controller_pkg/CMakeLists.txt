@@ -127,8 +127,8 @@ nano_ros_add_node(controller
   # component's ABI seam (nano-ros issue 1062).
   LANGUAGE CPP
   SOURCES ${_controller_sources}
-  # RFC-0047 — the control timer's group; bound to [tiers.control] by
-  # controller_bringup/system.toml group_tiers.
+  # RFC-0047 — the control timer's group; bound to [tasks.control] by
+  # controller_bringup/system.toml group_tasks.
   CALLBACK_GROUPS control
 )
 

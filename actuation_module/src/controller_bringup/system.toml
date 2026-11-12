@@ -44,21 +44,21 @@ name  = "controller"
 # so input deserialization (8.8 KiB trajectories) cannot stall the 30 ms
 # control period. Measured before tiers on freertos-posix: ~12.4 Hz with
 # 100-140 ms stalls against the 30 ms timer.
-group_tiers = { control = "control" }
+group_tasks = { control = "control" }
 
 # The control tier. RAW per-platform priorities (nano-ros issue-0623 rule:
 # tier and transport priorities are different units — keep the tier above
 # the app-default task, and verify boot's report_tiers_above_transport).
-[tiers.control]
+[tasks.control]
 class = "real_time"
-spin_period_us = 5000
-[tiers.control.freertos]
+spin_period = "5000us"
+[tasks.control.freertos]
 # freertos-posix board: configMAX_PRIORITIES = 10; app task default sits
 # lower. RAW FreeRTOS priority.
 priority = 7
-[tiers.control.posix]
+[tasks.control.posix]
 priority = 80
-[tiers.control.zephyr]
+[tasks.control.zephyr]
 # RAW Zephyr preemptive priority (lower number = higher priority).
 #
 # 9, not 5. nano-ros RFC-0079 allocated the Zephyr priority bands: the DDS
@@ -92,6 +92,17 @@ priority = 9
 [image.fvp]
 board  = "fvp-aemv8r-smp"
 launch = "system.launch.xml"
+
+# The same FVP image on the TAP network (build.sh --network tap), for the demo
+# stack: Autoware on domain 1, the island on 2, `domain_bridge` between them.
+# Its own row because the domain differs and, since nano-ros 0a4cfcc063, the
+# Zephyr hook renders the domain from the image it configures: a tap conf
+# stating CONFIG_NROS_DOMAIN_ID=2 under [image.fvp] (domain 0) is refused as a
+# disagreement (issue 1550).
+[image.fvp-tap]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+domain_id = 2
 
 # Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
 # controller runs as a FreeRTOS TASK under the scheduler the board's main()

@@ -136,7 +136,7 @@ private:
   bool has_operation_mode_ = false;
 
   // The control timer runs in its OWN callback group (RFC-0047) so the
-  // deployment can bind it to a real-time tier ([tiers.control] + group_tiers
+  // deployment can bind it to a real-time tier ([tasks.control] + group_tasks
   // in controller_bringup/system.toml); the subscriptions stay in the node's
   // default context, so input deserialization cannot stall the control period.
 

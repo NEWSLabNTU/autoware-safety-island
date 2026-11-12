@@ -26,7 +26,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <!-- nano-ros runtime + the autoware message umbrella the node uses. -->
-  <depend>nano_ros</depend>
+  <depend>nros</depend>
   <depend>autoware_msgs</depend>
 
   <!--
