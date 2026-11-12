@@ -85,10 +85,10 @@ echo "QEMU: ${QEMU} ($("${QEMU}" --version | head -1))"
 echo "Phase 1 - AN536 (emulated Cortex-R52) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-an536 -d "${BUILD_ROOT}"
 
-# build.sh ran `nros sync` before configure; this asserts nothing it writes
+# build.sh ran `nros configure` before the cmake configure; this asserts nothing it writes
 # is missing or stale afterwards (nano-ros's CI hook for the same check).
-echo "Phase 1b - nros sync --check"
-( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" sync --check . )
+echo "Phase 1b - nros configure --check"
+( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
 
 echo "Phase 2 - runtime smoke on QEMU"
 entry="${BUILD_ROOT}/src/freertos_an536_entry/actuation_an536_entry"
@@ -119,8 +119,9 @@ require_marker "${log}" "Actuation Safety Island is Live"
 # The bringup's seeded control_output drives the node — launch-param seeding
 # end to end, on the cross target.
 require_marker "${log}" "Control command output mode: DDS_ONLY"
-# The [tiers.control] real-time model reached the board's scheduler.
-require_marker "${log}" "tier priority set tier=\`control\`"
+# The [tasks.control] real-time model reached the board's scheduler.
+# nano-ros 0a4cfcc063 (phase-536) logs it as a sched task, not a tier.
+require_marker "${log}" "sched task priority set sched_task=\`control\`"
 # No Autoware upstream here, so the loop takes the not-ready path every cycle;
 # the supervisor (vp_si_control_contract) publishes HOLD with the stopped
 # payload there instead of nothing.

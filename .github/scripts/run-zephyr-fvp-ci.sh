@@ -323,7 +323,7 @@ mkdir -p "${NROS}/packages/cli/target/release"
 ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
        "${NROS}/packages/cli/target/release/nros-launch-resolve"
 # build.sh builds the CLI too (a no-op after this); it is needed here first
-# for the corrosion provisioning, which the `nros sync` metadata probe uses.
+# for the corrosion provisioning, which the `nros configure` metadata probe uses.
 cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
 # Corrosion (the CMake road's Rust bridge) comes from the SDK store and a
 # configure no longer fetches it (nano-ros RFC-0104 D10). Provisioned from the
@@ -331,6 +331,15 @@ cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-
 ( cd "${ROOT_DIR}/actuation_module" && \
     "${NROS}/packages/cli/target/release/nros" setup \
       --index "${NROS}/nros-sdk-index.toml" --tool corrosion )
+
+# nano-ros's Zephyr 3.7 patch set, applied to this west workspace (zephyr/ and
+# modules/lang/rust). Since nano-ros 0a4cfcc063 a Rust image refuses to
+# configure when zephyr-lang-rust lacks its hunks ("missing nano-ros patch
+# hunks": board facts, issue 2185; staticlib-only LTO, issue 2407). This is
+# step (b) of `nros setup board fvp-aemv8r-smp`, which bootstrap-asi.sh runs
+# on a local host; the other steps are already covered here. Idempotent, so a
+# cached workspace is fine.
+bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 
 echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full

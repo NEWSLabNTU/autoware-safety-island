@@ -4,7 +4,7 @@
 # The legacy phases (unit/pub-sub/CAN test programs on the vendored
 # CycloneDDS) retired with the lane; test programs are Zephyr-lane-only and
 # covered by run-zephyr-fvp-ci.sh. This lane proves: the workspace build
-# (nros sync + codegen + host CycloneDDS self-provision) and the runtime —
+# (nros configure + codegen + host CycloneDDS self-provision) and the runtime —
 # board-owned FreeRTOS scheduler, controller task boot markers, CAN mock,
 # control-loop spin — with a bounded self-exit.
 
@@ -35,10 +35,10 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}"
 
-# build.sh ran `nros sync` before configure; this asserts nothing it writes
+# build.sh ran `nros configure` before the cmake configure; this asserts nothing it writes
 # is missing or stale afterwards (nano-ros's CI hook for the same check).
-echo "Phase 1b - nros sync --check"
-( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" sync --check . )
+echo "Phase 1b - nros configure --check"
+( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
 
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/src/freertos_posix_entry/actuation_posix_entry"
