@@ -222,22 +222,15 @@ trajectory_follower::LateralOutput MpcLateralController::run(
 
   // set input data
   //
-  // phase-7 W10 — setTrajectory() is NOT called here. isReady() already ran it
-  // with these exact arguments immediately before, and it is the single most
-  // expensive thing in the control cycle: 33.95 ms p50 measured on the FVP,
-  // more than the whole 30 ms control period. Doing it twice cost that twice.
-  //
-  // It cannot be dropped from isReady() instead: that function's own
-  // `m_reference_trajectory.empty()` check is satisfied BY setTrajectory, so
-  // removing it there makes isReady() return false forever and run() is never
-  // reached to populate it.
-  //
-  // Duplicating it also pushed the trajectory into m_trajectory_buffer twice
-  // per cycle, which is the buffer the shape-change detection reads.
-  //
-  // CONTRACT: run() now requires isReady() to have been called with the same
-  // InputData first. Controller::callbackTimerControl does exactly that and
-  // only calls run() when isReady() returned true.
+  // Called once per cycle, here, as upstream does. This port once moved the
+  // call into isReady() only (phase-7 W10: it is the costliest step of the
+  // cycle, 33.95 ms p50 on the FVP, and upstream then ran it twice), and
+  // upstream #48 later took it out of isReady(). Together the two left no call
+  // at all: the MPC never received a reference, every cycle failed with
+  // "[calcNearestPoseInterp] input trajectory is empty", and the controller
+  // held the vehicle (emergency stop). Upstream's single call is also the
+  // single call W10 wanted.
+  setTrajectory(input_data.current_trajectory, input_data.current_odometry);
 
   m_current_kinematic_state = input_data.current_odometry;
   m_current_steering = input_data.current_steering;
