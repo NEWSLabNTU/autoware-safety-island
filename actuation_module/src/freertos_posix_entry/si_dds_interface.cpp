@@ -15,7 +15,9 @@
 // `nros_board_network_wait()` hook right before it opens the boot executor's
 // session, and this strong definition replaces the no-op. A CYCLONEDDS_URI the
 // operator already set is kept, and the fragment is appended after it (Cyclone
-// parses comma-separated fragments in order, later ones on top).
+// parses comma-separated fragments in order, later ones on top). Interfaces
+// are a list there, so the fragment adds one: a URI that selects the same
+// interface makes the session refuse to open.
 //
 // Without SI_DDS_INTERFACE nothing changes: Cyclone selects the interface
 // itself (or from the operator's CYCLONEDDS_URI). The "Network interface" log
@@ -95,6 +97,10 @@ extern "C" void nros_board_network_wait(void)
 
   std::string uri;
   if (const char * prev = std::getenv("CYCLONEDDS_URI"); prev != nullptr && prev[0] != '\0') {
+    // Cyclone's <Interfaces> is a list, so this ADDS an interface to the ones
+    // the URI selects; a URI that names the same one fails the session ("the
+    // same interface may not be selected twice").
+    log_warn("SI_DDS_INTERFACE adds to CYCLONEDDS_URI's interfaces; do not name one in both\n");
     uri = prev;
     uri += ",";
   }
