@@ -463,7 +463,11 @@ void PidLongitudinalController::changeControlState(
   const ControlState & control_state, const std::string & reason)
 {
   if (control_state != m_control_state) {
-    log_info("controller state changed: %s -> %s", toStr(m_control_state), toStr(control_state));
+    // toStr() returns std::string; a std::string passed through log_info's
+    // varargs is undefined and logged as "<invalid utf-8>".
+    log_info(
+      "controller state changed: %s -> %s", toStr(m_control_state).c_str(),
+      toStr(control_state).c_str());
     if (control_state == ControlState::EMERGENCY) {
       log_info("Emergency Stop since %s", reason.c_str());
     }
