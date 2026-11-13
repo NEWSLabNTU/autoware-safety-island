@@ -447,6 +447,15 @@ function build_zephyr_actuation_module() {
   # nano-ros build knobs (parameter pool, executor sizing, the Zephyr heap
   # funnel). Sourced rather than inline so the FVP CI script can resolve the
   # SAME values before `west build --target run` re-enters cmake.
+  # The S32Z270 heap. The knobs' 8 MiB default is sized on the 64-bit FVP and
+  # does not build here: the R52 is 32-bit, so nano-ros's rlsf heap holds at
+  # most 4 MiB ("heap size exceeds rlsf MAX_POOL_SIZE", MAX_POOL = 1 << (4 +
+  # FLLEN 18)), and the image has to fit the 7 MiB SRAM the board overlay
+  # selects. 2 MiB is 3.4x the peak the same controller reaches on the
+  # emulated R52 (mps3-an536: 618,880 B with Cyclone).
+  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
+    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-2097152}"
+  fi
   # shellcheck source=scripts/zephyr-nros-knobs.sh
   . "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
   # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
@@ -460,6 +469,15 @@ function build_zephyr_actuation_module() {
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
     zephyr_image="fvp-tap"
   fi
+  # The S32Z270 target is its own image, on this workspace's own board
+  # (src/s32z270_zephyr_board): the FVP image's board states the FVP's
+  # hardware and its AArch64 Rust triple.
+  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
+    zephyr_image="s32z"
+    # The board package is not in the nano-ros tree; the nros CLI calls of the
+    # configure that run outside this workspace find it through this path.
+    export NROS_EXTRA_BOARD_PATH="${ROOT_DIR}/actuation_module/src/s32z270_zephyr_board${NROS_EXTRA_BOARD_PATH:+:${NROS_EXTRA_BOARD_PATH}}"
+  fi
 
   # Build command with common arguments
   local build_args=(
@@ -470,8 +488,7 @@ function build_zephyr_actuation_module() {
     # wrapper then soft-skips and the image silently loses its board facts
     # (nano-ros issue 0755). Adding [deploy.an536] made the set ambiguous and
     # broke this lane exactly that way, so every lane now says which it is.
-    # `fvp` for both Zephyr targets: the bringup declares one Zephyr deploy
-    # and the S32Z board reuses it (there is no [deploy.s32z]).
+    # `fvp` (or `fvp-tap`) for the FVP and `s32z` for the S32Z270 target.
     -DNROS_DEPLOY="${zephyr_image}"
     -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
     -DEXTRA_CFLAGS="-Wno-error"
@@ -518,6 +535,11 @@ function build_zephyr_actuation_module() {
 
   # Add device tree overlay only for ARM board variant
   if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
+    # The 7 MiB SRAM2 as zephyr,sram (the board's default sram0 is 1 MiB, and
+    # the nano-ros image needs about 6.6 MB) and the ENETC MAC. Named here
+    # because the board package's overlay list stops Zephyr's own discovery
+    # of this app's boards/<board>.overlay.
+    extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52.overlay")
     extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay")
   fi
 

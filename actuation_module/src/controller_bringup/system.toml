@@ -114,6 +114,13 @@ board     = "fvp-aemv8r-smp"
 launch    = "system.launch.xml"
 domain_id = 2
 
+# The S32Z270 RTU0 R52 on Zephyr (build.sh -t s32z270dc2_rtu0_r52@D, release
+# only; no emulator models this SoC). nano-ros has no Zephyr board for it, so
+# the board is this workspace's own package, src/s32z270_zephyr_board.
+[image.s32z]
+board  = "s32z270-rtu0-zephyr"
+launch = "system.launch.xml"
+
 # Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
 # controller runs as a FreeRTOS TASK under the scheduler the board's main()
 # starts -- over HOST CycloneDDS sockets. No netstack/site block: the board

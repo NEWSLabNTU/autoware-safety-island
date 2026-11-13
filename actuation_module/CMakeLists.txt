@@ -152,7 +152,21 @@ else()
   get_filename_component(_nros_repo "${CMAKE_CURRENT_SOURCE_DIR}/../modules/nros" ABSOLUTE)
 endif()
 include(${_nros_repo}/zephyr/cmake/nano_ros_use_board.cmake)
-nano_ros_use_board(fvp-aemv8r-smp)
+# Two Zephyr targets, two board packages. The FVP is nano-ros's
+# fvp-aemv8r-smp. The S32Z270 RTU0 R52 (-t s32z270dc2_rtu0_r52@D, release
+# only) has no nano-ros Zephyr board, so this workspace carries one
+# (src/s32z270_zephyr_board); NROS_EXTRA_BOARD_PATH is how nano_ros_use_board
+# finds a board outside the nano-ros tree.
+if(BOARD MATCHES "^s32z270dc2_rtu0_r52")
+  # build.sh exports NROS_EXTRA_BOARD_PATH for this target: the nros CLI calls
+  # of this configure that do not run on this workspace (the board projection
+  # here, on the nano-ros tree; the board-facts check, on the bringup dir) find
+  # the package through it. Calls on this workspace find the package anyway;
+  # nano-ros counts it once (nano-ros PR 3709).
+  nano_ros_use_board(s32z270-rtu0-zephyr)
+else()
+  nano_ros_use_board(fvp-aemv8r-smp)
+endif()
 
 # The bringup's capabilities as Kconfig, set before find_package(Zephyr) where
 # Kconfig runs -- what `nros build` writes into the west application it

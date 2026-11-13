@@ -119,13 +119,14 @@ jobs:
           git -C modules/nros submodule update --init packages/cli/third-party/play_launch
 
       # Both Zephyr targets cross-compile the nano-ros runtime: AArch64 for the
-      # FVP, ARMv8-R for the S32Z270 RTU.
+      # FVP; for the S32Z270 RTU's Cortex-R52, the triple zephyr-lang-rust maps
+      # it to (armv7r-none-eabihf, see src/s32z270_zephyr_board).
       - name: Add the Rust cross targets
         shell: bash
         run: |
           tc="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' modules/nros/rust-toolchain.toml)"
           rustup toolchain install "${tc}" --profile minimal
-          for t in aarch64-unknown-none armv8r-none-eabihf; do
+          for t in aarch64-unknown-none armv7r-none-eabihf; do
             rustup target add --toolchain "${tc}" "${t}"
             rustup target add "${t}"
           done

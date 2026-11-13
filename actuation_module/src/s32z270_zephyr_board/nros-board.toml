@@ -1,0 +1,54 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nano-ros board descriptor for the NXP S32Z270 RTU0 Cortex-R52 on Zephyr
+# (`-t s32z270dc2_rtu0_r52@D`, the release-only Zephyr S32Z target).
+#
+# nano-ros ships no Zephyr board for this SoC (its S32Z270 board is the FreeRTOS
+# one, `s32z270-freertos`). The controller image used to borrow the FVP board
+# (`fvp-aemv8r-smp`) for this target, which handed it the FVP's SMP Kconfig, its
+# SMSC 91C111 overlay and its AArch64 Rust triple; the configure then refused
+# the triple, since zephyr-lang-rust builds the R52 as `armv7r-none-eabihf`.
+# This descriptor states the S32Z's own facts, and `[image.s32z]` in
+# controller_bringup/system.toml names it. Modelled on nano-ros's
+# packages/boards/nros-board-zephyr/boards/fvp-aemv8r-smp/nros-board.toml.
+
+[[board]]
+names = ["s32z270-rtu0-zephyr"]
+platform = "zephyr"
+toolchain = "stable"
+entry_kind = "zephyr-staticlib"
+# Zephyr's own ethernet L2 (the NXP NETC driver) owns the NIC.
+supported_netstacks = []
+
+[board.entry]
+crate_root_extra = "extern crate zephyr;"
+crate_root_deps = ["zephyr = \"0.1.0\"", "log = \"0.4\""]
+
+[board.zephyr]
+# The hwv2 name of the board build.sh selects as s32z270dc2_rtu0_r52@D (the
+# deprecated alias). The revision stays on the command line: the Kconfig symbol
+# nano-ros derives from this id (BOARD_S32Z2XXDC2) cannot carry it.
+west_board = "s32z2xxdc2/s32z270/rtu0"
+sdk_abi = "arm-zephyr-eabi"
+default_rmw = "cyclonedds"
+default_transport = "ethernet"
+# What zephyr-lang-rust's `_rust_map_target` picks for the Cortex-R52 with
+# CONFIG_FP_HARDABI.
+rust_target = "armv7r-none-eabihf"
+rust_prereqs = ["clang", "libclang-dev"]
+rust_components = ["clippy"]
+
+[board.provisioning]
+zephyr_line = "3.7"
+rust_targets = ["armv7r-none-eabihf"]
+rmw_source = "cyclonedds-src"
+
+[board.capabilities]
+heap = true
+atomics = true
+threads = true
+
+[board.net]
+stack = "os"
+links = ["tcp", "udp"]
