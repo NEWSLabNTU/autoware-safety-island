@@ -1,9 +1,13 @@
 # Phase 13 - Autoware 2.0.0 upstream, nano-ros main c229eae090
 
-Status: A and B done, CI green (2026-11-13). The `nano-ros` branch is rebased onto
-upstream `main` ec3f08a ("feat!: target Autoware 2.0.0", #75) and pins
-nano-ros main c229eae090 (main 0a4cfcc063 plus nano-ros PRs 3640 and
-3642, which this phase filed). C lists what is left.
+Status: A and B done, CI green (2026-11-13). C (2026-11-13): C1, C2 and
+C4-C7 done, on nano-ros pin 8a71f9b34e (four nano-ros PRs, see C
+results); C3 partly done (an MPC bug fixed, the ego still does not move
+on 2.0.0, and the bridged demo was not run); C8 drafted, not filed. The
+`nano-ros` branch is rebased onto upstream `main` ec3f08a ("feat!: target
+Autoware 2.0.0", #75). B pinned nano-ros main c229eae090 (main 0a4cfcc063
+plus nano-ros PRs 3640 and 3642, which this phase filed); C moved it to
+8a71f9b34e.
 
 Inputs:
 
@@ -99,3 +103,82 @@ FreeRTOS AN536 and FreeRTOS POSIX all green
 | C6 | Zephyr FVP: the boot log says "sched task priorities NOT checked against the transport: no task in this image was created at an explicit priority". Confirm `[tasks.control.zephyr] priority = 9` still reaches `main` (phase 8 found that Zephyr 3.7 does not trace `k_thread_priority_set`) | S | medium: an unapplied priority is silent |
 | C7 | The S32Z Zephyr target (release only) reuses `[image.fvp]`. It was not built here | S | low |
 | C8 | Remaining items from phase 12 C (contribute back) are unchanged | - | - |
+
+### C results (2026-11-13)
+
+nano-ros PRs filed by this part, all on main and in the pin 8a71f9b34e (main, 84 commits past c229eae090):
+3703 (arena), 3704 (owned-entry census), 3705 (Zephyr boot priority
+read-back), 3709 (a board package also on `NROS_EXTRA_BOARD_PATH` is one
+board).
+
+| # | outcome |
+|---|---|
+| C1 | Done, in nano-ros (PR 3703). The arena model priced every subscription at the image-wide receive buffer whenever a descriptor row stated no QoS depth, although that fallback used the budgeted depth (`NROS_PUBSUB_QOS_DEPTH=1`) anyway. A depth-less row is now priced at the budgeted depth and its own type's bound (the 27,100 B trajectory, 880 B odometry, ...). Derived arena on every lane: 94,840 B (was 353,344 on POSIX and 1,385,536 on AN536 / S32Z2), against 90,552 B claimed at first spin on AN536; the "arena larger than needed" advisory is gone. S32Z2 FreeRTOS: `.bss` 2,342,116 B, 1,305,004 B of the 3,584 KiB RAM region free (13,972 before, 1,250,908 in phase 12) |
+| C2 | Done. `src/freertos_posix_entry/si_dds_interface.cpp` defines `nros_board_network_wait()`, which the FreeRTOS runner calls just before it opens the session, and turns `SI_DDS_INTERFACE` (name, IPv4 or `auto`) into a `CYCLONEDDS_URI` fragment; every boot logs a "Network interface" line. A name that is no interface makes the session refuse to open, so the selector is applied, not only logged. The fragment adds to an operator's own `CYCLONEDDS_URI` (Cyclone's interface list), so naming the same interface in both fails; the binary warns. The POSIX CI lane checks the default line, the IP, name and `auto` forms and the refusal. `release.yml`: the FreeRTOS build job gets the nano-ros steps of `build-ci.yml` and ships `libddsc.so.0` (the entry links Cyclone from the nano-ros SDK store) beside `actuation_freertos`; the smoke job sets `LD_LIBRARY_PATH`. Run locally the way the smoke job runs: ubuntu:22.04 and 24.04 x (default, `lo`, `auto`) all start, log "Network interface", reach "Actuation Safety Island is Live" and wait for data. The release workflow itself only runs on a tag and was not run |
+| C3 | Partly done. `demo/component_state_monitor_topics.yaml` is now 2.0.0's own list with the two control-command checks relaxed to warn 2 Hz / error 0.5 Hz, mounted again at `autoware_launch/config/system/component_state_monitor/topics.yaml` (2.0.0 lists `/planning/trajectory` and dropped the `/initialpose3d` check); `check-demo-diag-graph.py` passes against the 2.0.0 image. The demo scripts need the bridge and visualizer images, which `docker compose` builds, so they were not run. Instead the 2.0.0 planning simulator ran with the compose service's mounts and command (`docker run`, domain 87 over loopback) beside the POSIX island on the same domain, no bridge, seeded as `run-posix-demo.sh` seeds. Measured: the planner publishes 140-point trajectories at 10 Hz (`planning_validator`, max 2.22 m/s); the island publishes control_cmd at 29.8-30.4 Hz; `change_to_autonomous` succeeds. Two faults found: (1) the island's MPC never received a reference trajectory ("input trajectory is empty" every cycle, then an emergency stop): phase 7 W10 removed `setTrajectory()` from `run()` because `isReady()` called it, and upstream #48 then removed it from `isReady()`; fixed in cc35af9, after which the MPC tracks (steering 0.539 rad). (2) The runbook's ego seed is 5.33 m from the 2.0.0 planner's lane, beyond the MPC's admissible position error, so the first cycle stops; re-seeded on the planned lane (0.17 m) the MPC runs. Open: after engage (`mode: 2`, `is_autoware_control_enabled: true`) the longitudinal command stays at the PID's stopped output (velocity 0, acceleration -3.4 m/s^2) and the ego does not move. The steering has converged (command and status both -0.136 rad), so it is not the keep-stopped-until-steer-convergence hold; not root-caused. The bridge path (domain 1 <-> 2) is unverified on 2.0.0 |
+| C4 | Done, in nano-ros (PR 3704). `freertos_posix_entry` matches the `<image>_entry` spelling of an RFC-0071 owned entry, so the census tried to configure that launch-only entry standalone for the host. The owned-entry census now applies only when the bringup declares no `[[component]]`; this image is sized by its model like the others, and `nros configure` no longer prints the failed host build |
+| C5 | Done: `spin_period` 5 ms -> 30 ms, the task's only release (the control timer, `ctrl_period` 0.03). The period is the idle park timeout and the bound of `release-jitter-runtime`; arrivals break the park and timer dues end it. Measured on AN536 / QEMU: at 5 ms, `measured=6000-7000 declared=5000` on every boot; left unset, nano-ros derives 1 ms here (no contract states the timer period) and reports `measured=9000 declared=1000`; at 30 ms, no violation in the 90 s smoke, nor on POSIX or the FVP controller boot. Not measured on hardware |
+| C6 | Done, in nano-ros (PR 3705). The Zephyr boot thread adopted the boot sched task's priority with `k_thread_priority_set()`, which Zephyr 3.7 does not trace, and printed nothing. Both Zephyr runners now read it back (`k_thread_priority_get()`) and print the FreeRTOS / NuttX marker. FVP: ``nros: sched task priority set sched_task=`control` prio=9``, and the FVP CI lane requires it. The "NOT checked against the transport" line stays: Cyclone on Zephyr creates no transport task at an explicit priority, so there is no band to compare with |
+| C7 | Done. The target had not been built since the nano-ros move and did not configure: it used the FVP's nano-ros board (SMP, SMSC NIC overlay, AArch64 Rust triple), hal_nxp / cmsis were at upstream's pins for its older zephyr ("SoC s32z270 not supported"), the 8 MiB heap exceeds rlsf's 4 MiB pool on a 32-bit core, and the image did not fit sram0 (1 MiB). Now: this workspace's own board package `src/s32z270_zephyr_board` (`[image.s32z]`, Rust triple `armv7r-none-eabihf`), cmsis / hal_nxp at Zephyr v3.7.0's pins, a 2 MiB heap (3.4x the AN536 peak of 618,880 B) and the existing 7 MiB SRAM2 overlay. Links: RAM 6,644,740 B of 7 MB (90.5 %) at pin 8a71f9b34e. Not run (no emulator models the SoC) |
+| C8 | No upstream PR opened (the DCO sign-off is the user's). Draft below |
+
+CI on `nano-ros` 50f6852 (pin 8a71f9b34e): run 43364619105, Zephyr FVP,
+FreeRTOS AN536 and FreeRTOS POSIX all green
+(https://github.com/NEWSLabNTU/autoware-safety-island/actions/runs/43364619105).
+
+### C8 draft: upstream-ready patch (phase 12 C item 3)
+
+Phase 12 C ranks the contributions; nothing about them changed in this
+phase except that item 3 is ready. Upstream's `Controller::processData()`
+still routes all five "Waiting for ... data" lines through one lambda,
+and `log_info_throttle` keys on `(__FILE__, __LINE__)`, so the five share
+one throttle slot: the first missing input is logged and the other four
+never are. This branch fixed it as part of the controller port. The
+patch below applies to upstream `main` ec3f08a as is; it needs the
+user's `Signed-off-by` (DCO) before it can be filed, with the subject
+`fix(controller): give each missing input its own throttle slot`.
+
+```diff
+--- a/actuation_module/src/autoware/autoware_trajectory_follower_node/src/controller_node.cpp
++++ b/actuation_module/src/autoware/autoware_trajectory_follower_node/src/controller_node.cpp
+@@ -587,28 +587,27 @@
+ {
+   bool is_ready = true;
+ 
+-  const auto & logData = [this](const std::string & data_type) {
+-    log_info_throttle(("Waiting for " + data_type + " data").c_str());
+-  };
+-
++  // Each wait has its own log_info_throttle call site. The throttle keys on
++  // (__FILE__, __LINE__), so one shared lambda gave all five a single slot:
++  // the first missing input was logged and the other four never were.
+   if (!has_accel_) {
+-    logData("acceleration");
++    log_info_throttle("Waiting for acceleration data");
+     is_ready = false;
+   }
+   if (!has_steering_) {
+-    logData("steering");
++    log_info_throttle("Waiting for steering data");
+     is_ready = false;
+   }
+   if (!has_trajectory_) {
+-    logData("trajectory");
++    log_info_throttle("Waiting for trajectory data");
+     is_ready = false;
+   }
+   if (!has_odometry_) {
+-    logData("odometry");
++    log_info_throttle("Waiting for odometry data");
+     is_ready = false;
+   }
+   if (!has_operation_mode_) {
+-    logData("operation mode");
++    log_info_throttle("Waiting for operation mode data");
+     is_ready = false;
+   }
+ 
+```
+
+The other phase-13 changes are nano-ros specific (C1, C2, C4-C7) or demo
+configuration for the nano-ros island (C3), and have no upstream form.
