@@ -51,7 +51,17 @@ group_tasks = { control = "control" }
 # the app-default task, and verify boot's report_tiers_above_transport).
 [tasks.control]
 class = "real_time"
-spin_period = "5000us"
+# `spin_period` is the spin loop's idle park timeout and the bound of the
+# `release-jitter-runtime` rule, not a priority: a message arrival breaks the
+# park and a timer due ends it, so it sets idle wakeups, not latency. 30 ms is
+# the task's only release, the control timer (`ctrl_period` 0.03 in the
+# launch file). nano-ros cannot derive it here (no contract states the timer's
+# period; left unset it derives 1 ms), and the 5 ms this said before asked for
+# a release grid the task has no work on: QEMU's mps3-an536 missed it by
+# 6-9 ms on every boot (`release-jitter-runtime spin measured=7000
+# declared=5000`), while a wake a whole control period late is what the rule
+# exists to catch.
+spin_period = "30ms"
 [tasks.control.freertos]
 # freertos-posix board: configMAX_PRIORITIES = 10; app task default sits
 # lower. RAW FreeRTOS priority.
