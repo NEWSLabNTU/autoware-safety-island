@@ -345,10 +345,14 @@ echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
 build_variant full
 run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}" \
     "Starting Controller Node" "Controller Node Started" \
-    "Actuation Safety Island is Live"
+    "Actuation Safety Island is Live" "nros: sched task priority set sched_task="
 require_marker "${LOG_DIR}/controller.log" "Starting Controller Node"
 require_marker "${LOG_DIR}/controller.log" "Controller Node Started"
 require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
+# [tasks.control.zephyr] priority = 9 reached `main`, the boot sched task's
+# thread: nano-ros reads the priority back after k_thread_priority_set(), which
+# Zephyr 3.7 does not trace (nano-ros PR 3705).
+require_marker "${LOG_DIR}/controller.log" "nros: sched task priority set sched_task=\`control\` prio=9"
 forbid_marker "${LOG_DIR}/controller.log" "ZEPHYR FATAL ERROR"
 
 echo "Phase 2 - Zephyr FVP unit_test build + run"

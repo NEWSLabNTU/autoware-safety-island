@@ -45,7 +45,14 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-13: c229eae090, 1393 commits past 4fcc75d413 (main
+    # ON main, 2026-11-13: 8a71f9b34e, 84 commits past c229eae090, carrying
+    # the four nano-ros PRs phase 13 C filed: 3703 (a depth-less subscription
+    # row is priced at the budgeted depth: the arena is 94,840 B, not 1.39 MB),
+    # 3704 (no host census of a launch-only owned entry), 3705 (the Zephyr boot
+    # sched task's priority is read back and printed), 3709 (a board package
+    # also on NROS_EXTRA_BOARD_PATH is one board; the S32Z270 Zephyr build).
+    #
+    # Before that, ON main, 2026-11-13: c229eae090, 1393 commits past 4fcc75d413 (main
     # 0a4cfcc063 plus nano-ros PRs 3640 and 3642, both found on this port).
     # Moves across phase-530 (`nros configure` replaces `nros sync`; every
     # hooked host configure runs it), phase-536 (tiers are sched tasks),
@@ -89,7 +96,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: c229eae0905762a106788efd4cbe9f2e9f31ab69
+      revision: 8a71f9b34e4d53026ace1bb6871bdc74f4073d8f
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

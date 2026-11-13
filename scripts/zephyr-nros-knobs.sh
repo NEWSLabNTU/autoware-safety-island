@@ -77,11 +77,14 @@ export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
 # refuses the stated arena below. State the one depth instead.
 export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
 # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
-# model's requirement is a compile error, and the model prices more than the
-# measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
-# rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
-# to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
-# in the environment still wins (and is refused if it is below the model).
+# model's requirement is a compile error, so the arena is left to the build,
+# which derives it from that model. Since nano-ros PR 3703 the model prices
+# each subscription at this depth and its own type's bound: 94,840 B on every
+# lane, against 90,552 (an536) to 91,512 (posix) B claimed at first spin.
+# Before it the model charged each subscription the whole receive buffer --
+# 353,344 B on posix, 1,385,536 B on an536 / S32Z2, which left 14 KB of the
+# S32Z270's RAM. An NROS_EXECUTOR_ARENA_SIZE in the environment still wins (and
+# is refused if it is below the model).
 # Zephyr heap for the nros allocator funnel. nano-ros phase-391 W3 moved
 # Zephyr allocation onto an rlsf-backed funnel and turned COMMON_LIBC_MALLOC
 # OFF, which retires CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE — the 16 MiB arena

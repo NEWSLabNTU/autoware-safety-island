@@ -720,11 +720,14 @@ function build_freertos_posix() {
   # refuses the stated arena below. State the one depth instead.
   export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
   # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
-  # model's requirement is a compile error, and the model prices more than the
-  # measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
-  # rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
-  # to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
-  # in the environment still wins (and is refused if it is below the model).
+  # model's requirement is a compile error, so the arena is left to the build,
+  # which derives it from that model. Since nano-ros PR 3703 the model prices
+  # each subscription at this depth and its own type's bound: 94,840 B on every
+  # lane, against 90,552 (an536) to 91,512 (posix) B claimed at first spin.
+  # Before it the model charged each subscription the whole receive buffer --
+  # 353,344 B on posix, 1,385,536 B on an536 / S32Z2, which left 14 KB of the
+  # S32Z270's RAM. An NROS_EXECUTOR_ARENA_SIZE in the environment still wins (and
+  # is refused if it is below the model).
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
@@ -841,11 +844,14 @@ function build_freertos_armv8r_nros() {
   # refuses the stated arena below. State the one depth instead.
   export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
   # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
-  # model's requirement is a compile error, and the model prices more than the
-  # measured claim above -- 353,344 B on freertos-posix at depth 1 and 16 KiB
-  # rx, against ~91 KB claimed. 131072 no longer builds, so the arena is left
-  # to the build, which derives it from that model. An NROS_EXECUTOR_ARENA_SIZE
-  # in the environment still wins (and is refused if it is below the model).
+  # model's requirement is a compile error, so the arena is left to the build,
+  # which derives it from that model. Since nano-ros PR 3703 the model prices
+  # each subscription at this depth and its own type's bound: 94,840 B on every
+  # lane, against 90,552 (an536) to 91,512 (posix) B claimed at first spin.
+  # Before it the model charged each subscription the whole receive buffer --
+  # 353,344 B on posix, 1,385,536 B on an536 / S32Z2, which left 14 KB of the
+  # S32Z270's RAM. An NROS_EXECUTOR_ARENA_SIZE in the environment still wins (and
+  # is refused if it is below the model).
 
   local app_build_dir
   app_build_dir=$(realpath -m "${BUILD_DIR}")
