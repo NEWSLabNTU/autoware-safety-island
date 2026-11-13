@@ -1,3 +1,10 @@
+# Autoware 2.0.0's component_state_monitor topic list
+# (autoware_launch/config/system/component_state_monitor/topics.yaml in
+# ghcr.io/autowarefoundation/autoware:universe-humble-2.0.0), with ONE change:
+# the two control-command rate checks are relaxed from warn 5 Hz / error 1 Hz
+# to warn 2 Hz / error 0.5 Hz, because the island on the FVP model publishes
+# control_cmd well below its 33 Hz target. Everything else is the image's
+# file byte for byte; re-derive it from the image when the Autoware tag moves.
 - module: map
   mode: [online, logging_simulation, planning_simulation]
   type: launch
@@ -20,19 +27,6 @@
     topic_type: sensor_msgs/msg/PointCloud2
     best_effort: false
     transient_local: true
-    warn_rate: 0.0
-    error_rate: 0.0
-    timeout: 0.0
-
-- module: localization
-  mode: [online, logging_simulation, planning_simulation]
-  type: autonomous
-  args:
-    node_name_suffix: initialpose3d
-    topic: /initialpose3d
-    topic_type: geometry_msgs/msg/PoseWithCovarianceStamped
-    best_effort: false
-    transient_local: false
     warn_rate: 0.0
     error_rate: 0.0
     timeout: 0.0
@@ -107,7 +101,7 @@
   type: autonomous
   args:
     node_name_suffix: scenario_planning_trajectory
-    topic: /planning/scenario_planning/trajectory
+    topic: /planning/trajectory
     topic_type: autoware_planning_msgs/msg/Trajectory
     best_effort: false
     transient_local: false
