@@ -16,4 +16,7 @@ nano_ros_add_executable(actuation_posix_entry
   BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/../controller_bringup"
   LAUNCH  default
   TYPED
-  DEPLOY  freertos-posix)
+  DEPLOY  freertos-posix
+  # SI_DDS_INTERFACE (upstream #75): the network-wait hook that turns the
+  # runtime interface selector into a CYCLONEDDS_URI fragment.
+  SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/si_dds_interface.cpp")

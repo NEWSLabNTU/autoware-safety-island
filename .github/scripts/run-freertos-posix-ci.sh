@@ -85,7 +85,33 @@ require_marker "${log}" "Control command output mode: DDS_ONLY"
 # both that the loop runs and that the not-ready path is the one it takes.
 require_marker "${log}" "Supervision mode: si"
 require_marker "${log}" "Control is skipped since input data is not ready."
+# SI_DDS_INTERFACE (upstream #75): with no override Cyclone picks the
+# interface itself; the variable overrides it at run time, so one released
+# binary serves loopback (CI) and a LAN. The CI container sets no
+# CYCLONEDDS_URI, so the default line is the auto one.
+require_marker "${log}" "Network interface: auto [default]"
 echo "Controller smoke OK: boot markers + control-loop spin observed"
+
+echo "Phase 2b - SI_DDS_INTERFACE runtime override"
+for sel in "127.0.0.1|Network interface (by IP address): 127.0.0.1 [SI_DDS_INTERFACE]" \
+           "lo|Network interface (by name): lo [SI_DDS_INTERFACE]" \
+           "auto|Network interface: auto [SI_DDS_INTERFACE]"; do
+  value="${sel%%|*}"
+  marker="${sel#*|}"
+  env_log="${BUILD_ROOT}/controller-env-${value}.log"
+  SI_DDS_INTERFACE="${value}" NROS_ENTRY_SPIN_MS=3000 run_with_timeout "${entry}" "${env_log}" 15
+  require_marker "${env_log}" "${marker}"
+  require_marker "${env_log}" "Actuation Safety Island is Live"
+done
+# A name that is no interface reaches Cyclone (presence_required), so the
+# session refuses to open: proof the selector is applied, not only logged.
+set +e
+SI_DDS_INTERFACE=nosuch0 NROS_ENTRY_SPIN_MS=3000 timeout --kill-after=10s 15s "${entry}" \
+  >"${BUILD_ROOT}/controller-env-nosuch0.log" 2>&1
+set -e
+require_marker "${BUILD_ROOT}/controller-env-nosuch0.log" "RMW session open failed"
+forbid_marker "${BUILD_ROOT}/controller-env-nosuch0.log" "Actuation Safety Island is Live"
+echo "SI_DDS_INTERFACE override OK"
 
 echo "Phase 3 - supervision / policy host unit tests (dependency-free)"
 cmake -S "${ROOT_DIR}/actuation_module/test/host" -B "${BUILD_ROOT}-host-tests"

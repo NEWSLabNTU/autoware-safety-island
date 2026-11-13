@@ -90,6 +90,14 @@ jobs:
           fi
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      # nano-ros's prebuilt SDK dists are .tar.zst; the devcontainer has no zstd.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
       - name: Initialize Zephyr workspace
         shell: bash
         run: |
@@ -99,6 +107,46 @@ jobs:
           west init -l actuation_module
           west update
           west zephyr-export
+
+      # As build-ci.yml: west clones nano-ros as a manifest project and leaves
+      # its own submodules empty; the Zephyr build needs the CycloneDDS backend
+      # and the CLI's play_launch dep.
+      - name: Initialize nano-ros submodules (CycloneDDS backend)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C modules/nros submodule update --init --recursive third-party/dds/cyclonedds
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      # Both Zephyr targets cross-compile the nano-ros runtime: AArch64 for the
+      # FVP, ARMv8-R for the S32Z270 RTU.
+      - name: Add the Rust cross targets
+        shell: bash
+        run: |
+          tc="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' modules/nros/rust-toolchain.toml)"
+          rustup toolchain install "${tc}" --profile minimal
+          for t in aarch64-unknown-none armv8r-none-eabihf; do
+            rustup target add --toolchain "${tc}" "${t}"
+            rustup target add "${t}"
+          done
+
+      # run-zephyr-fvp-ci.sh does these itself; the S32Z build calls build.sh
+      # directly, so it needs the CLI, corrosion and the zephyr-lang-rust
+      # patch hunks first (the same steps as that script's Phase 0).
+      - name: Prepare the nano-ros CLI and Zephyr patches (S32Z)
+        if: matrix.platform == 'zephyr-s32z'
+        shell: bash
+        run: |
+          set -euo pipefail
+          NROS=modules/nros
+          cargo build --release --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
+          mkdir -p "${NROS}/packages/cli/target/release"
+          ln -sf "$PWD/${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
+                 "${NROS}/packages/cli/target/release/nros-launch-resolve"
+          cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
+          ( cd actuation_module && "../${NROS}/packages/cli/target/release/nros" setup \
+              --index "../${NROS}/nros-sdk-index.toml" --tool corrosion )
+          bash "${NROS}/scripts/zephyr/patches/3.7.sh" "$PWD"
 
       # Builds the ELF it publishes and runs it; S32Z needs hardware to run.
       - name: Build and validate on FVP
@@ -146,19 +194,56 @@ jobs:
       # Initialise only the public submodules. s32ct_config is a PRIVATE
       # submodule (NXP Confidential generated configs) that the repo-scoped CI
       # token cannot clone, and the Zephyr/FreeRTOS-POSIX builds do not need it.
-      - name: Initialize build submodules (private s32ct_config excluded)
+      # The nano-ros lane builds against the nano-ros submodule; the CLI's
+      # play_launch dep is the only nested submodule it needs (as build-ci.yml).
+      - name: Initialize build submodules
         shell: bash
-        run: git submodule update --init --recursive zephyr
+        run: |
+          git submodule update --init modules/nros
+          git -C modules/nros submodule update --init packages/cli/third-party/play_launch
+
+      # nano-ros's prebuilt SDK dists are .tar.zst; the devcontainer has no zstd.
+      - name: Install zstd (nano-ros SDK dists are .tar.zst)
+        shell: bash
+        run: |
+          command -v zstd >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq zstd
+          }
+
+      - name: Install Rust toolchain (nano-ros CLI + runtime)
+        shell: bash
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Run FreeRTOS POSIX validation
         shell: bash
         run: .github/scripts/run-freertos-posix-ci.sh
 
+      # The nano-ros entry links CycloneDDS from the nano-ros SDK store
+      # (libddsc.so.0); a plain Ubuntu host has neither, so the library ships
+      # beside the binary and the smoke job puts that directory on the loader
+      # path. The binary keeps upstream's release name.
+      - name: Stage the binary and its CycloneDDS library
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=build/freertos-posix/release
+          mkdir -p "${out}"
+          cp build/freertos-posix/src/freertos_posix_entry/actuation_posix_entry \
+             "${out}/actuation_freertos"
+          ddsc="$(ldd "${out}/actuation_freertos" | awk '$1 == "libddsc.so.0" { print $3 }')"
+          test -n "${ddsc}"
+          cp -L "${ddsc}" "${out}/libddsc.so.0"
+          ls -l "${out}"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: freertos-posix
-          path: build/freertos-posix/actuation_freertos
+          path: build/freertos-posix/release/
           retention-days: 1
 
   smoke-freertos:
@@ -190,8 +275,8 @@ jobs:
             set +e
             env_args=()
             [ -n "$env" ] && env_args=(-e "$env")
-            docker run --rm -v "$PWD/bin:/si:ro" "${env_args[@]}" "${{ matrix.image }}" \
-              timeout 15s /si/actuation_freertos > run.log 2>&1
+            docker run --rm -v "$PWD/bin:/si:ro" -e LD_LIBRARY_PATH=/si "${env_args[@]}" \
+              "${{ matrix.image }}" timeout 15s /si/actuation_freertos > run.log 2>&1
             rc=$?
             set -e
             cat run.log
