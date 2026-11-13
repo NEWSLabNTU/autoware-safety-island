@@ -119,6 +119,23 @@ If discovery stalls, check that ``SAFETY_ISLAND_DDS_INTERFACE`` and
 ``--dds-interface`` name the same multicast-capable host interface. See
 :doc:`troubleshooting`.
 
+``scripts/run-posix-demo.sh`` does all of the above in one command, from the
+repository root, in a shell with ROS 2 sourced (the binary loads CycloneDDS's
+libraries from it). With ``--drive`` it also drives a mission:
+
+.. code-block:: console
+
+  $ SAFETY_ISLAND_DDS_INTERFACE=lo scripts/run-posix-demo.sh --drive
+  $ scripts/run-posix-demo.sh --down
+
+The mission spawns the ego on a lane derived from the map
+(``demo/derive-drive-goals.py``), sets a route about 30 m along it through
+``/api/routing/set_route_points``, engages, and waits for the route state
+``ARRIVED``. It passes when the ego moved and prints "DRIVING MISSION OK".
+Without ``--drive`` the script seeds a fixed pose that is off the lane
+Autoware 2.0.0 plans, so the island stays in its emergency stop; it only checks
+that control commands stream back.
+
 Closed-loop Autoware planning against CARLA is :doc:`can_carla_closed_loop`.
 
 *************

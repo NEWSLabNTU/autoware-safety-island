@@ -13,6 +13,7 @@
 #
 # Usage:
 #   scripts/run-posix-demo.sh            # build (incremental) + up + seed + verify
+#   scripts/run-posix-demo.sh --drive    # build + up + AUTONOMOUS DRIVING mission
 #   scripts/run-posix-demo.sh --no-seed  # up only; seed by hand / via rviz (:6080)
 #   scripts/run-posix-demo.sh --down     # stop the island + compose stack
 #
@@ -38,6 +39,9 @@ BOOT_MARKER="Actuation Safety Island is Live"
 BOOT_TIMEOUT_S=60
 COMPOSE_FILES=(-f docker-compose.yaml -f docker-compose.posix.yaml)
 # W3 runbook seed (sample-map-planning): ego spawn + goal ~30 m along heading.
+# On Autoware 2.0.0 the spawn is 5.3 m off the lane the planner picks, so this
+# seed only exercises the island's emergency-stop loop (control_cmd still
+# streams); --drive spawns on a lane derived from the map and drives.
 INITIALPOSE='{header: {frame_id: map}, pose: {pose: {position: {x: 3722.16, y: 73723.1, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}}'
 GOALPOSE='{header: {frame_id: map}, pose: {position: {x: 3715.9, y: 73752.5, z: 0.0}, orientation: {z: 0.777, w: 0.629}}}'
 
@@ -79,11 +83,13 @@ demo_down() {
 }
 
 DO_SEED=1
+DO_DRIVE=0
 case "${1:-}" in
   --down)    demo_down; exit 0 ;;
   --no-seed) DO_SEED=0 ;;
+  --drive)   DO_SEED=0; DO_DRIVE=1 ;;
   "")        ;;
-  *) die "unknown arg '$1' (usage: run-posix-demo.sh [--no-seed|--down])" ;;
+  *) die "unknown arg '$1' (usage: run-posix-demo.sh [--drive|--no-seed|--down])" ;;
 esac
 
 # ---- preflight ----
@@ -166,6 +172,13 @@ seed_ego_and_goal() {
 }
 if ((DO_SEED)); then
   seed_ego_and_goal
+fi
+
+# ---- autonomous driving mission (--drive) ----
+# shellcheck source=scripts/demo-drive-mission.sh
+source "${ROOT}/scripts/demo-drive-mission.sh"
+if ((DO_DRIVE)); then
+  drive_mission
 fi
 
 # ---- verify the closed loop ----
