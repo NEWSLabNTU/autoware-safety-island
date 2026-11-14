@@ -13,7 +13,7 @@
 # `add_subdirectory(src/controller_pkg)` from the outer
 # `project(actuation_module)` composes this into the app build. SINGLE node:
 # the carrier appends one generated `int main()` to `app` and links the
-# component lib (`controller_pkg_controller_component`) into it.
+# component lib (`controller_lib`) into it.
 #
 # NOTE (ASI integration / reference-consumer): ASI consumes nano-ros as a west
 # Zephyr *module* (`zephyr_library_named(nros)` + CONFIG_NROS_CPP_API), not via
@@ -108,32 +108,25 @@ foreach(_i IN LISTS APP_INCLUDE_DIRS)
   list(APPEND _controller_includes "${_ACT_ROOT}/${_i}")
 endforeach()
 
-# --- Register the Node pkg + generate the Zephyr typed entry ----------------
-# Phase 3 W2.b (nano-ros 287-W6) — the canonical workspace verb. On Zephyr,
-# `find_package(nano_ros)` (in the workspace root, which add_subdirectory's
-# us) supplies the verbs WITHOUT re-importing the runtime — the nano-ros west
-# module already provides NanoRos::*. No DEPLOY: the component is registered
-# CARRIER-LESS; the workspace-root `nano_ros_add_executable` assembles the
-# bootable entry from the launch topology (replacing the phase-240.8 typed
-# carrier + forced NANO_ROS_PLATFORM this file used to need).
-nano_ros_add_node(controller
-  CLASS   controller_pkg::Controller
+# --- The component library + its registration (RFC-0057) -------------------
+# nano-ros's reference shape, the ament analog: the library owns the sources,
+# the register owns the identity. No DEPLOY: the component is registered
+# carrier-less and each image's entry assembles the bootable binary from the
+# bringup's launch topology.
+nano_ros_auto_add_library(controller_lib STATIC ${_controller_sources})
+nros_components_register_node(controller_lib
+  PLUGIN     controller_pkg::Controller
+  EXECUTABLE controller
   TYPED
-  SHAPE   rclcpp
-  HEADER  controller_pkg/controller.hpp
-  # Stated, not inferred. cmake expands `${_controller_sources}` before it
-  # infers, but `nros`'s static CMakeLists scanner reads this line as text and
-  # sees a token with no extension — and the language it settles on picks the
-  # component's ABI seam (nano-ros issue 1062).
-  LANGUAGE CPP
-  SOURCES ${_controller_sources}
-  # RFC-0047 — the control timer's group; bound to [tasks.control] by
+  SHAPE      rclcpp
+  HEADER     controller_pkg/controller.hpp
+  # The control timer's group; bound to [tasks.control] by
   # controller_bringup/system.toml group_tasks.
   CALLBACK_GROUPS control
 )
 
 # --- Give the component lib the full Zephyr + nros-cpp + message context ----
-set(_component controller_pkg_controller_component)
+set(_component controller_lib)
 if(TARGET ${_component})
   # ASI common/ + platform/ headers (logger, clock, can, node shim, threading).
   # PUBLIC: the workspace lane's generated entry TU includes
