@@ -4,7 +4,8 @@
     Copyright (c) 2026, NEWSLab NTU.
     SPDX-License-Identifier: Apache-2.0
     nano-ros board package for the S32Z270 RTU0 R52 on Zephyr: a descriptor
-    (nros-board.toml) and the nano-ros base Kconfig (prj.conf), no code.
+    (nros-board.toml), the nano-ros base Kconfig (prj.conf) and the
+    ARM Automotive Kit devicetree overlay (boards/), no code.
   -->
   <name>s32z270_zephyr_board</name>
   <version>0.1.0</version>

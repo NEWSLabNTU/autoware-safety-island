@@ -39,21 +39,17 @@ Resulting binary:
 Board-specific notes
 **********************
 
-The S32Z configuration lives in three files alongside the default
+The S32Z configuration lives in two files alongside the default
 ``prj_actuation.conf``:
 
-- ``actuation_module/boards/s32z270dc2_rtu0_r52.overlay`` — base devicetree
-  overlay. Places code in ``sram2`` and pins a unique MAC address on
-  ``enetc_psi0`` (working around `Zephyr #61478
-  <https://github.com/zephyrproject-rtos/zephyr/issues/61478>`_). Picked
-  up automatically by Zephyr's standard board-overlay discovery when
-  building the ``s32z270dc2_rtu0_r52@D`` target (filename matches the
-  board name).
-- ``actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay`` — variant used
-  by this project. Switches the console to UART9 and pins the PHY to
-  index 2. Layered on top of the base overlay via
-  ``EXTRA_DTC_OVERLAY_FILE``, which ``build.sh`` sets when ``-t
-  s32z270dc2_rtu0_r52@D`` is selected.
+- ``actuation_module/src/s32z270_zephyr_board/boards/s32z2xxdc2_s32z270_rtu0.overlay``
+  -- the devicetree overlay of this workspace's nano-ros board package
+  (``s32z270-rtu0-zephyr``), which ``nano_ros_use_board()`` appends. It
+  places code in ``sram2``, pins a unique MAC address on ``enetc_psi0``
+  (working around `Zephyr #61478
+  <https://github.com/zephyrproject-rtos/zephyr/issues/61478>`_), switches
+  the console to UART9, pins the PHY to index 2 and selects ``&can0`` as
+  ``zephyr,canbus`` for the ARM Automotive Kit (board revision D).
 - ``actuation_module/boards/s32z270dc2_rtu0_r52_actuation.conf`` — Kconfig
   fragment. Names the DDS interface ``ethernet@74b00000`` and raises the
   NXP S32 RX thread stack to 16 KiB.

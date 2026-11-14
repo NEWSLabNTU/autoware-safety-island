@@ -533,15 +533,10 @@ function build_zephyr_actuation_module() {
     export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
   fi
 
-  # Add device tree overlay only for ARM board variant
-  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
-    # The 7 MiB SRAM2 as zephyr,sram (the board's default sram0 is 1 MiB, and
-    # the nano-ros image needs about 6.6 MB) and the ENETC MAC. Named here
-    # because the board package's overlay list stops Zephyr's own discovery
-    # of this app's boards/<board>.overlay.
-    extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52.overlay")
-    extra_dtc_overlays+=("${ROOT_DIR}/actuation_module/boards/s32z270dc2_rtu0_r52@D.overlay")
-  fi
+  # The S32Z270's devicetree (the 7 MiB SRAM2 as zephyr,sram, the ENETC MAC,
+  # the ARM Automotive Kit's uart9 / PHY / CAN) is the board package's own
+  # overlay (src/s32z270_zephyr_board/boards/), which nano_ros_use_board()
+  # appends.
 
   local can_loopback_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.conf"
   local can_loopback_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.overlay"
