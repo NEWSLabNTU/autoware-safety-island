@@ -37,7 +37,7 @@ using namespace common::logger;
 namespace autoware::motion::control::mpc_lateral_controller
 {
 
-MpcLateralController::MpcLateralController(Node & node)
+MpcLateralController::MpcLateralController(AsiNode & node)
 {
   const auto dp_int = [&](const std::string & s) { return node.declare_parameter<int>(s); };
   const auto dp_bool = [&](const std::string & s) { return node.declare_parameter<bool>(s); };
@@ -151,7 +151,7 @@ MpcLateralController::~MpcLateralController()
 }
 
 std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
-  const double wheelbase, const double steer_lim, const double steer_tau, Node & node)
+  const double wheelbase, const double steer_lim, const double steer_tau, AsiNode & node)
 {
   std::shared_ptr<VehicleModelInterface> vehicle_model_ptr;
 
@@ -187,7 +187,7 @@ std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
 }
 
 std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface(
-  Node & node)
+  AsiNode & node)
 {
   std::shared_ptr<QPSolverInterface> qpsolver_ptr;
 
@@ -203,7 +203,7 @@ std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface
 }
 
 std::shared_ptr<SteeringOffsetEstimator> MpcLateralController::createSteerOffsetEstimator(
-  const double wheelbase, Node & node)
+  const double wheelbase, AsiNode & node)
 {
   const std::string ns = "steering_offset.";
   const auto vel_thres = node.declare_parameter<double>(ns + "update_vel_threshold", 5.56);
@@ -221,6 +221,15 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   log_debug("MPC: Running");
 
   // set input data
+  //
+  // Called once per cycle, here, as upstream does. This port once moved the
+  // call into isReady() only (phase-7 W10: it is the costliest step of the
+  // cycle, 33.95 ms p50 on the FVP, and upstream then ran it twice), and
+  // upstream #48 later took it out of isReady(). Together the two left no call
+  // at all: the MPC never received a reference, every cycle failed with
+  // "[calcNearestPoseInterp] input trajectory is empty", and the controller
+  // held the vehicle (emergency stop). Upstream's single call is also the
+  // single call W10 wanted.
   setTrajectory(input_data.current_trajectory, input_data.current_odometry);
 
   m_current_kinematic_state = input_data.current_odometry;
@@ -519,7 +528,10 @@ void MpcLateralController::publishPredictedTraj(TrajectoryMsg & predicted_traj) 
 {
   predicted_traj.header.stamp = Clock::toRosTime(Clock::now());
   predicted_traj.header.frame_id = m_current_trajectory.header.frame_id;
-  m_pub_predicted_traj->publish(predicted_traj);
+  // nano-ros publisher is typed against the FixedSequence-backed
+  // wire type; convert the local std::vector wrapper before publish.
+  auto raw = predicted_traj.to_raw();
+  m_pub_predicted_traj->publish(raw);
 }
 
 void MpcLateralController::publishDebugValues(Float32MultiArrayStampedMsg & debug_values) const
@@ -587,7 +599,7 @@ bool MpcLateralController::isMpcConverged()
   return (max_steering_value - min_steering_value) < m_mpc_converged_threshold_rps;
 }
 
-void MpcLateralController::declareMPCparameters(Node & node)
+void MpcLateralController::declareMPCparameters(AsiNode & node)
 {
   m_mpc->m_param.prediction_horizon = node.declare_parameter<int>("mpc_prediction_horizon", 50);
   m_mpc->m_param.prediction_dt = node.declare_parameter<double>("mpc_prediction_dt", 0.1);

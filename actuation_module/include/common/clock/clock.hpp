@@ -10,11 +10,11 @@
 #include "common/logger/logger.hpp"
 using namespace common::logger;
 
-//Msgs
-#include "Time.h"
-#include "Duration.h"
-using TimeMsg = builtin_interfaces_msg_Time;
-using DurationMsg = builtin_interfaces_msg_Duration;
+// Msgs — dual-mode (phase 3 W1): nros-cpp generated types on the Zephyr
+// build, CycloneDDS idlc C structs on the FreeRTOS platforms.
+#include "builtin_interfaces.hpp"
+using TimeMsg = builtin_interfaces::msg::Time;
+using DurationMsg = builtin_interfaces::msg::Duration;
 
 class Clock {
 public:

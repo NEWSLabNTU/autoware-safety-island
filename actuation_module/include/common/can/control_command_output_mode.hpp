@@ -38,6 +38,27 @@ constexpr const char * output_mode_name(const ControlCommandOutputMode mode)
   return "DDS_ONLY";
 }
 
+/// Phase 4 (0745 follow-up) — parse a launch-seeded `control_output` string.
+/// Unknown/empty falls back to `fallback` (the compile-time configuration),
+/// so a bringup that seeds nothing behaves exactly as before.
+inline ControlCommandOutputMode output_mode_from_name(
+  const char * name, const ControlCommandOutputMode fallback)
+{
+  if (name == nullptr) {
+    return fallback;
+  }
+  const auto eq = [name](const char * s) {
+    const char * a = name;
+    const char * b = s;
+    while (*a != '\0' && *a == *b) { ++a; ++b; }
+    return *a == '\0' && *b == '\0';
+  };
+  if (eq("DDS_ONLY")) return ControlCommandOutputMode::DDS_ONLY;
+  if (eq("CAN_ONLY")) return ControlCommandOutputMode::CAN_ONLY;
+  if (eq("DDS_AND_CAN")) return ControlCommandOutputMode::DDS_AND_CAN;
+  return fallback;
+}
+
 constexpr ControlCommandOutputMode configured_control_command_output_mode()
 {
 #if defined(CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY) && CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY
