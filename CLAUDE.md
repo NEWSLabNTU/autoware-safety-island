@@ -8,11 +8,14 @@ Claude-specific notes.
 
 Autoware Safety Island: standalone app running Autoware's trajectory follower
 (MPC lateral + PID longitudinal) on an Arm safety-class processor. Exchanges
-control commands with Autoware over DDS (and optionally CAN). Targets:
+control commands with Autoware over DDS (and optionally CAN). On this branch
+the middleware is nano-ros (modules/nros, pinned in lockstep with the
+nano-ros project in actuation_module/west.yml). Targets:
 
-- **Zephyr RTOS** — production target (FVP `fvp_baser_aemv8r_smp` default,
-  NXP `s32z270dc2_rtu0_r52@D` for hardware).
-- **FreeRTOS POSIX simulator** — development/testing on Linux host.
+- Zephyr: FVP `fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp` (default) and the
+  NXP S32Z270 RTU0 R52 (`s32z270dc2_rtu0_r52@D`, link only).
+- FreeRTOS: POSIX simulator (Linux host), QEMU mps3-an536 (emulated
+  Cortex-R52), NXP S32Z2 (link only).
 
 No changes to Autoware itself are required; this repo bundles the relevant
 Autoware components under `actuation_module/src/autoware/`.
@@ -20,47 +23,49 @@ Autoware components under `actuation_module/src/autoware/`.
 ## Layout
 
 ```
-actuation_module/         App code
-  include/
-    common/{can,clock,dds,logger,node}/   Platform-agnostic interfaces
-    platform/{zephyr,freertos}/           Platform-specific ports + headers
+actuation_module/            nano-ros workspace root (`nros configure .`)
+  CMakeLists.txt, Kconfig    Hand-written Zephyr app + FreeRTOS build
+  west.yml                   West manifest (zephyr v3.7.0, nano-ros pin)
+  nros-codegen.toml          Message field bounds for codegen
+  nros-sdk.lock              SDK tool versions (`nros setup`)
+  boards/                    Zephyr board overlays + confs
+  include/common/            Platform-agnostic interfaces (can, clock, logger, ...)
   src/
-    main.cpp                              App entry (Zephyr-style)
-    common/dds/                           DDS network config impl
-    autoware/                             Vendored Autoware components
-  freertos/freertos_main.cpp              FreeRTOS POSIX entry
-  test/                                   Standalone test programs
-  boards/                                 Zephyr board overlays + confs
-  west.yml                                Zephyr west manifest
-  prj_actuation.conf, Kconfig             Zephyr build config
-build.sh                                  Top-level build driver
-launch-dev-container.sh                   Dev container entry
-demo/                                     Docker Compose, launch, bridge, viz
+    controller_pkg/          The controller component (rclcpp API)
+    controller_bringup/      system.toml (images, sched tasks) + launch file
+    freertos_*_entry/        Hand-written FreeRTOS entry packages
+    s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
+    s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
+    autoware/                Vendored Autoware components and messages
+    common/, platform/       Support code
+  test/                      Test programs; test/host = dependency-free host tests
+build.sh                     Top-level build driver
+scripts/                     Provisioning, demo runners, trace tools
+demo/                        Docker Compose demo (Autoware 2.0.0 + bridge)
 documentation/
-  design/                                 Design notes (architecture, CAN, nano-ros)
-  roadmap/                                Migration plans (phase-1*.md)
-  user_guide/                             Sphinx user docs
-zephyr/                                   Upstream dependency tree — do NOT
-                                          edit unless updating that dependency
+  design/                    Design notes
+  roadmap/                   Phase records (phase-14 = current conventions work)
+  user_guide/                Sphinx user docs
+modules/nros/                nano-ros (submodule; move with west.yml)
+zephyr/                      Zephyr v3.7.0 - do NOT edit
 ```
 
 ## Build & test commands
 
-- `./launch-dev-container.sh` — start dev container (host networking, ccache,
-  repo mounted at `/autoware-safety-island`).
-- `./build.sh` — build CycloneDDS host tools, then default Zephyr FVP target.
-- `./build.sh -t s32z270dc2_rtu0_r52@D` — build for S32Z board.
-- `./build.sh -c` — clean `build/` and `install/`.
-- `./build.sh --unit-test | --dds-publisher | --dds-subscriber` — build one
-  test program at a time. Output ELF: `build/actuation_module/zephyr/zephyr.elf`.
-  Clean between test-mode switches.
+- `scripts/bootstrap-asi.sh` provisions a host; the devcontainer does the
+  same (`./launch-dev-container.sh`).
+- `./build.sh --platform zephyr-fvp|zephyr-s32z|freertos-posix|freertos-an536|freertos-s32z2 -d <dir>`.
+- `./build.sh --unit-test | --dds-publisher | --dds-subscriber` build one
+  Zephyr test program; clean (`-c`) between test-mode switches.
+- CI lanes run locally as `.github/scripts/run-freertos-posix-ci.sh`,
+  `run-freertos-an536-ci.sh` and `run-zephyr-fvp-ci.sh` from the repo root.
+  Unset `CYCLONEDDS_URI`, `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` first: an
+  inherited Cyclone config changes the POSIX smoke's interface line.
+- Host tests: `cmake -S actuation_module/test/host -B build/host-tests`.
 - Docs: `python3 -m pip install -r documentation/requirements.txt`, then
   `sphinx-build -b html documentation documentation/_build/html`.
-
-FreeRTOS POSIX simulator entry is `actuation_module/freertos/freertos_main.cpp`;
-it renames the Zephyr-style `main` to `actuation_main` via `-Dmain=actuation_main`
-and launches it as a FreeRTOS task. CI smoke-test design lives in
-`documentation/design/`.
+- On the fork, CI runs on non-main branches only by
+  `gh workflow run "Build and Test" --ref <branch>`.
 
 ## Coding conventions
 
@@ -75,14 +80,14 @@ and launches it as a FreeRTOS task. CI smoke-test design lives in
 
 ## nano-ros branch context
 
-- Work happens on `nano-ros` (tracks `newslab/nano-ros`). Main branch is `main`.
-- Clean nano-ros patches: `~/repos/nano-ros-autoware`. Treat `~/repos/nano-ros`
-  as reference only (may contain unrelated local changes).
-- Migration plan: `documentation/roadmap/phase-1*.md`.
-- Keep MPC / PID / CAN application logic in C++. Prefer adapter layers around
-  `common/node` or `common/dds` over broad algorithm rewrites.
-- Keep CAN tests middleware-independent. Add backend smoke tests before
-  replacing the legacy CycloneDDS path.
+- `nano-ros` holds the attempts; `nano-ros-migration` is the clean series
+  (same tree at each sync point). Upstream is
+  autowarefoundation/autoware-safety-island `main`.
+- Moving the nano-ros pin: update modules/nros and the nano-ros `revision`
+  in actuation_module/west.yml together (the FVP lane asserts the lockstep).
+- Current work: documentation/roadmap/phase-14-nano-ros-conventions.md.
+- Keep MPC / PID / CAN application logic in C++. Keep CAN tests
+  middleware-independent.
 
 ## Commits & PRs
 
@@ -102,6 +107,6 @@ untracked.
 - Editing `zephyr/` unless explicitly
   updating that dependency.
 - Modifying upstream Autoware components under `src/autoware/` beyond what
-  the port requires — prefer adapter shims in `common/`.
+  the port requires - prefer adapter shims in `common/`.
 - Skipping the `./build.sh -c` clean step when switching test modes
-  (`--unit-test` ↔ `--dds-publisher` etc.) — stale CMake cache will bite.
+  (`--unit-test` <-> `--dds-publisher` etc.) - stale CMake cache will bite.
