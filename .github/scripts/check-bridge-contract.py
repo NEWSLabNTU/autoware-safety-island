@@ -37,7 +37,14 @@ UNITS = {"B": 1, "kB": 1 << 10, "KiB": 1 << 10, "MB": 1 << 20, "MiB": 1 << 20}
 
 
 def si_receive_limit():
-    """The largest datagram the Safety Island can receive, in bytes."""
+    """The largest datagram the Safety Island can receive, in bytes.
+
+    None on the nano-ros port: it has no common/dds/config.hpp and sets no
+    receive chunk size, so CycloneDDS's default applies and there is no
+    hand-set limit to hold MaxMessageSize against.
+    """
+    if not DDS_CONFIG_HPP.exists():
+        return None
     m = re.search(r"cfg\.rmsg_chunk_size\s*=\s*(\d+)\s*(?:\*\s*(\d+))?\s*;", DDS_CONFIG_HPP.read_text())
     if not m:
         sys.exit(f"cannot find cfg.rmsg_chunk_size in {DDS_CONFIG_HPP}")
@@ -65,7 +72,7 @@ def check_domain2_xml(path, limit):
             m = re.fullmatch(r"(\d+)\s*(B|kB|KiB|MB|MiB)", size)
             if not m:
                 errors.append(f"{path.name}: MaxMessageSize '{size}' is not a size with a unit")
-            elif int(m.group(1)) * UNITS[m.group(2)] > limit:
+            elif limit is not None and int(m.group(1)) * UNITS[m.group(2)] > limit:
                 errors.append(f"{path.name}: MaxMessageSize {size} exceeds the Safety Island receive limit of {limit} B")
     return errors
 
@@ -142,8 +149,9 @@ def main():
         for e in errors:
             print(f"bridge contract mismatch: {e}", file=sys.stderr)
         return 1
+    within = f"within the {limit} B receive limit" if limit is not None else "(no hand-set receive limit)"
     print(f"bridge contract OK: {len(bridge)} topics match {rst_path.name}; "
-          f"{xml_path.name} caps domain 2 within the {limit} B receive limit")
+          f"{xml_path.name} caps domain 2 {within}")
     return 0
 
 
