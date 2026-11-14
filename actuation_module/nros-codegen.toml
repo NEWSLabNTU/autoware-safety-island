@@ -10,10 +10,8 @@
 #   nav_msgs/Odometry                              header.frame_id, child_frame_id
 #   geometry_msgs/AccelWithCovarianceStamped       header.frame_id
 #
-# Capping here rather than in the `.msg` keeps the vendored upstream messages
-# untouched; the one local `.msg` override we do carry (msg_overrides/
-# Trajectory.msg, bounding the point sequence at 250) exists because there is
-# no field-cap equivalent for that shape.
+# Capping here rather than in the `.msg` keeps the upstream messages untouched:
+# they are generated from the ROS / Autoware install, not from a vendored copy.
 #
 # Keyed on the DECLARING type, so nested uses inherit -- one Header entry
 # covers all three subscriptions.
@@ -30,3 +28,9 @@
 [fields]
 "std_msgs/Header.frame_id" = 64
 "nav_msgs/Odometry.child_frame_id" = 64
+
+# The trajectory the controller follows: at most 250 points. Upstream declares
+# `TrajectoryPoint[] points` (unbounded); the controller and its receive buffer
+# are sized against 250, and a longer trajectory fails deserialization. An
+# inline cap changes the local container only, not the wire format.
+"autoware_planning_msgs/Trajectory.points" = 250

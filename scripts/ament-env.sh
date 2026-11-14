@@ -22,13 +22,14 @@ RED="${RED:-}"
 YELLOW="${YELLOW:-}"
 NC="${NC:-}"
 
-# The message packages the vendored codegen reads (autoware_msgs/CMakeLists.txt).
+# The upstream message packages controller_pkg's package.xml <depend>s on
+# (nano-ros generates them, and their dependencies, from these prefixes).
 # They do NOT all live in one prefix: an Autoware install carries
 # autoware_adapi_v1_msgs and tier4_debug_msgs that the ROS base does not, so a
 # resolver that stops at the first prefix answering for autoware_planning_msgs
 # selects a path the build then dies on.
 ASI_MSG_PKGS=(
-  autoware_adapi_v1_msgs autoware_control_msgs autoware_perception_msgs
+  autoware_adapi_v1_msgs autoware_control_msgs
   autoware_planning_msgs autoware_vehicle_msgs tier4_debug_msgs
   std_msgs geometry_msgs nav_msgs builtin_interfaces
 )

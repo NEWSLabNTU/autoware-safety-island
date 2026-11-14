@@ -46,3 +46,5 @@ avh_key
 FVP_Base_AEMv8R_*
 actuation_module/build/
 actuation_module/src/controller_pkg/metadata/
+# Message bindings `nros configure` generates for the workspace packages.
+actuation_module/generated/

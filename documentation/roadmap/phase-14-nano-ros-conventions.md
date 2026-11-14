@@ -1,7 +1,7 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Step 1 (pin) done, CI green. Steps 2-14
-open.
+Status: in progress (2026-11-15). Steps 1, 2 and 4-7 done, CI green.
+Steps 3 and 8-14 open.
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
@@ -67,12 +67,16 @@ CMakeLists.txt. That is the library/support-package work above.
 ## Steps
 
 1. Pin nano-ros main 37232ecff1. Done.
-2. controller_pkg: `nano_ros_auto_add_library` + `nros_components_register_node`.
+2. controller_pkg: `nano_ros_auto_add_library` + `nros_components_register_node`. Done.
 3. Sizing knobs to `[image.*.knobs.*]` / board `[knobs]`; delete the exports.
-4. Contract file; derive the spin period and pool sizes.
-5. `CONFIG_NROS_*` out of the conf files; `os_config` per Zephyr image.
-6. S32Z270 Zephyr overlays and heap into the board package.
-7. Messages: rosidl packages, upstream messages by `<depend>`.
+   Waits for the `nros build` road (steps 10-12): the hand-written
+   `nano_ros_workspace()` road ignores the rows (nano-ros issue 3866).
+4. Contract file; derive the spin period and pool sizes. Done.
+5. `CONFIG_NROS_*` out of the conf files; `os_config` per Zephyr image. Done
+   (the tap domain comes from `[image.fvp-tap]`).
+6. S32Z270 Zephyr overlays into the board package. Done; the heap knob moves
+   with step 3.
+7. Messages: rosidl packages, upstream messages by `<depend>`. Done, see below.
 8. autoware library package(s).
 9. `asi_common` support package (logger, clock, diag, network hook, pthread shim).
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages.
@@ -80,3 +84,35 @@ CMakeLists.txt. That is the library/support-package work above.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
 14. CI: `nros check --bringup` / `--workspace` / board check.
+
+## Step 7. Messages - done
+
+- `src/visionpilot_msgs` and `src/safety_island_msgs` are stock rosidl
+  packages (`rosidl_generate_interfaces`, `member_of_group
+  rosidl_interface_packages`); their `.msg` files moved from
+  `autoware_msgs/msg_local/`.
+- controller_pkg's `package.xml` `<depend>`s on the eleven message packages it
+  uses; `nano_ros_auto_add_library` generates them from the ROS / Autoware
+  install (whole packages and their dependencies: 258 types, 123 of them
+  unbounded, none of those received). The pseudo-package's twelve
+  `nros_generate_interfaces()` calls, the `_gen_base` globs and the
+  hand-listed `__nano_ros_cpp` links are gone. The two workspace packages are
+  configured before controller_pkg, so the verb does not link them; the
+  package links `visionpilot_msgs::visionpilot_msgs` and
+  `safety_island_msgs::safety_island_msgs` itself.
+- `msg_overrides/Trajectory.msg` is replaced by
+  `"autoware_planning_msgs/Trajectory.points" = 250` in `nros-codegen.toml`.
+  The type is now upstream's (unbounded on the wire), the local container
+  still holds 250 points.
+- The umbrella header moved to
+  `controller_pkg/include/autoware/autoware_msgs/messages.hpp` and includes
+  ROS-style `<pkg>/msg/<name>.hpp` headers. Three tier4_debug_msgs names use
+  nano-ros's spelling (`float32stamped.hpp`), nano-ros issue 3882.
+- The Zephyr test images (BUILD_TEST 1-5) generate the same set with
+  `nros_find_interfaces(PACKAGE_XML src/controller_pkg/package.xml)`.
+- `autoware_msgs/msg/*.idl` stay for the upstream `freertos_x5h` build, which
+  this branch does not build.
+
+Size (local builds): an536 text 1,693,912 -> 1,741,784 B (+48 KB), bss
++208 B; FVP RAM 17,735,556 -> 17,792,388 B; S32Z270 Zephyr RAM 6,660,676 ->
+6,708,164 B of 7 MiB (632 KB left).
