@@ -96,7 +96,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 8a71f9b34e4d53026ace1bb6871bdc74f4073d8f
+      revision: 37232ecff185af2c30b406740ccba8cb10638d9d
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
