@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Copyright (c) 2024-2025, Arm Limited.
+# Copyright (c) 2024-2026, Arm Limited / NEWSLab NTU.
 # SPDX-License-Identifier: Apache-2.0
 FROM ghcr.io/autowarefoundation/autoware:universe-devel-20250207 AS devcontainer
 SHELL ["/bin/bash", "-c"]
 ARG TARGETARCH
 ARG ZSDK_VERSION=0.16.3
+ARG FIXUID_VERSION=0.6.0
 ENV ZEPHYR_SDK_INSTALL_DIR=/opt/zephyr-sdk-${ZSDK_VERSION}
 
 # Fix expired ROS GPG key issue comprehensively
@@ -64,6 +65,36 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
         echo "Skipping FVP install for TARGETARCH=${TARGETARCH}; FVP_BaseR_AEMv8R is available as Linux x86 host binary only."; \
     fi
 
+# --- fixuid: remap baked dev UID/GID to host UID/GID at startup ---
+# Creates dev:dev with placeholder UID 1000. fixuid rewrites
+# /etc/passwd + /etc/group on container start to match the
+# `--user $(id -u):$(id -g)` runtime flag, so files created in
+# bind-mounts are owned by the host user (no root-owned artefacts).
+RUN groupadd --gid 1000 dev && \
+    useradd --uid 1000 --gid dev --shell /bin/bash --create-home dev && \
+    apt-get update && apt-get install -y --no-install-recommends sudo && \
+    echo "dev ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/dev && \
+    chmod 0440 /etc/sudoers.d/dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    FIXUID_ARCH="unknown" && \
+    if [ "${TARGETARCH}" = "amd64" ]; then FIXUID_ARCH="amd64"; \
+    elif [ "${TARGETARCH}" = "arm64" ]; then FIXUID_ARCH="arm64"; \
+    else echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1; fi && \
+    curl -SsL "https://github.com/boxboat/fixuid/releases/download/v${FIXUID_VERSION}/fixuid-${FIXUID_VERSION}-linux-${FIXUID_ARCH}.tar.gz" \
+        | tar -C /usr/local/bin -xzf - && \
+    chown root:root /usr/local/bin/fixuid && \
+    chmod 4755 /usr/local/bin/fixuid && \
+    mkdir -p /etc/fixuid && \
+    printf "user: dev\ngroup: dev\npaths:\n  - /home/dev\n  - /autoware-safety-island\n" \
+        > /etc/fixuid/config.yml
+
+ENV HOME=/home/dev
+ENV CCACHE_DIR=/home/dev/.ccache
+WORKDIR /autoware-safety-island
+USER dev:dev
+
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+# Image is rebuilt rarely; chmod via sudo so this layer remains owned by root.
+RUN sudo chmod +x /entrypoint.sh
+
+ENTRYPOINT ["fixuid", "-q", "/entrypoint.sh"]

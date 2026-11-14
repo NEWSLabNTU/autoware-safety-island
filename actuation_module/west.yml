@@ -15,23 +15,107 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: newslab
+      url-base: https://github.com/NEWSLabNTU
 
   #
   # Please add items below based on alphabetical order
   projects:
+    # cmsis and hal_nxp at the revisions Zephyr v3.7.0's own west.yml pins.
+    # The nano-ros branch moved zephyr to v3.7.0 (below) and these two stayed at
+    # the pins upstream uses with its older zephyr (339cd5a): the FVP build does
+    # not use either, but the S32Z270 build then stopped at hal_nxp's
+    # "SoC s32z270 not supported" (Zephyr 3.7 names the SoC s32z270, the old
+    # hal_nxp knows s32z27).
     - name: cmsis
-      revision: 5a00331455dd74e31e80efa383a489faea0590e3
+      revision: 4b96cbb174678dcd3ca86e11e1f24bc5f8726da0
       path: actuation_module/zephyr_modules/hal/cmsis
       groups:
         - hal
     - name: hal_nxp
-      revision: ad142f5612d927e29b1f9606e8edade871b8a526
+      revision: 862e001504bd6e0a4feade6a718e9f973116849c
       path: actuation_module/zephyr_modules/hal/hal_nxp
       groups:
         - hal
+    # nano-ros: external dep providing the RMW + nros-cpp API + Zephyr module.
+    # import: false is REQUIRED — nano-ros's own west.yml redefines zephyr at
+    # v3.7.0 with a different module allowlist; importing recursively would
+    # clobber the pin below. ASI stays the manifest authority; nano-ros is
+    # consumed only as a leaf project whose zephyr/module.yml is auto-
+    # discovered by the Zephyr module crawler.
+    # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
+    #
+    # ON main, 2026-11-13: 8a71f9b34e, 84 commits past c229eae090, carrying
+    # the four nano-ros PRs phase 13 C filed: 3703 (a depth-less subscription
+    # row is priced at the budgeted depth: the arena is 94,840 B, not 1.39 MB),
+    # 3704 (no host census of a launch-only owned entry), 3705 (the Zephyr boot
+    # sched task's priority is read back and printed), 3709 (a board package
+    # also on NROS_EXTRA_BOARD_PATH is one board; the S32Z270 Zephyr build).
+    #
+    # Before that, ON main, 2026-11-13: c229eae090, 1393 commits past 4fcc75d413 (main
+    # 0a4cfcc063 plus nano-ros PRs 3640 and 3642, both found on this port).
+    # Moves across phase-530 (`nros configure` replaces `nros sync`; every
+    # hooked host configure runs it), phase-536 (tiers are sched tasks),
+    # RFC-0121 D2 (a system.toml lives only in a bringup) and the stricter
+    # promise and arena checks. See documentation/roadmap/phase-13-*.
+    #
+    # Before that, ON main, 2026-10-31: 4fcc75d413 (newest main with gate + post-submit
+    # green), the step after 05b7f7d below.
+    #
+    # Before that, 2026-10-30: 05b7f7d2648f, the pin NEWSLabNTU/simple-autoware-
+    # safety-island main runs (play_launch v0.20.2). Moves across nano-ros
+    # phase-427 (ComponentNode merged into rclcpp::Node), phase-486 W8
+    # ([deploy.*] -> [image.*]), phase-492/503 (C API -> rclc_*, C++ headers
+    # -> <rclcpp/*>), and PR #2743 (no stale probe markers, issue 2097).
+    #
+    # ON main, 2026-09-05, carrying nano-ros #1062 — the fix that stops the
+    # metadata probe from reading this repo's C++ controller as C. The pin it
+    # replaced (91241878b) is an ancestor, so this only moves forward.
+    #
+    # Earlier, 2026-08-31. The three PRs that pin was waiting on are all in
+    # main now, under different hashes because the merge queue rebases:
+    #   #61 forward NROS_ZEPHYR_HEAP_SIZE to cargo  -> 6d95c1a8b
+    #   #71 starvation says so; impossible sizes fail -> ee0d1933a
+    #   #75 name chunks carry their handle           -> 0875ed688
+    # (which is why GitHub shows #61 and #71 as CLOSED rather than merged).
+    #
+    # The previous revision, 13eb682fe, had been ORPHANED for the second time:
+    # `fix/trace-names-bind-by-handle` no longer exists on the remote, so
+    # `git branch -r --contains 13eb682fe` was empty and a fresh clone could
+    # not fetch it. The build failed even WITH the commit in hand, because that
+    # commit's Cargo.lock was stale against its own manifests and `--locked`
+    # refused to update it. Two independent reasons the pin could not stand.
+    #
+    # The warning below is the rule that would have prevented both. It is kept
+    # rather than deleted: pinning a branch is still allowed, and this is the
+    # check that makes it safe.
+    #
+    # Anyone force-pushing a branch this file points at MUST repin in the same
+    # change. `git branch -r --contains <rev>` in modules/nros is the check;
+    # empty output means the pin is broken.
+    #
+    - name: nano-ros
+      remote: newslab
+      revision: 8a71f9b34e4d53026ace1bb6871bdc74f4073d8f
+      path: modules/nros
+      import: false
+    # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
+    # (NROS_BOARD_ZEPHYR_LINE = 3.7) and its own west.yml zephyr pin. The
+    # nano-ros platform-zephyr net code targets the 3.7+ net API
+    # (net_if_addr.ipv4 wrapper, ip_mreq); an older line (3.5.x) drifts at
+    # compile. Bump in lockstep with the zephyr-lang-rust rev below.
     - name: zephyr
-      revision: 339cd5a45fd2ebba064ef462b71c657336ca0dfe
+      revision: v3.7.0
       west-commands: scripts/west-commands.yml
+    # Zephyr Rust language support — REQUIRED: nano-ros's runtime is a Rust
+    # staticlib linked into the Zephyr app via this module; without it
+    # CONFIG_RUST is undefined and the nano-ros board conf's CONFIG_RUST(_ALLOC)
+    # abort kconfig. Pin matches nano-ros's own west.yml (the supported
+    # zephyr 3.7 x zephyr-lang-rust pair); bump in lockstep with the zephyr rev.
+    - name: zephyr-lang-rust
+      remote: upstream
+      revision: 404fcefdbab0f2711cd342a1fab9d2eda52a1ba9
+      path: modules/lang/rust
 
   group-filter:
     - -ci
