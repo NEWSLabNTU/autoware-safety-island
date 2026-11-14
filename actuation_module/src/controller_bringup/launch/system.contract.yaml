@@ -1,0 +1,100 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Node interface contract for system.launch.xml (nano-ros reads
+# `<stem>.contract.yaml` beside `<stem>.launch.xml`).
+#
+# The launch file names the node and its remaps; it cannot say which
+# endpoints the node creates or how often its timer fires. This file does,
+# and nano-ros sizes the image from it: the executor's callback slots and
+# per-subscription history (every input is KEEP_LAST(1), see
+# controller_node.cpp), and the control sched task's spin period, derived
+# from the timer rate instead of stated in system.toml.
+#
+# `nodes:` keys are local endpoint labels; `topics:` maps each absolute topic
+# (the defaults in controller_pkg/node_identity.hpp) to its type and to those
+# labels. `external: pub` means the publisher is outside this image
+# (Autoware, VisionPilot, the operator); `external: sub` the consumer.
+#
+# The two VisionPilot inputs are created only in the VP startup modes
+# (trajectory_source=vp, supervision_mode=vp); they are listed so an image
+# booted in either mode is sized for them.
+
+version: 1
+
+nodes:
+  controller:
+    paths:
+      # ctrl_period = 0.03 s in system.launch.xml.
+      on_timer:
+        trigger: { timer: { rate_hz: 33.333 } }
+        output: [control_cmd, approved_request, processing_time_lat, processing_time_lon]
+    sub:
+      steering_status:   { qos: { history: keep_last, depth: 1 } }
+      trajectory:        { qos: { history: keep_last, depth: 1 } }
+      kinematic_state:   { qos: { history: keep_last, depth: 1 } }
+      acceleration:      { qos: { history: keep_last, depth: 1 } }
+      operation_mode:    { qos: { history: keep_last, depth: 1 } }
+      driving_reference: { qos: { history: keep_last, depth: 1 } }
+      driving_command:   { qos: { history: keep_last, depth: 1 } }
+      reenable:          { qos: { history: keep_last, depth: 1 } }
+      vp_heartbeat:      { qos: { history: keep_last, depth: 1 } }
+    pub:
+      control_cmd: {}
+      approved_request: {}
+      processing_time_lat: {}
+      processing_time_lon: {}
+
+topics:
+  /vehicle/status/steering_status:
+    type: autoware_vehicle_msgs/msg/SteeringReport
+    external: pub
+    sub: [controller/steering_status]
+  /planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: pub
+    sub: [controller/trajectory]
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    external: pub
+    sub: [controller/kinematic_state]
+  /localization/acceleration:
+    type: geometry_msgs/msg/AccelWithCovarianceStamped
+    external: pub
+    sub: [controller/acceleration]
+  /system/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [controller/operation_mode]
+  /vehicle/driving_reference:
+    type: visionpilot_msgs/msg/DrivingReference
+    external: pub
+    sub: [controller/driving_reference]
+  /vehicle/driving_command:
+    type: visionpilot_msgs/msg/DrivingCommand
+    external: pub
+    sub: [controller/driving_command]
+  /control/safety_island/reenable:
+    type: std_msgs/msg/Bool
+    external: pub
+    sub: [controller/reenable]
+  /safety_island/vp_heartbeat:
+    type: tier4_debug_msgs/msg/Float64Stamped
+    external: pub
+    sub: [controller/vp_heartbeat]
+  /control/trajectory_follower/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [controller/control_cmd]
+  /control/safety_island/approved_request:
+    type: safety_island_msgs/msg/ApprovedRequest
+    external: sub
+    pub: [controller/approved_request]
+  /control/trajectory_follower/lateral/debug/processing_time_ms:
+    type: tier4_debug_msgs/msg/Float64Stamped
+    external: sub
+    pub: [controller/processing_time_lat]
+  /control/trajectory_follower/longitudinal/debug/processing_time_ms:
+    type: tier4_debug_msgs/msg/Float64Stamped
+    external: sub
+    pub: [controller/processing_time_lon]

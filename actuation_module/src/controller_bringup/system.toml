@@ -35,6 +35,15 @@ default_launch = "system.launch.xml"
 #           rule `<pkg-dir>::<UserClass>` == controller_pkg::Controller.
 #   name  — instance / node name (I2). The launch <node name=> mirrors it;
 #           it overrides node_identity.hpp's DEFAULT_NODE_NAME = "controller".
+# The census (a host build of the same components, run to count the entities
+# the code really creates) is how nano-ros checks launch/system.contract.yaml
+# against the code. It needs a native `linux` image of the controller, which
+# this workspace cannot build yet: the controller still takes its platform
+# glue from the hand-written FreeRTOS and Zephyr builds. Until it can, a
+# missing census warns instead of refusing (phase-14 roadmap).
+[census]
+on_missing = "warn"
+
 [[component]]
 pkg   = "controller_pkg"
 class = "controller_pkg::Controller"
@@ -51,17 +60,11 @@ group_tasks = { control = "control" }
 # the app-default task, and verify boot's report_tiers_above_transport).
 [tasks.control]
 class = "real_time"
-# `spin_period` is the spin loop's idle park timeout and the bound of the
-# `release-jitter-runtime` rule, not a priority: a message arrival breaks the
-# park and a timer due ends it, so it sets idle wakeups, not latency. 30 ms is
-# the task's only release, the control timer (`ctrl_period` 0.03 in the
-# launch file). nano-ros cannot derive it here (no contract states the timer's
-# period; left unset it derives 1 ms), and the 5 ms this said before asked for
-# a release grid the task has no work on: QEMU's mps3-an536 missed it by
-# 6-9 ms on every boot (`release-jitter-runtime spin measured=7000
-# declared=5000`), while a wake a whole control period late is what the rule
-# exists to catch.
-spin_period = "30ms"
+# No `spin_period`: nano-ros derives it from the control timer's rate in
+# launch/system.contract.yaml (33.333 Hz, the launch file's ctrl_period
+# 0.03 s). The period is the spin loop's idle park timeout and the bound of
+# the `release-jitter-runtime` rule; a 5 ms grid the task had no work on was
+# missed by 6-9 ms on QEMU's mps3-an536 on every boot.
 [tasks.control.freertos]
 # freertos-posix board: configMAX_PRIORITIES = 10; app task default sits
 # lower. RAW FreeRTOS priority.
