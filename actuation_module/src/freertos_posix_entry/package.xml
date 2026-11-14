@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026, NEWSLab NTU.
+  SPDX-License-Identifier: Apache-2.0
+  Phase 4 W5.a - Entry pkg (FreeRTOS POSIX simulator lane).
+-->
+<package format="3">
+  <name>freertos_posix_entry</name>
+  <version>0.1.0</version>
+  <description>ASI actuation entry for the FreeRTOS POSIX simulator board (nano-ros workspace mode).</description>
+  <maintainer email="cshih@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>controller_bringup</exec_depend>
+  <exec_depend>controller_pkg</exec_depend>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

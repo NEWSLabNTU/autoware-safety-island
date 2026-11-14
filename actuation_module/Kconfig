@@ -8,6 +8,49 @@ config ENABLE_SNTP
 	  Synchronizes the clock of the system using NTP server.(Requires internet connection)
 	  Disabling means that the timestamps will start from boot up time.
 
+config SNTP_SERVER_ADDRESS
+	string "SNTP server address (host[:port])"
+	depends on ENABLE_SNTP
+	default "time.nist.gov"
+	help
+	  Server passed to Zephyr's sntp_simple(). On an isolated tap/demo
+	  network, point it at the tap host (e.g. "192.168.10.1:12123") and
+	  run an SNTP responder there — without a wall-clock epoch the
+	  island stamps commands from 1970 and Autoware's vehicle_cmd_gate
+	  rejects them as stale, so autonomous mode never actuates.
+
+config ASI_SNTP_RESYNC_STACK_SIZE
+	int "Stack size for the SNTP re-sync thread"
+	default 12288
+	help
+	  The thread calls sntp_simple(), which blocks and does socket work.
+
+	  MEASURED requirement is 7024 bytes, under a loaded driving mission:
+
+	    at 4096 (the old hardcoded value): unused 0, usage 4096/4096 (100 %)
+	    at 8192:                           unused 1168, usage 7024/8192 (85 %)
+
+	  So the original 4096 was overrun by 1.7x and the 100 % reading was the
+	  analyzer clamping at the stack end rather than the real figure — the
+	  thread had been overflowing into whatever sat adjacent on every loaded
+	  run. 12288 gives ~75 % headroom over the measured high-water; 8192
+	  works but leaves only 1168 bytes, which is thin for a thread that
+	  blocks in socket code.
+
+config ASI_SNTP_RESYNC_INTERVAL_S
+	int "Seconds between SNTP re-syncs (0 disables)"
+	depends on ENABLE_SNTP
+	default 10
+	help
+	  A one-shot boot epoch is unbounded-error: whatever advances the
+	  clock afterwards is never exactly real time, and every control
+	  command the island stamps inherits the error. On the FVP the model
+	  fast-forwards an idle guest, measured at ~10.5x real, so the offset
+	  grows without limit; on silicon this is ppm-level and the interval
+	  barely matters. The re-sync thread sleeps in KERNEL time, so a
+	  racing guest clock re-syncs more often in real time. Set 0 to keep
+	  the old one-shot behaviour.
+
 config DDS_DOMAIN_ID
 	int "Domain ID for CycloneDDS"
 	default 2
@@ -165,6 +208,118 @@ config NET_IFACE2_VLAN
 	  When different from 0, it sets the VLAN id for the interface 2.
 	  Use 0 here if uncertain.
 
+
+# --- Real-time evaluation: Layer 1 reporting -------------------------------
+# See documentation/design/rt_evaluation_zephyr.rst. Enabled by ./build.sh --trace-stats
+# and --trace via actuation_module/tracing_stats.conf.
+
+config ASI_THREAD_STATS_REPORT
+	bool "Periodic thread statistics report"
+	depends on THREAD_ANALYZER
+	help
+	  Print the thread analyzer block periodically from an application
+	  thread that starts AFTER initialisation.
+
+	  Zephyr's own CONFIG_THREAD_ANALYZER_AUTO cannot be used here: its
+	  worker prints before its first sleep, behind a K_THREAD_DEFINE with a
+	  zero start delay, so the first dump always lands during boot and
+	  pushes network init past a timeout inside nros. Raising
+	  THREAD_ANALYZER_AUTO_INTERVAL does not help, because the interval is
+	  not what decides when the first dump runs.
+
+	  Leave CONFIG_THREAD_ANALYZER_AUTO disabled when using this.
+
+config ASI_THREAD_STATS_START_DELAY
+	int "Seconds to wait before the first report"
+	default 20
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Must comfortably exceed the application's initialisation, including
+	  DHCP. The FVP lane settles by ~12 s.
+
+config ASI_THREAD_STATS_INTERVAL
+	int "Seconds between reports"
+	default 10
+	depends on ASI_THREAD_STATS_REPORT
+
+config ASI_THREAD_STATS_MAX_REPORTS
+	int "Stop after this many reports (0 = unlimited)"
+	default 3
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Bounds the log. Under the FVP the model fast-forwards through WFI, so
+	  once the workload finishes and the system idles, guest time races
+	  ahead of host time and an uncapped reporter floods the log.
+
+config ASI_TRACE_RING
+	bool "Overwrite-oldest tracing backend (flight recorder)"
+	help
+	  Keep the LAST N bytes of the CTF stream in RAM instead of the first.
+
+	  Zephyr's own TRACING_BACKEND_RAM is fill-once: it stops at
+	  buffer_full and goes silent permanently. That is the wrong trade for
+	  a recorder meant to explain a fault, because the interesting events
+	  are the last ones and those are exactly the ones it drops.
+
+	  Records are length-prefixed and whole records are evicted, so the
+	  ring always holds complete events -- Zephyr's CTF stream has no
+	  packet header, so a ring of raw bytes could not be decoded from an
+	  arbitrary start. `asi_trace_ring_dump()` linearises oldest-first
+	  onto the tracing UART, producing an ordinary stream.
+
+	  Selecting this does NOT enable tracing; it chooses where the stream
+	  goes. Pair with CONFIG_TRACING_CTF, and set
+	  CONFIG_TRACING_BACKEND_CUSTOM=y plus
+	  CONFIG_TRACING_BACKEND_CUSTOM_NAME="asi_trace_ring" -- the backend
+	  is a Kconfig CHOICE member, and `select` has no effect on choice
+	  symbols, so it has to be chosen in the .conf. See tracing_ring.conf.
+
+config ASI_TRACE_RING_SIZE
+	int "Trace ring size in bytes"
+	default 65536
+	depends on ASI_TRACE_RING
+	help
+	  Sized against how much history a fault needs, not against total
+	  event volume: the ring discards the oldest events continuously, so a
+	  bigger ring buys a longer window rather than fewer drops.
+
+config ASI_TRACE_RING_DUMP_ON_FATAL
+	bool "Dump the trace ring from k_sys_fatal_error_handler"
+	default y
+	depends on ASI_TRACE_RING
+	help
+	  Emit the retained events when the system faults, which is the case
+	  the ring exists for: the interesting events are the ones immediately
+	  before the fault.
+
+	  Overrides the weak default handler in kernel/fatal.c and then does
+	  what it did, so the system still halts. The dump runs BEFORE
+	  LOG_PANIC(), since flushing the log subsystem can itself fault and
+	  losing the trace to a secondary fault would defeat the point.
+
+	  Output goes out by polled UART, which needs no interrupts and no
+	  scheduler, so it survives a kernel in an undefined state.
+
+config ASI_TRACE_RING_AUTODUMP_S
+	int "Seconds after boot to auto-dump the ring (0 = never)"
+	default 0
+	depends on ASI_TRACE_RING
+	help
+	  Exists so the ring can be exercised end to end without a debugger:
+	  let it wrap, dump, decode. On a real target the dump belongs in a
+	  fatal-error hook instead, where it can capture the events leading up
+	  to the fault. Zero leaves the ring readable only through memory.
+
+config ASI_THREAD_STATS_STACK_SIZE
+	int "Stack size for the reporting thread"
+	default 16384
+	depends on ASI_THREAD_STATS_REPORT
+	help
+	  Must be generous. Zephyr's own THREAD_ANALYZER_AUTO_STACK_SIZE
+	  defaults to 4096 and the analyzer overflows it while walking the
+	  thread list on this target -- it reports itself at 95 % (3920/4096)
+	  a few threads in, then takes a CPU exception. Formatting each
+	  thread's block is what costs; the walk itself is cheap.
 
 
 source "Kconfig.zephyr"
