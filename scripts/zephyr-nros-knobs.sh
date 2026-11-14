@@ -69,13 +69,9 @@ export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
 # The earlier 1008-byte figure quoted for this knob came from the DDS-LOOPBACK
 # TEST image in stats.log, not the controller -- a different image with a
 # fraction of the entities.
-# Every subscription the controller creates is KEEP_LAST(1) (latest_only;
-# the sidecar records depth 1 on all seven). nano-ros prices the executor
-# arena per subscription at the depth it is told, and without a contract
-# stating qos.depth on every endpoint it is told nothing and prices ROS's
-# KEEP_LAST(10): 7 x 181,336 B = 1.27 MB at 16 KiB rx. The arena oracle then
-# refuses the stated arena below. State the one depth instead.
-export NROS_PUBSUB_QOS_DEPTH="${NROS_PUBSUB_QOS_DEPTH:-1}"
+# Every subscription is KEEP_LAST(1). launch/system.contract.yaml states
+# depth 1 on each, and nano-ros prices the arena from it, so no
+# NROS_PUBSUB_QOS_DEPTH is exported (ROS's default would be depth 10).
 # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
 # model's requirement is a compile error, so the arena is left to the build,
 # which derives it from that model. Since nano-ros PR 3703 the model prices
