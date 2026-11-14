@@ -8,20 +8,42 @@
 
 #include <vector>
 
-// nros-codegen C++ headers, one per ROS package; the `...Msg` aliases
-// below re-expose them under ASI's legacy names.
-#include "autoware_adapi_v1_msgs.hpp"
-#include "autoware_control_msgs.hpp"
-#include "autoware_perception_msgs.hpp"
-#include "autoware_planning_msgs.hpp"
-#include "autoware_vehicle_msgs.hpp"
-#include "builtin_interfaces.hpp"
-#include "geometry_msgs.hpp"
-#include "nav_msgs.hpp"
-#include "safety_island_msgs.hpp"
-#include "std_msgs.hpp"
-#include "tier4_debug_msgs.hpp"
-#include "visionpilot_msgs.hpp"
+// nros-codegen C++ headers, ROS-style (<pkg>/msg/<name>.hpp), for the types
+// the `...Msg` aliases below re-expose under ASI's legacy names. The message
+// packages are controller_pkg's <depend>s; the upstream ones are generated
+// from the ROS / Autoware install, visionpilot_msgs and safety_island_msgs
+// from their packages in this workspace.
+#include <autoware_adapi_v1_msgs/msg/operation_mode_state.hpp>
+#include <autoware_control_msgs/msg/control.hpp>
+#include <autoware_control_msgs/msg/lateral.hpp>
+#include <autoware_control_msgs/msg/longitudinal.hpp>
+#include <autoware_planning_msgs/msg/trajectory.hpp>
+#include <autoware_planning_msgs/msg/trajectory_point.hpp>
+#include <autoware_vehicle_msgs/msg/steering_report.hpp>
+#include <builtin_interfaces/msg/duration.hpp>
+#include <builtin_interfaces/msg/time.hpp>
+#include <geometry_msgs/msg/accel_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/transform.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <safety_island_msgs/msg/approved_request.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/header.hpp>
+// nano-ros spells a digit-to-capital boundary without the underscore rosidl
+// puts there (float32stamped.hpp, not float32_stamped.hpp); nano-ros issue
+// 3882.
+#include <tier4_debug_msgs/msg/float32multi_array_stamped.hpp>
+#include <tier4_debug_msgs/msg/float32stamped.hpp>
+#include <tier4_debug_msgs/msg/float64stamped.hpp>
+#include <visionpilot_msgs/msg/driving_command.hpp>
+#include <visionpilot_msgs/msg/driving_reference.hpp>
 
 // ======================================================================
 using Float32MultiArrayStampedMsg     = tier4_debug_msgs::msg::Float32MultiArrayStamped;
@@ -48,13 +70,13 @@ using TrajectoryPointMsg              = autoware_planning_msgs::msg::TrajectoryP
 using PoseStampedMsg                  = geometry_msgs::msg::PoseStamped;
 using TimeMsg                         = builtin_interfaces::msg::Time;
 using DurationMsg                     = builtin_interfaces::msg::Duration;
-// Supervision (vp_si_control_contract, upstream #66): msg_local/ sources.
+// Supervision (vp_si_control_contract, upstream #66): this workspace's packages.
 using DrivingCommandMsg               = visionpilot_msgs::msg::DrivingCommand;
 using DrivingReferenceMsg             = visionpilot_msgs::msg::DrivingReference;
 using ApprovedRequestMsg              = safety_island_msgs::msg::ApprovedRequest;
 using BoolMsg                         = std_msgs::msg::Bool;
 
-// supervision octet values; keep in sync with ApprovedRequest.msg
+// supervision octet values; keep in sync with safety_island_msgs/msg/ApprovedRequest.msg
 #define SIR_DECISION_NORMAL 0
 #define SIR_DECISION_SI_STOP 1
 #define SIR_DECISION_HOLD 2
@@ -95,7 +117,8 @@ typedef struct TrajectoryMsg
     }
 
     // Convert back to the nros-generated wire type for publish().
-    // Truncates if the local vector exceeds the 250-point bound.
+    // Truncates if the local vector exceeds the 250-point bound
+    // (Trajectory.points in actuation_module/nros-codegen.toml).
     TrajectoryMsg_Raw to_raw() const
     {
         TrajectoryMsg_Raw raw;

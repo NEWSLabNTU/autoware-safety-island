@@ -25,9 +25,27 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <!-- nano-ros runtime + the autoware message umbrella the node uses. -->
   <depend>nros</depend>
-  <depend>autoware_msgs</depend>
+
+  <!--
+    The message packages the controller uses. nano-ros generates each from
+    its <depend>: the upstream ones from the ROS / Autoware install, the two
+    supervision packages from src/ in this workspace. Field bounds live in
+    actuation_module/nros-codegen.toml. The hand-written umbrella
+    include/autoware/autoware_msgs/messages.hpp re-exposes the types under
+    ASI's legacy ...Msg names.
+  -->
+  <depend>builtin_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>autoware_adapi_v1_msgs</depend>
+  <depend>autoware_control_msgs</depend>
+  <depend>autoware_planning_msgs</depend>
+  <depend>autoware_vehicle_msgs</depend>
+  <depend>tier4_debug_msgs</depend>
+  <depend>visionpilot_msgs</depend>
+  <depend>safety_island_msgs</depend>
 
   <!--
     The 8 autoware component libraries the node links are vendored under

@@ -48,7 +48,8 @@ if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
     set(NROS_RMW cyclonedds)
   endif()
   set(_asi_freertos_subdirs
-      src/autoware/autoware_msgs
+      src/visionpilot_msgs
+      src/safety_island_msgs
       src/controller_pkg)
   if(_asi_is_armv8r)
     # Cross target: no host rpath. Which entry leaf joins depends on the
@@ -198,8 +199,12 @@ target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 # output), so let the linker drop the duplicates.
 zephyr_ld_options(-Wl,--allow-multiple-definition)
 
-### BUILD AUTOWARE MESSAGES ###
-add_subdirectory(src/autoware/autoware_msgs)
+### MESSAGES ###
+# controller_pkg's package.xml <depend>s name the message packages; nano-ros
+# generates them (nano_ros_auto_add_library in the controller build, the call
+# below in the test builds). The two supervision packages are in src/, which
+# the resolver searches through NROS_INTERFACE_SEARCH_PATH.
+set(NROS_INTERFACE_SEARCH_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 ### BUILD ACTUATION MODULE ###
 set(APP_SOURCES "" CACHE INTERNAL "Global source files list")
@@ -215,6 +220,16 @@ set(APP_INCLUDE_DIRS "" CACHE INTERNAL "Global include directories list")
 if(NOT BUILD_TEST STREQUAL "0")
   target_include_directories(app PRIVATE
     "${CMAKE_BINARY_DIR}/cyclonedds-ts/_genroot")
+endif()
+
+if(NOT BUILD_TEST STREQUAL "0")
+  # The test programs use the controller's message set and its umbrella
+  # header, with no controller in the image. The Zephyr module provides the
+  # verb; find_package(nano_ros) would resolve an image, which a test is not.
+  nros_find_interfaces(
+    PACKAGE_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_pkg/package.xml"
+    LANGUAGE CPP SKIP_INSTALL)
+  target_include_directories(app PRIVATE src/controller_pkg/include)
 endif()
 
 if(BUILD_TEST STREQUAL "1")
@@ -345,15 +360,8 @@ endif()
 
 # nros-cpp + generated message headers + linkage are wired into `app`
 # automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
-# autoware_msgs/CMakeLists.txt invokes nros_generate_interfaces() per
-# vendored package; generated artefacts attach to `app` directly.
 target_include_directories(app PRIVATE
     include
     ${EIGEN3_INCLUDE_DIR}
     ${APP_INCLUDE_DIRS}
 )
-# autoware_msgs INTERFACE target (no compiled sources) only exposes
-# ASI's hand-written `<autoware/autoware_msgs/messages.hpp>` umbrella
-# via INTERFACE_INCLUDE_DIRECTORIES. Link it so app gets that include
-# path automatically.
-target_link_libraries(app PRIVATE autoware_msgs)

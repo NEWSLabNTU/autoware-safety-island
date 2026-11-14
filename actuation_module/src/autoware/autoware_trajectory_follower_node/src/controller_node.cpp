@@ -433,7 +433,7 @@ void Controller::on_trajectory(const TrajectoryMsg_Raw& msg_ref)
   // SI but failed the follower would keep the source watchdog fresh while
   // every tick published HOLD instead of the required fault response.
   // nros FixedSequence: `size` is bounded by the generated capacity (250,
-  // msg_overrides/.../Trajectory.msg) and `data` is inline, never null.
+  // Trajectory.points in nros-codegen.toml) and `data` is inline, never null.
   if (!msg || msg->points.size < vp_reference::kMinFollowerPoints ||
     msg->points.size > 250)
   {

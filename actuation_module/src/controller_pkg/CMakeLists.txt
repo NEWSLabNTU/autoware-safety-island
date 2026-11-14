@@ -21,9 +21,9 @@
 # is not auto-available and `NANO_ROS_PLATFORM` is unset here — we include the
 # fn module explicitly and set the platform key so the Zephyr carrier branch
 # fires. The component lib is then given Zephyr's compile context + the nros-cpp
-# / generated-message include paths (carried on `zephyr_interface` +
-# globbed from the autoware_msgs codegen output dir) so the heavy autoware C++
-# TUs compile with the same flags they had as `app` sources.
+# / generated-message include paths (carried on `zephyr_interface` and `app`)
+# so the heavy autoware C++ TUs compile with the same flags they had as `app`
+# sources.
 
 cmake_minimum_required(VERSION 3.22.1)
 project(controller_pkg LANGUAGES C CXX)
@@ -138,7 +138,7 @@ if(TARGET ${_component})
     "${EIGEN3_INCLUDE_DIR}")
 
   # State the language standard on the TARGET rather than inheriting whatever
-  # the enclosing project set. Same reason as the Eigen and autoware_msgs blocks
+  # the enclosing project set. Same reason as the Eigen block
   # (nano-ros issue 0939): this package is add_subdirectory'd standalone by the
   # nros metadata probe, whose generated CMakeLists sets `CMAKE_CXX_STANDARD 14`
   # — and the vendored Autoware tree is C++17 (`alt_geometry.hpp` alone uses
@@ -153,63 +153,21 @@ if(TARGET ${_component})
   # everything else alone.
   target_compile_features(${_component} PUBLIC cxx_std_17)
 
-  # autoware_msgs INTERFACE target exposes the hand-written
-  # `<autoware/autoware_msgs/messages.hpp>` umbrella include.
+  # Messages: nano_ros_auto_add_library() above generated every message
+  # package package.xml <depend>s on and linked the generated libraries (on
+  # Zephyr their headers reach `app`, whose include directories the library
+  # inherits). The hand-written umbrella <autoware/autoware_msgs/messages.hpp>
+  # is in this package's include/.
   #
-  # Resolve it HERE when a parent has not, for the reason the Eigen block above
-  # exists (nano-ros issue 0939): this package is add_subdirectory'd standalone
-  # by the nros metadata probe, which synthesizes its own CMakeLists and adds
-  # only `controller_pkg`. `autoware_msgs` is never defined in that configure,
-  # so a bare `if(TARGET …)` silently skipped the link, the umbrella's include
-  # directory never reached the component, and the probe failed with
-  #
-  #     geometry.hpp:31:10: fatal error: autoware/autoware_msgs/messages.hpp:
-  #     No such file or directory
-  #
-  # which reads as a missing file rather than a missing dependency. It also
-  # looked intermittent, because a failed probe is cached as unprobeable and not
-  # re-run. The main build was never affected — actuation_module/CMakeLists.txt
-  # adds autoware_msgs (:178) before this package (:247) — which is exactly why
-  # depending on a parent's ordering hid the problem for so long.
-  if(NOT TARGET autoware_msgs)
-    add_subdirectory("${_ACT_ROOT}/src/autoware/autoware_msgs" autoware_msgs)
-  endif()
-  # Now that both routes have been tried, a still-missing target is a build
-  # configuration error and says so. Silently continuing produces a compile
-  # failure several files away that names none of this.
-  if(NOT TARGET autoware_msgs)
-    message(FATAL_ERROR
-      "controller_pkg: the autoware_msgs target is missing and could not be "
-      "added from ${_ACT_ROOT}/src/autoware/autoware_msgs. The component "
-      "cannot compile without the <autoware/autoware_msgs/messages.hpp> "
-      "umbrella include it carries.")
-  endif()
-  target_link_libraries(${_component} PUBLIC autoware_msgs)
-
-  # nros codegen emits the generated C++ message headers under the autoware_msgs
-  # subdir's binary tree (target_include_directories(app …) inside
-  # nros_generate_interfaces). The component lib lives in a different directory
-  # scope, so add those dirs explicitly. autoware_msgs is add_subdirectory'd from
-  # the outer project BEFORE this pkg, so the dirs already exist at configure.
-  set(_gen_base "${CMAKE_BINARY_DIR}/src/autoware/autoware_msgs/nano_ros_cpp")
-  if(EXISTS "${_gen_base}")
-    file(GLOB _gen_pkg_dirs LIST_DIRECTORIES true "${_gen_base}/*")
-    target_include_directories(${_component} PUBLIC "${_gen_base}" ${_gen_pkg_dirs})
-  endif()
-  # Workspace lane (phase-4 W5.a): the canonical generator produces headers
-  # at BUILD time and carries include dirs + the generation dependency on the
-  # per-package `<pkg>__nano_ros_cpp` INTERFACE targets — link them (the glob
-  # above sees empty dirs at configure there). No-op on the Zephyr lane,
-  # whose module variant attaches everything to `app` at configure.
-  foreach(_msgpkg builtin_interfaces std_msgs geometry_msgs nav_msgs
-                  autoware_perception_msgs autoware_vehicle_msgs
-                  autoware_planning_msgs autoware_control_msgs
-                  autoware_adapi_v1_msgs tier4_debug_msgs
-                  visionpilot_msgs safety_island_msgs)
-    if(TARGET ${_msgpkg}__nano_ros_cpp)
-      target_link_libraries(${_component} PUBLIC ${_msgpkg}__nano_ros_cpp)
+  # The two message packages of this workspace were generated by their own
+  # rosidl_generate_interfaces() before this package configured, so the verb
+  # finds them already built and does not link them. Link their targets.
+  foreach(_msgpkg visionpilot_msgs safety_island_msgs)
+    if(TARGET ${_msgpkg}::${_msgpkg})
+      target_link_libraries(${_component} PUBLIC ${_msgpkg}::${_msgpkg})
     endif()
   endforeach()
+
   if(TARGET zephyr_interface)
     target_compile_definitions(${_component} PRIVATE PLATFORM_ZEPHYR=1)
   else()
@@ -261,12 +219,6 @@ if(TARGET app)
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${_controller_includes}
     "${EIGEN3_INCLUDE_DIR}")
-  if(EXISTS "${_gen_base}")
-    target_include_directories(app PRIVATE "${_gen_base}" ${_gen_pkg_dirs})
-  endif()
-  if(TARGET autoware_msgs)
-    target_link_libraries(app PRIVATE autoware_msgs)
-  endif()
   if(ZEPHYR_TARGET STREQUAL "fvp_baser_aemv8r_smp")
     target_compile_options(app PRIVATE
       "-Dfabsl(x)=((long double)fabs((double)(x)))")

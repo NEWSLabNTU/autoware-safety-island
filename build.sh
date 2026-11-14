@@ -367,7 +367,7 @@ function run_zephyr_model() {
 function build_zephyr_actuation_module() {
   echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
   # Phase 3 W1 (nano-ros branch) — the Zephyr platforms run on nano-ros:
-  # messages come from `nros_generate_interfaces()` (host `nros` CLI) and the
+  # messages come from nano-ros codegen (host `nros` CLI) and the
   # RMW is the nano-ros Zephyr module, so the vendored-CycloneDDS host tooling
   # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
   # here. The FreeRTOS platforms below still use it unchanged.

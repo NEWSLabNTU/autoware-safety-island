@@ -31,12 +31,13 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
   boards/                    Zephyr board overlays + confs
   include/common/            Platform-agnostic interfaces (can, clock, logger, ...)
   src/
-    controller_pkg/          The controller component (rclcpp API)
+    controller_pkg/          The controller component (rclcpp API) + message umbrella
+    visionpilot_msgs/, safety_island_msgs/  Supervision message packages
     controller_bringup/      system.toml (images, sched tasks) + launch file
     freertos_*_entry/        Hand-written FreeRTOS entry packages
     s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
-    autoware/                Vendored Autoware components and messages
+    autoware/                Vendored Autoware components
     common/, platform/       Support code
   test/                      Test programs; test/host = dependency-free host tests
 build.sh                     Top-level build driver
