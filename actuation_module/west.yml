@@ -45,6 +45,10 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
+    # ON main, 2026-11-16: 5b9e8844a4 (post-submit green), past PR 3972
+    # (d814e77c0d): a generated Zephyr app keeps its workspace modules
+    # (issue 3948) and finds the workspace's message packages (issue 3952).
+    #
     # ON main, 2026-11-13: 8a71f9b34e, 84 commits past c229eae090, carrying
     # the four nano-ros PRs phase 13 C filed: 3703 (a depth-less subscription
     # row is priced at the budgeted depth: the arena is 94,840 B, not 1.39 MB),
@@ -96,7 +100,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 31846e9a7cc85107c96c66315c604b97c2b23bea
+      revision: 5b9e8844a49cb23b15d57683aa1d72a0ab541979
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

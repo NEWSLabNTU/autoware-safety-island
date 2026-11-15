@@ -3,9 +3,9 @@
 Status: done (2026-11-15). Steps 1-14 done, CI green. Step 9
 went before step 8: the Autoware sources include the platform layer, so the
 library package needs `asi_common` first. Every image links at the current
-nano-ros pin (the S32Z270 RAM overflow, issue 3933, fixed in step 1c). Open:
-build.sh's workarounds for nano-ros issues 3948 and 3952, and no hardware run
-of the images.
+nano-ros pin (the S32Z270 RAM overflow, issue 3933, fixed in step 1c), and
+build.sh carries no nano-ros workaround (issues 3948 and 3952, fixed in step
+1d). Open: no hardware run of the images.
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
@@ -118,8 +118,19 @@ a5e0439885 -> 31846e9a7c (45 commits, post-submit green), for PR 3969
 default `EXECUTOR_BACKING` (issue 3933 fixed). Both S32Z270 images link
 again with only `__nros_sched_task_executor_storage`: Zephyr RAM
 6,702,596 B of 7 MiB, freertos-s32z2 .bss 2,347,396 B (RAM 2,370,292 B of
-3,670,016 B). Issues 3948 and 3952 are still open, so `build.sh` keeps
-both workarounds.
+3,670,016 B).
+
+## Step 1d. Pin nano-ros main 5b9e8844a4 - done
+
+31846e9a7c -> 5b9e8844a4 (16 commits, post-submit green), for PR 3972
+(d814e77c0d): a generated Zephyr app keeps its workspace modules (issue
+3948) and finds the workspace's message packages (issue 3952). build.sh
+drops both workarounds: it passes no `ZEPHYR_EXTRA_MODULES` and exports no
+`NROS_INTERFACE_SEARCH_PATH`. The test application
+(`actuation_module/test/zephyr_app`) is hand-written, not generated, so it
+keeps stating both. fvp, fvp-tap, s32z and freertos-s32z2 build; Zephyr
+S32Z270 RAM is unchanged at 6,702,596 B of 7 MiB, and freertos-s32z2 passes
+the stack-floor check (phase-557 W8, e94d7b88a2) at 65,536 B.
 
 ## Step 7. Messages - done
 
@@ -290,12 +301,9 @@ row. The flags pick the image:
   resolved FVP and S32Z270 `.config`s equal the hand-written builds' except for the knob
   symbols (below), `CONFIG_ZEPHYR_ASI_COMMON_MODULE` and the board's Rust
   support module, which a C++ image does not use.
-- Two workarounds in build.sh, both filed: the generated application's
-  `list(APPEND ZEPHYR_EXTRA_MODULES ...)` is lost because nros build also
-  passes the variable on the west line and Zephyr reads the cache first
-  (nano-ros issue 3948), so build.sh passes the whole list after `--`; and the
-  generated application does not find the workspace's message packages
-  (issue 3952), so build.sh exports `NROS_INTERFACE_SEARCH_PATH`.
+- No workaround in build.sh: the generated application keeps its
+  `ZEPHYR_EXTRA_MODULES` append (nano-ros issue 3948) and finds the
+  workspace's message packages (issue 3952), both fixed at the step-1d pin.
 - S32Z270 board revision D: the descriptor's `west_board` carries no revision,
   so build.sh passes `-DBOARD_REVISION=D`.
 - `asi_common` keys the FVP `fabsl` substitute on `BOARD` (the generated

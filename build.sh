@@ -456,27 +456,13 @@ function build_zephyr_controller() {
   local build_dir
   build_dir="$(realpath -m "${BUILD_DIR}")"
   # West's own options go before the CMake ones; nros build routes each.
-  # The Zephyr modules, stated whole: nano-ros's checkout and asi_common
-  # (whose Kconfig defines the application's symbols). The generated
-  # application appends asi_common to ZEPHYR_EXTRA_MODULES, but nros build
-  # also passes the variable on the west line, and Zephyr reads the cache
-  # value first, so the append is lost (nano-ros issue 3948). A cmake option
-  # after `--` comes after nros build's own, so this one wins.
-  local modules
-  modules="$(realpath "${ROOT_DIR}/modules/nros");$(realpath "${ROOT_DIR}/actuation_module/src/asi_common")"
   local native=(-d "${build_dir}" -p auto
-    -DZEPHYR_EXTRA_MODULES="${modules}"
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     # The board's revision: the descriptor names the board, the revision is a
     # build fact (the D-revision overlay routes the console to uart9).
     native+=(-DBOARD_REVISION=D)
   fi
-  # The workspace's own message packages (src/visionpilot_msgs,
-  # src/safety_island_msgs): the generated application adds no interface
-  # package, so the message generation of the packages that <depend> on them
-  # finds them through the search path (nano-ros issue 3952).
-  export NROS_INTERFACE_SEARCH_PATH="${ROOT_DIR}/actuation_module/src${NROS_INTERFACE_SEARCH_PATH:+:${NROS_INTERFACE_SEARCH_PATH}}"
   ( cd "${ROOT_DIR}/actuation_module" && \
       "${NROS_CLI_BIN}" build "${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
 }
