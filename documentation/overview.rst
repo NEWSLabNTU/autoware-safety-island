@@ -15,7 +15,7 @@ out over DDS. No changes to the upstream Autoware codebase are required.
 
 The module supports Zephyr and FreeRTOS runtime targets for local
 validation and for S32Z and R-Car X5H hardware. A platform abstraction layer
-(``actuation_module/include/platform/``) keeps the controller logic shared
+(``actuation_module/src/asi_common/include/platform/``) keeps the controller logic shared
 between runtime backends.
 
 .. list-table:: Runtime targets

@@ -1,7 +1,8 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2 and 4-7 done, CI green.
-Steps 3 and 8-14 open.
+Status: in progress (2026-11-15). Steps 1, 2, 4-7 and 9 done, CI green.
+Steps 3, 8 and 10-14 open. Step 9 went before step 8: the Autoware sources
+include the platform layer, so the library package needs `asi_common` first.
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
@@ -78,7 +79,7 @@ CMakeLists.txt. That is the library/support-package work above.
    with step 3.
 7. Messages: rosidl packages, upstream messages by `<depend>`. Done, see below.
 8. autoware library package(s).
-9. `asi_common` support package (logger, clock, diag, network hook, pthread shim).
+9. `asi_common` support package (logger, clock, diag, network hook, pthread shim). Done, see below.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`).
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
@@ -116,3 +117,30 @@ CMakeLists.txt. That is the library/support-package work above.
 Size (local builds): an536 text 1,693,912 -> 1,741,784 B (+48 KB), bss
 +208 B; FVP RAM 17,735,556 -> 17,792,388 B; S32Z270 Zephyr RAM 6,660,676 ->
 6,708,164 B of 7 MiB (632 KB left).
+
+## Step 9. asi_common - done
+
+`src/asi_common` is a package (`package.xml` + CMakeLists) holding what the
+root CMakeLists.txt and controller_pkg used to add by hand:
+
+| moved | from | keyed off |
+|---|---|---|
+| `include/{common,platform}` | `actuation_module/include` | - |
+| `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS` | root (Zephyr), controller_pkg (FreeRTOS) | `zephyr_interface` exists / `NROS_PLATFORM` |
+| FreeRTOS `CONFIG_*` mirror header | controller_pkg | FreeRTOS (and the host metadata probe) |
+| newlib pthread shim, `ASI_S32Z2_NXP_PORT` | root | `CMAKE_SYSTEM_PROCESSOR = cortex-r52` (the ARMv8-R toolchain), `FREERTOS_PORT` |
+| Eigen psincos patch (`asi_eigen` target) | root, patch from `s32z2_board_glue/vendor_patched` | same |
+| `wall_clock.cpp`, `ASI_FREERTOS_WALL_CLOCK` | controller_pkg | same |
+| network bring-up, SNTP resync, the entry's network hook, the Kconfig-gated diagnostics | root | Zephyr; the hook is `ASI_COMMON_ENTRY_HOOK` (off in the test images) |
+| FVP `fabsl` substitute | root, controller_pkg | `ZEPHYR_TARGET` |
+
+The Zephyr sources go into `app` (`target_sources`): a `zephyr_library()`
+declared after `find_package(Zephyr)` is never linked, so the hook's strong
+`nros_board_network_wait()` lost to the entry's weak one and the controller
+never started. `-Wl,--allow-multiple-definition` is gone: the per-package FFI
+crates no longer duplicate symbols, and the images link without it.
+
+Two headers in `common/can/` still include the controller's message umbrella;
+they move with the Autoware library package (step 8).
+
+Size: an536 text 1,741,784 B and FVP RAM 17,792,388 B, both unchanged.

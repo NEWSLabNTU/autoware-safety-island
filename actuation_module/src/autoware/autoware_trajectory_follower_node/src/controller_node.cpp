@@ -43,7 +43,7 @@ using namespace common::logger;
 #include <vector>
 
 #if defined(ASI_FREERTOS_WALL_CLOCK)
-// src/platform/freertos/wall_clock.cpp -- only linked on the bare-metal
+// src/asi_common/src/platform/freertos/wall_clock.cpp -- only linked on the bare-metal
 // FreeRTOS lanes, which are the ones with no wall clock to stamp with.
 extern "C" void asi_start_wall_clock_sync(void);
 #endif
@@ -65,7 +65,7 @@ Controller::Controller(rclcpp::NodeHandle handle)
   // the board has brought the netif up before the app runs, and the generated
   // entry uses `run_tiers`, which -- unlike `run_components` -- never calls the
   // `nros_board_network_wait()` hook the Zephyr lane syncs from.
-  // Detail: src/platform/freertos/wall_clock.cpp.
+  // Detail: src/asi_common/src/platform/freertos/wall_clock.cpp.
   asi_start_wall_clock_sync();
 #endif
 
