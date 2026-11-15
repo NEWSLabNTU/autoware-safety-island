@@ -344,8 +344,10 @@ and `--network tap` layering the same fragments the controller images use).
   test application's `nano_ros.conf`. Three confs no build.sh flag has named
   since `--control-output` was dropped (`output_can_only.conf`,
   `output_dds_and_can.conf`, `can_udp_tunnel.conf`) moved with the test
-  application; `.github/scripts/run-zephyr-fvp-tap-ci.sh` (not in CI) still
-  passes the retired `--control-output`.
+  application. `--network tap --can-output-test` takes two of them
+  (`output_can_only.conf`, `can_udp_tunnel.conf`) in place of the CAN
+  loopback, as before the drop, and `.github/scripts/run-zephyr-fvp-tap-ci.sh`
+  (not in CI) no longer passes `--control-output`.
 
 ## Step 14. CI checks - done
 

@@ -63,7 +63,7 @@ ensure_fvp_available
 
 echo "Zephyr FVP TAP UDP tunnel build"
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap --can-output-test \
-  --control-output CAN_ONLY -d "${BUILD_ROOT}"
+  -d "${BUILD_ROOT}"
 
 set +e
 "${ROOT_DIR}/actuation_module/test/run-fvp-tap-tunnel.sh" "${BUILD_ROOT}"

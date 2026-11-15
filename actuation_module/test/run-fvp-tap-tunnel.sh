@@ -19,7 +19,7 @@ fi
 
 if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
   echo "Missing ELF: ${BUILD_DIR}/zephyr/zephyr.elf" >&2
-  echo "Build first: ./build.sh --platform zephyr-fvp --network tap --can-output-test --control-output CAN_ONLY -d ${BUILD_DIR}" >&2
+  echo "Build first: ./build.sh --platform zephyr-fvp --network tap --can-output-test -d ${BUILD_DIR}" >&2
   exit 1
 fi
 

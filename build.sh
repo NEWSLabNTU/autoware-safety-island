@@ -505,7 +505,12 @@ function build_zephyr_test() {
     confs+=("${zconf}/prj-fvp-tap.conf")
   fi
   local overlays=()
-  if [ "${BUILD_TEST_FLAG}" = "4" ]; then
+  if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${NETWORK_PROFILE}" = "tap" ]; then
+    # On the tap network the CAN frames leave over the FVP UDP tunnel to the
+    # host gateway (actuation_module/test/run-fvp-tap-tunnel.sh), not the
+    # CAN loopback device.
+    confs+=("${app}/output_can_only.conf" "${app}/can_udp_tunnel.conf")
+  elif [ "${BUILD_TEST_FLAG}" = "4" ]; then
     confs+=("${app}/can_loopback.conf")
     overlays+=("${app}/can_loopback.overlay")
   fi
