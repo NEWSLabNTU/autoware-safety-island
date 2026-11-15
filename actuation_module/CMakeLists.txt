@@ -42,19 +42,18 @@ if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
   endif()
 
   project(actuation_module_freertos LANGUAGES C CXX)
-  find_package(Eigen3 REQUIRED)
   find_package(nano_ros REQUIRED COMPONENTS workspace)
   if(NOT DEFINED NROS_RMW)
     set(NROS_RMW cyclonedds)
   endif()
   set(_asi_freertos_subdirs
+      src/asi_common
       src/visionpilot_msgs
       src/safety_island_msgs
       src/controller_pkg)
   if(_asi_is_armv8r)
     # Cross target: no host rpath. Which entry leaf joins depends on the
-    # board; the Eigen/pthread remedies below are shared by both because they
-    # are properties of the arm-none-eabi ARMv8-R toolchain, not of the SoC.
+    # board.
     if(NROS_BOARD STREQUAL "s32z270-freertos")
       # The NXP-licensed board glue (RTD NETC netif override etc.) joins only
       # when its SDK env is provisioned — the pkg's own CMakeLists gates and
@@ -68,57 +67,8 @@ if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
       list(APPEND _asi_freertos_subdirs
           src/freertos_an536_entry)
     endif()
-
-    # Two hardware-proven remedies carried over from the legacy lane
-    # (the retired legacy lane), both cross-only:
-    #
-    # (1) Eigen 3.4 psincos on arm-none-eabi ILP32: newlib types int32_t as
-    #     `long`, so Eigen's NEON integer-packet specialisations (keyed on
-    #     int32_t) never match psincos_float's plain-`int` scratch buffer —
-    #     generic fallback fails to compile. Patch a COPY of the host Eigen
-    #     at configure time (vendor_patched/eigen-psincos-int32.patch) and
-    #     put it BEFORE the system tree.
-    find_package(Patch REQUIRED)
-    set(_eigen_patched_dir ${CMAKE_BINARY_DIR}/eigen-patched)
-    set(_eigen_patch
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/s32z2_board_glue/vendor_patched/eigen-psincos-int32.patch)
-    if(NOT EXISTS ${_eigen_patched_dir}/.patched)
-      file(REMOVE_RECURSE ${_eigen_patched_dir})
-      file(COPY ${EIGEN3_INCLUDE_DIR}/Eigen DESTINATION ${_eigen_patched_dir})
-      execute_process(
-        COMMAND ${Patch_EXECUTABLE} -p1 -d ${_eigen_patched_dir}
-        INPUT_FILE ${_eigen_patch}
-        RESULT_VARIABLE _eigen_patch_rc)
-      if(NOT _eigen_patch_rc EQUAL 0)
-        message(FATAL_ERROR
-            "Failed to apply ${_eigen_patch} to Eigen at ${_eigen_patched_dir}")
-      endif()
-      file(WRITE ${_eigen_patched_dir}/.patched "")
-    endif()
-    include_directories(BEFORE ${_eigen_patched_dir})
-
-    # (2) newlib's <pthread.h> declares types but implements nothing on
-    #     arm-none-eabi; common/logger needs mutexes. The legacy lane's
-    #     FreeRTOS-backed pthread shim (Apache, ASI-authored) shadows it.
-    #     ONLY pthread.h — the legacy dir also carries a FreeRTOSConfig.h
-    #     that must NOT shadow the board bundle's (it lacks the CRx port's
-    #     tick/EOI seam), so the shim is staged alone.
-    set(_asi_pthread_shim_dir ${CMAKE_BINARY_DIR}/s32z2-pthread-shim)
-    file(MAKE_DIRECTORY ${_asi_pthread_shim_dir})
-    configure_file(
-        # Named for the board it was written for, but the gap it fills is
-        # newlib's on arm-none-eabi — every ARMv8-R lane needs it.
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/s32z2/pthread.h
-        ${_asi_pthread_shim_dir}/pthread.h COPYONLY)
-    include_directories(BEFORE ${_asi_pthread_shim_dir})
-
-    # The shim's task-create switch: NXP's GCC/ARM_CR52_GIC port needs its
-    # xTaskCreate*Fpu variants (lazy FPEXC re-enable finds the FP save area
-    # via TLS[0]); the upstream GCC/ARM_CRx_No_GIC port has only the plain
-    # creators. Key the shim on the provisioned port.
-    if("${FREERTOS_PORT}$ENV{FREERTOS_PORT}" MATCHES "ARM_CR52_GIC")
-      add_compile_definitions(ASI_S32Z2_NXP_PORT=1)
-    endif()
+    # The Eigen patch and the newlib pthread shim this cross toolchain needs
+    # come from src/asi_common.
   else()
     # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
     # bake the run path so the entry runs without LD_LIBRARY_PATH.
@@ -180,24 +130,9 @@ set(CONFIG_NROS_CAPABILITY_PARAM_SERVICES y CACHE STRING "declared by controller
 set(CONFIG_NROS_PARAM_STORE y CACHE STRING "controller_bringup's launch seeds parameters" FORCE)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-if(BUILD_TEST STREQUAL "4" OR BUILD_TEST STREQUAL "5")
-  set(EIGEN3_INCLUDE_DIR "")
-else()
-  find_package(Eigen3 REQUIRED)
-endif()
 project(actuation_module)
 include(GNUInstallDirs)
-set(PLATFORM_ZEPHYR ON)
-target_compile_definitions(app PRIVATE PLATFORM_ZEPHYR=1)
 
-# nano-ros nros-cpp is the sole build path post-Phase 1.3/1.4 cleanup.
-# Cross-package FFI staticlibs (autoware_msgs/<pkg>/nano_ros_cpp_ffi_*)
-# include!() each other's per-message Rust shims to keep types in one
-# scope, which means the same `nros_cpp_publish_*` / `_deserialize_*`
-# symbols end up emitted in every downstream FFI staticlib that depends
-# on a given package. The symbol bodies are byte-identical (codegen
-# output), so let the linker drop the duplicates.
-zephyr_ld_options(-Wl,--allow-multiple-definition)
 
 ### MESSAGES ###
 # controller_pkg's package.xml <depend>s name the message packages; nano-ros
@@ -205,6 +140,16 @@ zephyr_ld_options(-Wl,--allow-multiple-definition)
 # below in the test builds). The two supervision packages are in src/, which
 # the resolver searches through NROS_INTERFACE_SEARCH_PATH.
 set(NROS_INTERFACE_SEARCH_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+### PLATFORM LAYER ###
+# src/asi_common: headers, PLATFORM_ZEPHYR, Eigen, and the Zephyr support
+# sources (network bring-up, SNTP resync, the entry's network hook, the
+# Kconfig-gated diagnostics). A test image has no generated entry to hook.
+if(NOT BUILD_TEST STREQUAL "0")
+  set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
+endif()
+add_subdirectory(src/asi_common)
+target_link_libraries(app PRIVATE asi_common asi_eigen)
 
 ### BUILD ACTUATION MODULE ###
 set(APP_SOURCES "" CACHE INTERNAL "Global source files list")
@@ -239,7 +184,7 @@ elseif(BUILD_TEST STREQUAL "2")
 elseif(BUILD_TEST STREQUAL "3")
   target_sources(app PRIVATE test/dds_sub.cpp)
 elseif(BUILD_TEST STREQUAL "4")
-  target_sources(app PRIVATE test/can_output_test.cpp src/common/net/network_config.cpp)
+  target_sources(app PRIVATE test/can_output_test.cpp)
 elseif(BUILD_TEST STREQUAL "5")
   target_sources(app PRIVATE test/dds_loopback_test.cpp)
 else()
@@ -310,32 +255,6 @@ else()
     LAUNCH  default
     TYPED
     DEPLOY  ${NROS_DEPLOY})
-
-  # The network-readiness prologue (previously in main.cpp) is now a STRONG
-  # override of the weak `nros_board_network_wait()` hook the generated entry's
-  # `ZephyrBoard::run_components` calls before `nros::init`. configure_network()
-  # lives in network_config.cpp (compiled into app).
-  target_sources(app PRIVATE
-    src/common/net/network_config.cpp
-    src/common/clock/clock_resync.cpp
-    src/board_network_hook.cpp)
-endif()
-
-# Real-time evaluation Layer 1: the periodic statistics reporter. Self-
-# registering via K_THREAD_DEFINE, so no entry point needs to call it and every
-# image (controller and tests alike) reports identically.
-if(CONFIG_ASI_THREAD_STATS_REPORT)
-  target_sources(app PRIVATE src/common/diag/thread_stats_report.c)
-endif()
-
-# phase-8 W8 — the overwrite-oldest tracing backend. Independent of the stats
-# reporter above; it registers itself with TRACING_BACKEND_DEFINE(), whose
-# header lives in Zephyr's PRIVATE tracing include dir rather than the public
-# tree, so the path has to be added by hand. There is no public header for
-# defining a tracing backend out of tree.
-if(CONFIG_ASI_TRACE_RING)
-  target_sources(app PRIVATE src/common/diag/trace_ring_backend.c)
-  target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/tracing/include)
 endif()
 
 message("=== Build Summary ===")
@@ -351,17 +270,6 @@ message("App headers: ${APP_INCLUDE_DIRS}")
 #   EIGEN_DONT_ALIGN_STATICALLY
 # )
 
-if(ZEPHYR_TARGET STREQUAL "fvp_baser_aemv8r_smp")
-# NOTE: we dont have fabsl in zephyr for fvp builds, so we provide a substitute
-target_compile_options(app PRIVATE 
-  "-Dfabsl(x)=((long double)fabs((double)(x)))"
-)
-endif()
-
 # nros-cpp + generated message headers + linkage are wired into `app`
 # automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
-target_include_directories(app PRIVATE
-    include
-    ${EIGEN3_INCLUDE_DIR}
-    ${APP_INCLUDE_DIRS}
-)
+target_include_directories(app PRIVATE ${APP_INCLUDE_DIRS})

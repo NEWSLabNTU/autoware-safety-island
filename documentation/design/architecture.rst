@@ -11,7 +11,7 @@ The safety island hosts the Autoware trajectory follower and talks to the
 main compute over DDS. This page describes how the pieces fit together at
 runtime on the supported runtime targets. The controller logic is shared
 across backends via a platform abstraction layer
-(``actuation_module/include/platform/``); Zephyr and FreeRTOS targets provide
+(``actuation_module/src/asi_common/include/platform/``); Zephyr and FreeRTOS targets provide
 different backend implementations under that layer.
 
 ************************
@@ -105,7 +105,7 @@ At construction the controller:
 RTOS primitives
 ****************
 
-The ``common`` abstraction layer under ``actuation_module/include/common/``
+The ``common`` abstraction layer under ``actuation_module/src/asi_common/include/common/``
 hides runtime-specific primitives behind small interfaces:
 
 - ``node/node.hpp`` — thread and timer wrappers. The common code uses a

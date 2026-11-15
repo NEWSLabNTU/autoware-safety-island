@@ -29,7 +29,6 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
   nros-codegen.toml          Message field bounds for codegen
   nros-sdk.lock              SDK tool versions (`nros setup`)
   boards/                    Zephyr board overlays + confs
-  include/common/            Platform-agnostic interfaces (can, clock, logger, ...)
   src/
     controller_pkg/          The controller component (rclcpp API) + message umbrella
     visionpilot_msgs/, safety_island_msgs/  Supervision message packages
@@ -38,7 +37,8 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
     s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
     autoware/                Vendored Autoware components
-    common/, platform/       Support code
+    asi_common/              Platform layer: include/{common,platform}, support
+                             sources, pthread shim, Eigen patch
   test/                      Test programs; test/host = dependency-free host tests
 build.sh                     Top-level build driver
 scripts/                     Provisioning, demo runners, trace tools

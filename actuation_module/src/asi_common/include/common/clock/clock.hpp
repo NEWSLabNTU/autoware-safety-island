@@ -10,9 +10,9 @@
 #include "common/logger/logger.hpp"
 using namespace common::logger;
 
-// Msgs — dual-mode (phase 3 W1): nros-cpp generated types on the Zephyr
-// build, CycloneDDS idlc C structs on the FreeRTOS platforms.
-#include "builtin_interfaces.hpp"
+// nros-cpp generated builtin_interfaces (asi_common's package.xml <depend>).
+#include <builtin_interfaces/msg/duration.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 using TimeMsg = builtin_interfaces::msg::Time;
 using DurationMsg = builtin_interfaces::msg::Duration;
 

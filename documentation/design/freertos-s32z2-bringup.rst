@@ -40,7 +40,7 @@ The Phase 5 build is an additional CMake entry point under
 ``actuation_module/freertos_s32z2/`` that does not modify the existing
 ``actuation_module/freertos/`` POSIX-simulator build or the Zephyr boards under
 ``actuation_module/boards/``. S32Z2-specific PAL headers live under
-``actuation_module/include/platform/freertos/s32z2/``.
+``actuation_module/src/asi_common/include/platform/freertos/s32z2/``.
 
 ``platform_network.h`` dispatches ``PLATFORM_FREERTOS_S32Z2`` to
 ``platform/freertos/s32z2/freertos_network.h``, which calls the blocking lwIP

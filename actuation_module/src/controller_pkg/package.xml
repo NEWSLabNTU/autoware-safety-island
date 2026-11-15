@@ -26,6 +26,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>nros</depend>
+  <!-- The platform layer (logger, clock, CAN, network, platform defines). -->
+  <depend>asi_common</depend>
 
   <!--
     The message packages the controller uses. nano-ros generates each from
