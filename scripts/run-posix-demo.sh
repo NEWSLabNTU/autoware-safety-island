@@ -29,8 +29,8 @@ set -euo pipefail
 
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 BUILD_DIR="${ROOT}/build/freertos-posix"
-ENTRY="${BUILD_DIR}/src/freertos_posix_entry/actuation_posix_entry"
-ENTRY_PATTERN="src/freertos_posix_entry/actuation_posix_entry"
+ENTRY="${BUILD_DIR}/actuation_posix_entry"
+ENTRY_PATTERN="freertos-posix/actuation_posix_entry"
 LOG_DIR="${ROOT}/log"
 ISLAND_LOG="${LOG_DIR}/posix-demo-island.log"
 ISLAND_PID_FILE="${LOG_DIR}/posix-demo-island.pid"

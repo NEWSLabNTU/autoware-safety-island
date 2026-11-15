@@ -4,52 +4,13 @@
 # PROJECT SETUP
 cmake_minimum_required(VERSION 3.22.1)
 
-# ---------------------------------------------------------------------------
-# Phase 4 W5.a — FreeRTOS POSIX simulator lane (nano-ros workspace mode).
-# Selected by -DNROS_PLATFORM=freertos (build.sh --platform freertos-posix).
-# The same workspace packages (controller_pkg, controller_bringup, ...) build
-# as a host process: the nros-board-freertos-posix board owns main() + the
-# scheduler, nodes run as FreeRTOS tasks over host CycloneDDS (nano-ros
-# phase-370). The Zephyr app below is untouched by this branch.
-# ---------------------------------------------------------------------------
+# The FreeRTOS images (freertos-posix, an536, s32z2) are built by
+# `nros build <image>` (build.sh), which generates their workspace root; this
+# file is the hand-written Zephyr application only.
 if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
-  # Only the host-simulated freertos-posix board takes this road; the
-  # ARMv8-R images (an536, s32z2) are built by `nros build <image>`.
-  if(NOT DEFINED NROS_BOARD)
-    set(NROS_BOARD freertos-posix)
-  endif()
-  if(NOT NROS_BOARD STREQUAL "freertos-posix")
-    message(FATAL_ERROR
-      "actuation_module: board '${NROS_BOARD}' is built by `nros build <image>` "
-      "(see build.sh), not by this CMakeLists.txt.")
-  endif()
-
-  project(actuation_module_freertos LANGUAGES C CXX)
-  find_package(nano_ros REQUIRED COMPONENTS workspace)
-  if(NOT DEFINED NROS_RMW)
-    set(NROS_RMW cyclonedds)
-  endif()
-  # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
-  # bake the run path so the entry runs without LD_LIBRARY_PATH.
-  set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
-  set(_asi_freertos_subdirs
-      src/asi_common
-      src/visionpilot_msgs
-      src/safety_island_msgs
-      src/autoware
-      src/controller_pkg
-      src/freertos_posix_entry)
-
-  nano_ros_workspace(
-    ORDER_FROM_DEPENDS
-    # SYSTEM resolves the bringup's capability axes ([system].features —
-    # param_services for launch-param seeding) BEFORE the runtime import
-    # (nano-ros issue 0353 rule; without it no capability reaches the build).
-    SYSTEM   controller_bringup
-    BACKEND  ${NROS_RMW}
-    PLATFORM "${NROS_PLATFORM}"
-    SUBDIRS  ${_asi_freertos_subdirs})
-  return()
+  message(FATAL_ERROR
+    "actuation_module: FreeRTOS images are built by `nros build <image>` "
+    "(build.sh --platform freertos-*), not by this CMakeLists.txt.")
 endif()
 
 set(CONF_FILE "prj_actuation.conf")

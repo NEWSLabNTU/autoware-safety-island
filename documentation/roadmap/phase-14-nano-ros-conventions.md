@@ -1,7 +1,7 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2 and 4-10 done, CI green; step 3
-done for the an536 and s32z2 images. Steps 11-14 open. Step 9 went before step 8: the Autoware sources
+Status: in progress (2026-11-15). Steps 1, 2 and 4-11 done, CI green; step 3
+done for the FreeRTOS images. Steps 12-14 open. Step 9 went before step 8: the Autoware sources
 include the platform layer, so the library package needs `asi_common` first.
 
 Goal: run the port on current nano-ros main and move its layout and build
@@ -81,7 +81,7 @@ CMakeLists.txt. That is the library/support-package work above.
 8. autoware library package(s). Done, see below.
 9. `asi_common` support package (logger, clock, diag, network hook, pthread shim). Done, see below.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
-11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`).
+11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`). Done, see below.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
 14. CI: `nros check --bringup` / `--workspace` / board check.
@@ -200,3 +200,22 @@ entry from the image row. The root CMakeLists.txt's ARMv8-R branch is gone
 - Sizes: an536 text 1,744,824 B (+3 KB, the runtime crates now build with
   cargo's `release` profile); s32z2 1,716,440 B text, 2,355,580 B bss,
   identical to the hand-written entry.
+
+## Step 11. freertos-posix by `nros build` - done
+
+`build.sh --platform freertos-posix` runs `nros build freertos-posix` (the same
+function as the ARMv8-R images) and links `<build dir>/actuation_posix_entry`.
+`src/freertos_posix_entry` is deleted, and with it the root CMakeLists.txt's
+FreeRTOS branch: the root now refuses `NROS_PLATFORM=freertos`.
+
+- The SI_DDS_INTERFACE hook (`si_dds_interface.cpp`, a strong
+  `nros_board_network_wait()`) moved to `asi_common/src/freertos_posix/`. It is
+  an OBJECT library that `asi_common` lists as an interface link item
+  (`$<TARGET_OBJECTS:...>`), so the object reaches the generated entry's link
+  line directly; from a static archive the linker would keep the board's weak
+  no-op. The POSIX lane's four SI_DDS_INTERFACE cases pass.
+- Step 3 for this image: `max_parameters = 164`, `max_cbs = 16`,
+  `subscription_buffer_size = 16384` as knob rows; generated
+  `MAX_PARAMETERS = 164`, `MAX_CBS = 16`, `DEFAULT_RX_BUF_SIZE = 16384`.
+- Callers moved to the new artifact path: the POSIX lane, `release.yml`,
+  `scripts/run-posix-demo.sh`.

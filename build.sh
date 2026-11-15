@@ -625,127 +625,17 @@ function build_zephyr_actuation_module() {
   west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
 }
 
-# Where the nros-provisioned FreeRTOS kernel is. Since nano-ros phase-484
-# `nros setup --source freertos-kernel` provisions it into the SDK store
-# (~/.nros/sources/freertos-kernel/<ver>), not into the checkout's
-# third-party/freertos/kernel, so ask the CLI's locate ladder instead of
-# guessing the path. --index pins the checkout's own index: without it a CLI
-# run outside the checkout reads the store's fetched one.
-function nros_freertos_kernel_dir() {
-  local nros_cli_bin="$1"
-  "${nros_cli_bin}" locate --index "${ROOT_DIR}/modules/nros/nros-sdk-index.toml" \
-      freertos-kernel 2>/dev/null \
-    || echo "${ROOT_DIR}/modules/nros/third-party/freertos/kernel"
-}
-
-function build_freertos_posix() {
-  # Phase 4 W5.a — nano-ros workspace mode (nros-board-freertos-posix,
-  # nano-ros phase-370): host process, board-owned main()/scheduler, nodes
-  # as FreeRTOS tasks over HOST CycloneDDS (self-provisioned from the
-  # pinned fork; no vendored-cyclonedds involvement).
-  echo -e "${GREEN}Building FreeRTOS POSIX runtime (nano-ros workspace mode)...${NC}"
-  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
-    echo -e "${RED}test programs are Zephyr-lane only; the FreeRTOS POSIX lane builds the controller image${NC}" 1>&2
-    exit 1
-  fi
-
-  require_nros_checkout
-  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
-  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-  # Always run cargo (no-op when fresh; see the zephyr lane note).
-  build_nros_cli "${nros_cli_manifest}"
-  # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
-  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
-  # resolution (phase-5 W1) and resolved/validated here.
-  export CMAKE_PREFIX_PATH=""
-  resolve_ament_env
-  export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-  # `nros configure` spawns its own cmake probes that resolve the codegen tool
-  # from PATH/~/.nros/bin — our -D_NANO_ROS_CODEGEN_TOOL doesn't reach them.
-  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
-
-  # FreeRTOS kernel source — nros-provisioned (phase-4 kernel-provenance
-  # decision: nano-ros's index-pinned checkout is the SSOT).
-  export FREERTOS_DIR="${FREERTOS_DIR:-$(nros_freertos_kernel_dir "${nros_cli_bin}")}"
-  if [ ! -d "${FREERTOS_DIR}/portable/ThirdParty/GCC/Posix" ]; then
-    echo -e "${RED}FreeRTOS kernel missing at ${FREERTOS_DIR}.${NC}" 1>&2
-    echo -e "${YELLOW}Run: (cd modules/nros && ./packages/cli/target/release/nros setup --source freertos-kernel)${NC}" 1>&2
-    exit 1
-  fi
-
-  # Same sizing knobs as the Zephyr lane (environment wins over defaults):
-  # the controller receives 8.8 KiB trajectory samples. NROS_MAX_PARAMETERS
-  # is the one number all lanes use, sized in scripts/zephyr-nros-knobs.sh
-  # (149 declared + margin).
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
-  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
-  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
-  # Arena: MEASURED. nros budgets every arena slot at the ActionClient worst
-  # case (nano-ros issue 0900), so the DERIVED size is
-  # MAX_CBS x (3*4480 + 3*rx_buf + 1536) + 2048 -- about 1 MB on this lane and
-  # 3.4 MB on an536, for an image that owns no action client, no action server
-  # and no service (`ros2 node info /controller`: five subscriptions, three
-  # publishers).
-  #
-  # What it actually claims, from the runtime's own advisory:
-  #
-  #   freertos-posix (rx 16 KiB):  88780/458752 bytes claimed at first spin
-  #   freertos-an536 (rx 64 KiB):  88484/3407872 bytes claimed at first spin
-  #
-  # Re-measured on nano-ros 05b7f7d2648f (2026-10-30, arena forced to 4 MiB):
-  #
-  #   freertos-posix:  91344/4194304 bytes claimed at first spin
-  #   freertos-an536:  90440/4194304 bytes claimed at first spin
-  #
-  # The two agree to within 1 KiB across a 4x difference in rx_buf, so the
-  # claim does not scale with the buffer knob the derivation multiplies by 12.
-  #
-  # 131072 is ~1.4x the measured claim. Getting it too small is FATAL, not
-  # advisory -- measured at 16 KiB:
-  #
-  #   arena exhausted: 66356 more bytes needed, 784/16384 in use
-  #   FATAL: ComponentNode "controller" failed at create_subscription (code=-6)
-  #
-  # so raise it, do not trim it, if this image ever grows an entity.
-  # Every subscription is KEEP_LAST(1). launch/system.contract.yaml states
-  # depth 1 on each, and nano-ros prices the arena from it, so no
-  # NROS_PUBSUB_QOS_DEPTH is exported (ROS's default would be depth 10).
-  # nano-ros 0a4cfcc063 (arena oracle, phase-412): a stated arena below the
-  # model's requirement is a compile error, so the arena is left to the build,
-  # which derives it from that model. Since nano-ros PR 3703 the model prices
-  # each subscription at this depth and its own type's bound: 94,840 B on every
-  # lane, against 90,552 (an536) to 91,512 (posix) B claimed at first spin.
-  # Before it the model charged each subscription the whole receive buffer --
-  # 353,344 B on posix, 1,385,536 B on an536 / S32Z2, which left 14 KB of the
-  # S32Z270's RAM. An NROS_EXECUTOR_ARENA_SIZE in the environment still wins (and
-  # is refused if it is below the model).
-
-  local app_build_dir
-  app_build_dir=$(realpath -m "${BUILD_DIR}")
-
-  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" configure . )
-
-  cmake -S actuation_module -B "${app_build_dir}" \
-    -DNROS_PLATFORM=freertos \
-    -DNROS_BOARD=freertos-posix \
-    -DNROS_DEPLOY=freertos-posix \
-    -DNROS_RMW=cyclonedds \
-    -Dnano_ros_ROOT="${ROOT_DIR}/modules/nros" \
-    -DNROS_CLI_BIN="${nros_cli_bin}" \
-    -D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}"
-  cmake --build "${app_build_dir}" --target actuation_posix_entry -j"$(nproc)"
-}
-
-# The two ARMv8-R images -- NXP S32Z270 hardware and QEMU mps3-an536 -- are
-# `[image.s32z2]` and `[image.an536]` in controller_bringup/system.toml, built
-# by `nros build <image>`: nano-ros generates the workspace root and the entry
+# The FreeRTOS images -- the POSIX simulator, QEMU mps3-an536 and NXP
+# S32Z270 hardware -- are `[image.freertos-posix]`, `[image.an536]` and
+# `[image.s32z2]` in controller_bringup/system.toml, built by
+# `nros build <image>`: nano-ros generates the workspace root and the entry
 # from the image row (board, domain, sizing knobs), so this only provisions the
 # environment and forwards the facts a build machine supplies.
 #
-#   $1 image id          an536 | s32z2
+#   $1 image id          freertos-posix | an536 | s32z2
 #   $2 human label       e.g. "S32Z2"
 #   $3 artifact name     the link left at ${BUILD_DIR}/<name>
-function build_freertos_armv8r_nros() {
+function build_freertos_nros() {
   local image="$1"
   local label="$2"
   local artifact_name="$3"
@@ -771,8 +661,8 @@ function build_freertos_armv8r_nros() {
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
 
-  # Cross toolchain: prefer the SDK-provisioned arm-none-eabi-gcc (13.2 --
-  # what nano-ros builds and tests these boards with). The system 10.3
+  # Cross toolchain (the ARMv8-R boards): prefer the SDK-provisioned
+  # arm-none-eabi-gcc (13.2 -- what nano-ros builds and tests these boards with). The system 10.3
   # rejects the entry codegen's C++ designated initializers. Provision with:
   #   (cd modules/nros && nros setup --tool arm-none-eabi-gcc)
   local sdk_gcc_bin
@@ -784,7 +674,7 @@ function build_freertos_armv8r_nros() {
 
   # Native arguments to the CMake configure nros build drives.
   #
-  # RelWithDebInfo (-O2 -g), the profile this image was always built with;
+  # RelWithDebInfo (-O2 -g), the profile these images were always built with;
   # nros build's CMake road defaults to Release (-O3, ~130 KB more text on
   # an536), and `[image.<id>] profile` reaches only the cargo road (nano-ros
   # issue 3899).
@@ -825,13 +715,19 @@ function build_freertos_armv8r_nros() {
   echo -e "${GREEN}${label} image: ${BUILD_DIR}/${artifact_name} -> ${artifact}${NC}"
 }
 
+# The FreeRTOS POSIX simulator: a host process, board-owned main() and
+# scheduler, the node as a FreeRTOS task over host CycloneDDS.
+function build_freertos_posix() {
+  build_freertos_nros freertos-posix "POSIX" actuation_posix_entry
+}
+
 # The NXP S32Z270 image. Without the NXP SDK it LINK-COMPLETES against the
 # board bundle's in-tree GCC/ARM_CRx_No_GIC port and weak netif stubs;
 # hardware provisioning (scripts/provision-nxp-freertos.sh) points
 # FREERTOS_DIR/FREERTOS_PORT at the patched NXP GCC/ARM_CR52_GIC port and
 # enables src/s32z2_board_glue via S32_RTD_PATH.
 function build_freertos_s32z2_nros() {
-  build_freertos_armv8r_nros s32z2 "S32Z2" actuation_s32z2_entry
+  build_freertos_nros s32z2 "S32Z2" actuation_s32z2_entry
 }
 
 # The EMULATED Cortex-R52 image (QEMU mps3-an536). Same CPU and kernel port as
@@ -840,7 +736,7 @@ function build_freertos_s32z2_nros() {
 #   qemu-system-arm -machine mps3-an536 -nographic \
 #       -semihosting-config enable=on,target=native -kernel <image>
 function build_freertos_an536_nros() {
-  build_freertos_armv8r_nros an536 "AN536 (emulated R52)" actuation_an536_entry
+  build_freertos_nros an536 "AN536 (emulated R52)" actuation_an536_entry
 }
 
 ## MAIN ##
