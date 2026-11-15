@@ -1,0 +1,6 @@
+# asi_common is a Zephyr module for its Kconfig only: the application adds
+# the package's CMakeLists.txt itself (no `cmake:` key), so Zephyr does not
+# build it a second time as a module.
+name: asi_common
+build:
+  kconfig: zephyr/Kconfig

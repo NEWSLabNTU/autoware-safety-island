@@ -24,7 +24,7 @@ Autoware components under `actuation_module/src/autoware/`.
 
 ```
 actuation_module/            nano-ros workspace root (`nros configure .`)
-  CMakeLists.txt, Kconfig    Hand-written Zephyr app (FreeRTOS images: nros build)
+  CMakeLists.txt             Hand-written Zephyr app (FreeRTOS images: nros build)
   west.yml                   West manifest (zephyr v3.7.0, nano-ros pin)
   nros-codegen.toml          Message field bounds for codegen
   nros-sdk.lock              SDK tool versions (`nros setup`)
@@ -39,7 +39,9 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
     autoware/                autoware_controller_libs: vendored Autoware controllers
                              (MPC, PID) and utility libraries
     asi_common/              Platform layer: include/{common,platform}, message
-                             umbrella, support sources, pthread shim, Eigen patch
+                             umbrella, support sources, pthread shim, Eigen patch;
+                             a Zephyr module for the application's Kconfig
+                             symbols (zephyr/module.yml, zephyr/Kconfig)
   test/                      Test programs; test/host = dependency-free host tests
 build.sh                     Top-level build driver
 scripts/                     Provisioning, demo runners, trace tools
