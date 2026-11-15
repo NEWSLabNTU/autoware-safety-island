@@ -2,8 +2,10 @@
 
 Status: done (2026-11-15). Steps 1-14 done, CI green. Step 9
 went before step 8: the Autoware sources include the platform layer, so the
-library package needs `asi_common` first. Open: both S32Z270 images overflow
-RAM at the current nano-ros pin (nano-ros issue 3933, step 1b).
+library package needs `asi_common` first. Every image links at the current
+nano-ros pin (the S32Z270 RAM overflow, issue 3933, fixed in step 1c). Open:
+build.sh's workarounds for nano-ros issues 3948 and 3952, and no hardware run
+of the images.
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
