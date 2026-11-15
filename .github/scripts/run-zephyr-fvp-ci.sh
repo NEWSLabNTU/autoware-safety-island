@@ -9,13 +9,6 @@ LOG_DIR="${BUILD_ROOT}/logs"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
-# The same nano-ros knobs build.sh resolves. `west build --target run` re-enters
-# cmake, and a reconfigure without these picks the crate defaults -- a 64 KiB
-# platform heap that cannot hold the 448 KiB executor arena -- so the lane
-# failed AFTER a successful build, at the moment it tried to start the model.
-# shellcheck source=../../scripts/zephyr-nros-knobs.sh
-source "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
-
 # `idlc` -- the CycloneDDS IDL compiler, a HOST tool this lane shells during
 # cmake configure -- comes from the image's ROS prefix and links iceoryx, which
 # the loader cannot find without this:

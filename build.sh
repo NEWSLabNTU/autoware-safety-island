@@ -364,266 +364,190 @@ function run_zephyr_model() {
   ( eval "${run_cmd}" )
 }
 
-function build_zephyr_actuation_module() {
-  echo -e "${GREEN}Building Zephyr Actuation Module (nano-ros)...${NC}"
-  # Phase 3 W1 (nano-ros branch) — the Zephyr platforms run on nano-ros:
-  # messages come from nano-ros codegen (host `nros` CLI) and the
-  # RMW is the nano-ros Zephyr module, so the vendored-CycloneDDS host tooling
-  # upstream's Zephyr path used (idlc PATH + -DCYCLONEDDS_SRC) is not needed
-  # here. The FreeRTOS platforms below still use it unchanged.
+# The Zephyr environment every Zephyr build gets: the host nros CLI (built
+# here, on PATH), the message prefixes, nano-ros's checkout, and the FVP
+# model flags. Shared by the controller images and the test programs.
+function zephyr_env() {
   require_nros_checkout
-  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
-    run_zephyr_model
-    return
-  fi
-  # Build the host `nros` CLI if missing or stale (full host provisioning is
-  # scripts/bootstrap-asi.sh; this only ensures the CLI binary). Phase 3 W2.c
-  # — inlined from the retired bootstrap-nano-ros-shim.sh.
+  # This repo's Zephyr patches (patches/zephyr): a fresh checkout or a
+  # provisioning run leaves them out, and a trace image does not link
+  # without 0002. Idempotent; a conflicting patch stops the build.
+  "${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
+  NROS_CLI_BIN="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
-  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
   if [ ! -f "${nros_cli_manifest}" ]; then
     echo -e "${RED}nano-ros CLI manifest missing (${nros_cli_manifest}) — bump the west.yml nano-ros revision.${NC}" 1>&2
     exit 1
   fi
   # Always run cargo: a fresh CLI is a ~0.1 s no-op, and any partial check
   # misses part of the CLI's real input closure (its own source stamp hashes
-  # the cli-source-dirs.txt dirs OUTSIDE packages/cli too — an mtime probe on
-  # packages/cli alone let a pin bump through to a "CLI is STALE" codegen
-  # failure, 2026-08-23).
+  # the cli-source-dirs.txt dirs OUTSIDE packages/cli too).
   build_nros_cli "${nros_cli_manifest}"
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
-  # into the cross build); AMENT_PREFIX_PATH is now REQUIRED for message
-  # resolution (phase-5 W1) and resolved/validated here.
+  # into the cross build); AMENT_PREFIX_PATH resolves the messages.
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
-  # The nros CLI must be on PATH for the module's SDK-store lookups
-  # (`find_program(nros)` feeds `nros sdk-path cyclonedds` → host idlc hints;
-  # a fresh configure without it dies "host Cyclone idlc not found" even with
-  # a fully provisioned store). The posix lane has always done this; the
-  # zephyr lane coasted on stale CMake caches until the phase-5 W1 clean
-  # reconfigure exposed it.
-  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
-  # Board-facts lane (nano-ros phase-351 W5): `nros ws board-facts` resolves
-  # the nano-ros checkout from NROS_REPO_DIR when the app dir sits outside
-  # the nano-ros tree (the cmake wrapper passes no --nano-ros-path).
+  # The Zephyr module resolves the codegen tool and the SDK store through the
+  # CLI on PATH, and nano-ros's checkout through NROS_REPO_DIR.
+  export PATH="$(dirname "${NROS_CLI_BIN}"):${PATH}"
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-  # The SystemModel nano_ros_entry reads is a build artifact only `nros configure`
-  # writes; since nano-ros issue 1575 a configure without it is refused, not
-  # silently tierless. Same step the FreeRTOS lanes run.
-  ( cd "${ROOT_DIR}/actuation_module" && "${nros_cli_bin}" configure . )
-  local extra_conf_files=()
-  # EXTRA_DTC_OVERLAY_FILE is a single cmake variable, so every overlay the
-  # lane wants has to be collected and passed as one ';'-separated list —
-  # a second -D would silently drop the first.
-  local extra_dtc_overlays=()
-
-  # Zephyr 3.7 hardware-model-v2 board identifiers: the HWMv1 short name
-  # `fvp_baser_aemv8r_smp` is ambiguous (`fvp_baser_aemv8r` defines multiple
-  # SoCs) — `west build -b` needs the full board/soc/variant id. The board
-  # conf files in actuation_module/boards/ carry the HWMv2 basename too.
-  local board_id="${ZEPHYR_TARGET}"
-  local conf_base="${ZEPHYR_TARGET%%@*}"
-  if [ "${ZEPHYR_TARGET}" = "fvp_baser_aemv8r_smp" ]; then
-    board_id="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
-    conf_base="fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp"
-  fi
-
-  # nano-ros overlay (Kconfig surface for the module) is always on for the
-  # Zephyr platforms.
-  extra_conf_files+=("${ROOT_DIR}/actuation_module/nano_ros_overlay.conf")
-
-  # The Autoware trajectory follower declares ~150 node parameters (MPC
-  # lateral + PID longitudinal); nano-ros's parameter server is a static
-  # pool sized at Rust build time (nros-params build.rs, default 32 ->
-  # declare_parameter fails with ErrorCode::Full = -5 at boot).
-  #
-  # ZEPHYR LANE NOTE (nano-ros issues 0749/0756): these knobs reach the
-  # Zephyr Rust lane only since nano-ros d1c5b3b3b (before that the curated
-  # cargo env dropped them and every Zephyr image silently built the crate
-  # defaults). 256 used to HANG boot right after dds_create_participant —
-  # the param store was constructed on a task stack (~8.5 KiB/slot, issue
-  # 0756) — fixed upstream at pin ba9dba805; unpinned back to 256 so all
-  # ~150 controller parameters get declared slots.
-  # nano-ros build knobs (parameter pool, executor sizing, the Zephyr heap
-  # funnel). Sourced rather than inline so the FVP CI script can resolve the
-  # SAME values before `west build --target run` re-enters cmake.
-  # The S32Z270 heap. The knobs' 8 MiB default is sized on the 64-bit FVP and
-  # does not build here: the R52 is 32-bit, so nano-ros's rlsf heap holds at
-  # most 4 MiB ("heap size exceeds rlsf MAX_POOL_SIZE", MAX_POOL = 1 << (4 +
-  # FLLEN 18)), and the image has to fit the 7 MiB SRAM the board overlay
-  # selects. 2 MiB is 3.4x the peak the same controller reaches on the
-  # emulated R52 (mps3-an536: 618,880 B with Cyclone).
-  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
-    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-2097152}"
-  fi
-  # shellcheck source=scripts/zephyr-nros-knobs.sh
-  . "${ROOT_DIR}/scripts/zephyr-nros-knobs.sh"
-  # Pass the resolved host path of the `nros` CLI to CMake — the Zephyr module
-  # resolves the codegen tool from `_NANO_ROS_CODEGEN_TOOL` (then $NROS_CLI,
-  # then PATH); see modules/nros/zephyr/cmake/nros_generate_interfaces.cmake.
-  local nros_codegen="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-
-  # The bringup image this build is: [image.fvp], or [image.fvp-tap] (domain 2)
-  # for the TAP network profile.
-  local zephyr_image="fvp"
-  if [ "${NETWORK_PROFILE}" = "tap" ]; then
-    zephyr_image="fvp-tap"
-  fi
-  # The S32Z270 target is its own image, on this workspace's own board
-  # (src/s32z270_zephyr_board): the FVP image's board states the FVP's
-  # hardware and its AArch64 Rust triple.
-  if [ "${ZEPHYR_TARGET}" = "s32z270dc2_rtu0_r52@D" ]; then
-    zephyr_image="s32z"
-    # The board package is not in the nano-ros tree; the nros CLI calls of the
-    # configure that run outside this workspace find it through this path.
-    export NROS_EXTRA_BOARD_PATH="${ROOT_DIR}/actuation_module/src/s32z270_zephyr_board${NROS_EXTRA_BOARD_PATH:+:${NROS_EXTRA_BOARD_PATH}}"
-  fi
-
-  # Build command with common arguments
-  local build_args=(
-    -DZEPHYR_TARGET="${ZEPHYR_TARGET}"
-    # Name WHICH deploy this build is. The bringup carries four
-    # ([deploy.fvp|freertos-posix|s32z2|an536]) and `nros ws board-facts`
-    # refuses when several resolve differently — correct of it, but the cmake
-    # wrapper then soft-skips and the image silently loses its board facts
-    # (nano-ros issue 0755). Adding [deploy.an536] made the set ambiguous and
-    # broke this lane exactly that way, so every lane now says which it is.
-    # `fvp` (or `fvp-tap`) for the FVP and `s32z` for the S32Z270 target.
-    -DNROS_DEPLOY="${zephyr_image}"
-    -D_NANO_ROS_CODEGEN_TOOL="${nros_codegen}"
-    -DEXTRA_CFLAGS="-Wno-error"
-    -DEXTRA_CXXFLAGS="-Wno-error"
-    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
-    # Issue 0745 — the bringup declares [system].features=["param_services"]
-    # (launch-param seeding); the Zephyr module lane has no bringup-driven
-    # capability resolution yet, so mirror it explicitly.
-    -DNROS_FEATURES="param_services"
-  )
-
-  # nano-ros 0a4cfcc063 (phase-530 W4): the Zephyr module hook runs
-  # `nros configure` for the image this west build is, before Kconfig, and
-  # seeds every reader from its answer. The controller image is the bringup's
-  # [image.fvp], so it names the bringup and the image; without them the
-  # inventory is composed after its readers ran and the promise check refuses
-  # the configure. The test images (--unit-test, --dds-*, --can-output-test)
-  # are hand-written mains that are not the bringup's image, so they stay
-  # guests and name neither.
-  if [ "${BUILD_TEST_FLAG}" = "0" ]; then
-    build_args+=(
-      -DNROS_IMAGE_SYSTEM_DIR="${ROOT_DIR}/actuation_module/src/controller_bringup"
-      -DNROS_IMAGE="${zephyr_image}"
-    )
-  fi
-
-  local board_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_actuation.conf"
-  if [ -f "${board_conf}" ]; then
-    extra_conf_files+=("${board_conf}")
-  fi
 
   # The FVP's SMSC 91C111 ethernet model defaults to disabled
   # (bp.smsc_91c111.enabled=0); without it Zephyr's eth_smsc91x probe fails
   # ("Identification value not in BSR", MAC 00:00:00:00:00:00) and the net
   # stack times out waiting for the interface. Enable it for every FVP run;
   # promiscuous so the guest sees DDS multicast frames off the host bridge.
+  # armfvp.cmake reads ARMFVP_EXTRA_FLAGS from the environment at CONFIGURE
+  # time and bakes it into the `run` target, which `--run` replays.
   export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1"
-
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
-    extra_conf_files+=("${ROOT_DIR}/actuation_module/boards/${conf_base}_tap_network.conf")
     local fvp_tap_interface="${FVP_TAP_INTERFACE:-tap0}"
     export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
   fi
-
-  # The S32Z270's devicetree (the 7 MiB SRAM2 as zephyr,sram, the ENETC MAC,
-  # the ARM Automotive Kit's uart9 / PHY / CAN) is the board package's own
-  # overlay (src/s32z270_zephyr_board/boards/), which nano_ros_use_board()
-  # appends.
-
-  local can_loopback_conf="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.conf"
-  local can_loopback_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_can_loopback.overlay"
-  if [ "${BUILD_TEST_FLAG}" = "4" ]; then
-    if [ -f "${can_loopback_conf}" ]; then
-      extra_conf_files+=("${can_loopback_conf}")
-    fi
-    if [ -f "${can_loopback_overlay}" ]; then
-      extra_dtc_overlays+=("${can_loopback_overlay}")
-    fi
-  fi
-
-  # Real-time evaluation profile (documentation/design/rt_evaluation_zephyr.rst): CTF
-  # task timeline + thread runtime stats, streamed to uart1 so the console on
-  # uart0 stays clean. The tracing buffer is irq_lock-protected only, which is
-  # safe solely because prj_actuation.conf pins CONFIG_SMP=n.
-  # Layer 1 on its own: scheduling statistics, no CTF. Cheap enough for CI,
-  # and separable so the two layers can be bisected independently.
-  if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
-    extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_stats.conf")
-  fi
-
   if [ "${TRACE_ENABLED}" = "1" ]; then
-    local tracing_conf="${ROOT_DIR}/actuation_module/tracing.conf"
-    local tracing_overlay="${ROOT_DIR}/actuation_module/boards/${conf_base}_tracing.overlay"
-    if [ ! -f "${tracing_overlay}" ]; then
-      echo -e "${RED}--trace has no uart overlay for ${conf_base}; supported on the FVP board only.${NC}" 1>&2
-      exit 1
-    fi
-    extra_conf_files+=("${tracing_conf}")
-    # AFTER tracing.conf, because it must override CONFIG_TRACING_BACKEND_UART.
-    # Zephyr selects the backend with an #elif chain that tests UART first, so
-    # leaving it enabled silently wins and the ring is never chosen.
-    if [ "${TRACE_RING_ENABLED}" = "1" ]; then
-      extra_conf_files+=("${ROOT_DIR}/actuation_module/tracing_ring.conf")
-    fi
-    extra_dtc_overlays+=("${tracing_overlay}")
-    # -d may be given as either a relative or an absolute path, so resolve
-    # rather than prefixing ROOT_DIR blindly.
+    # -d may be relative or absolute, so resolve rather than prefix ROOT_DIR.
     local trace_out="${TRACE_OUT_FILE:-$(realpath -m "${BUILD_DIR}")/trace.ctf}"
     mkdir -p "$(dirname "${trace_out}")"
     # board.cmake aims every FVP PL011 at stdout (out_file=-); send uart1 to a
     # file instead so the CTF octet stream is not interleaved with the console.
-    # armfvp.cmake reads ARMFVP_EXTRA_FLAGS from the environment at CONFIGURE
-    # time and bakes it into the `run` target, so exporting it here is what
-    # makes a later `west build --target run` pick it up.
-    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.pl011_uart1.out_file=${trace_out}"
+    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.pl011_uart1.out_file=${trace_out}"
     echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
   fi
-
-  if [ "${#extra_conf_files[@]}" -gt 0 ]; then
-    local extra_conf_file
-    extra_conf_file=$(IFS=';'; echo "${extra_conf_files[*]}")
-    build_args+=(-DEXTRA_CONF_FILE="${extra_conf_file}")
+  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
+    # The S32Z270 board is this workspace's package
+    # (src/s32z270_zephyr_board); the nros CLI calls the configure makes
+    # outside this workspace find it through this path.
+    export NROS_EXTRA_BOARD_PATH="${ROOT_DIR}/actuation_module/src/s32z270_zephyr_board${NROS_EXTRA_BOARD_PATH:+:${NROS_EXTRA_BOARD_PATH}}"
   fi
-
-  if [ "${#extra_dtc_overlays[@]}" -gt 0 ]; then
-    local extra_dtc_overlay
-    extra_dtc_overlay=$(IFS=';'; echo "${extra_dtc_overlays[*]}")
-    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="${extra_dtc_overlay}")
-  fi
-
-  # --run: start the model WITHOUT re-entering the build graph.
-  #
-  # `west build --target run` rebuilds first, and that rebuild cannot be made
-  # to succeed from here. Measured, in a clean build dir, build then run:
-  #
-  #   nros-cpp: nros_config_generated.h was written by another crate with
-  #   DIFFERENT probed sizes ... NROS_EXECUTOR_SIZE: on-disk=477088 vs
-  #   would-write=477336
-  #
-  # The two numbers come from two nros-c compilations that coexist in one build
-  # dir with different feature sets -- their own generated headers say so:
-  #
-  #   NROS_CONFIG_VARIANT "alloc_..._param_services_platform_zephyr_..."  -> 477336
-  #   NROS_CONFIG_VARIANT "critical_section_..._platform_zephyr_..."      -> 477088
-  #
-  # and both write the SAME shared header. Whichever build script runs second
-  # trips nano-ros's C/C++ agreement guard. The guard is right; what it catches
-  # is upstream, and it is reached on any second cargo invocation because the
-  # writer declares `rerun-if-changed` on the header it writes.
-  #
-  # So do not invoke cargo again to start a model that is already built. CMake
-  # records the FVP command line in build.ninja; run exactly that.
-
-  west build -p auto -d "${BUILD_DIR}" -b "${board_id}" actuation_module/ -- "${build_args[@]}"
 }
+
+# The bringup image a controller build is: [image.<id>] in
+# actuation_module/src/controller_bringup/system.toml.
+function zephyr_image_id() {
+  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
+    if [ "${TRACE_ENABLED}" = "1" ] || [ "${TRACE_STATS_ENABLED}" = "1" ]; then
+      echo -e "${RED}--trace / --trace-stats are FVP images only.${NC}" 1>&2
+      exit 1
+    fi
+    echo "s32z"
+    return
+  fi
+  local id="fvp"
+  if [ "${NETWORK_PROFILE}" = "tap" ]; then
+    id="${id}-tap"
+  fi
+  if [ "${TRACE_RING_ENABLED}" = "1" ]; then
+    id="${id}-trace-ring"
+  elif [ "${TRACE_ENABLED}" = "1" ]; then
+    id="${id}-trace"
+  elif [ "${TRACE_STATS_ENABLED}" = "1" ]; then
+    id="${id}-stats"
+  fi
+  echo "${id}"
+}
+
+# The controller images: `nros build <image>` generates the west application
+# from the image row (board, domain, os_config fragments, sizing knobs) and
+# runs west on it, into the -d directory.
+function build_zephyr_controller() {
+  local image
+  image="$(zephyr_image_id)"
+  echo -e "${GREEN}Building Zephyr controller image (nros build ${image})...${NC}"
+  local build_dir
+  build_dir="$(realpath -m "${BUILD_DIR}")"
+  # West's own options go before the CMake ones; nros build routes each.
+  local native=(-d "${build_dir}" -p auto
+    -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
+  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
+    # The board's revision: the descriptor names the board, the revision is a
+    # build fact (the D-revision overlay routes the console to uart9).
+    native+=(-DBOARD_REVISION=D)
+  fi
+  ( cd "${ROOT_DIR}/actuation_module" && \
+      "${NROS_CLI_BIN}" build "${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
+}
+
+# The Zephyr test programs (--unit-test, --dds-publisher, --dds-subscriber,
+# --can-output-test, --dds-loopback-test): the west application
+# actuation_module/test/zephyr_app, one program per build. They take the
+# controller images' Kconfig fragments, so a test runs on the configuration
+# the controller ships with.
+function build_zephyr_test() {
+  local tests=("" unit_test dds_pub dds_sub can_output_test dds_loopback_test)
+  local test="${tests[${BUILD_TEST_FLAG}]}"
+  echo -e "${GREEN}Building Zephyr test program ${test}...${NC}"
+  local app="${ROOT_DIR}/actuation_module"
+  local zconf="${ROOT_DIR}/actuation_module/src/controller_bringup/zephyr"
+
+  # Zephyr 3.7 hardware-model-v2 board identifiers.
+  local board_id="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
+  local confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-fvp.conf")
+  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
+    board_id="s32z270dc2_rtu0_r52@D"
+    confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-s32z.conf")
+  fi
+  if [ "${NETWORK_PROFILE}" = "tap" ]; then
+    confs+=("${zconf}/prj-fvp-tap.conf")
+  fi
+  local overlays=()
+  if [ "${BUILD_TEST_FLAG}" = "4" ]; then
+    confs+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.conf")
+    overlays+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.overlay")
+  fi
+  if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
+    confs+=("${zconf}/prj-trace-stats.conf")
+  fi
+  if [ "${TRACE_ENABLED}" = "1" ]; then
+    confs+=("${zconf}/prj-trace.conf")
+    if [ "${TRACE_RING_ENABLED}" = "1" ]; then
+      confs+=("${zconf}/prj-trace-ring.conf")
+    fi
+    overlays+=("${zconf}/fvp-trace.overlay")
+  fi
+
+  # A test program is no bringup image, so it has no knob rows: the sizing
+  # the controller images state in system.toml reaches it from the
+  # environment, the same values (an exported value wins over a row).
+  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
+  export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
+  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
+    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-2097152}"
+  else
+    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-8388608}"
+  fi
+
+  local build_args=(
+    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
+    -DNROS_DEPLOY=fvp
+    -D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}"
+    -DEXTRA_CFLAGS="-Wno-error"
+    -DEXTRA_CXXFLAGS="-Wno-error"
+    -DNROS_FEATURES="param_services"
+    -DEXTRA_CONF_FILE="$(IFS=';'; echo "${confs[*]}")"
+  )
+  if [ "${#overlays[@]}" -gt 0 ]; then
+    build_args+=(-DEXTRA_DTC_OVERLAY_FILE="$(IFS=';'; echo "${overlays[*]}")")
+  fi
+  # The configure's message inventory is a build artifact `nros configure`
+  # writes.
+  ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI_BIN}" configure . )
+  west build -p auto -d "${BUILD_DIR}" -b "${board_id}" "${app}" -- "${build_args[@]}"
+}
+
+function build_zephyr_actuation_module() {
+  if [ "${ZEPHYR_RUN_ONLY:-0}" = "1" ]; then
+    run_zephyr_model
+    return
+  fi
+  zephyr_env
+  if [ "${BUILD_TEST_FLAG}" = "0" ]; then
+    build_zephyr_controller
+  else
+    build_zephyr_test
+  fi
+}
+
 
 # The FreeRTOS images -- the POSIX simulator, QEMU mps3-an536 and NXP
 # S32Z270 hardware -- are `[image.freertos-posix]`, `[image.an536]` and

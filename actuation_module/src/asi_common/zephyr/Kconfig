@@ -221,7 +221,7 @@ config NET_IFACE2_VLAN
 
 # --- Real-time evaluation: Layer 1 reporting -------------------------------
 # See documentation/design/rt_evaluation_zephyr.rst. Enabled by ./build.sh --trace-stats
-# and --trace via actuation_module/tracing_stats.conf.
+# and --trace via controller_bringup/zephyr/prj-trace-stats.conf.
 
 config ASI_THREAD_STATS_REPORT
 	bool "Periodic thread statistics report"
@@ -282,7 +282,7 @@ config ASI_TRACE_RING
 	  CONFIG_TRACING_BACKEND_CUSTOM=y plus
 	  CONFIG_TRACING_BACKEND_CUSTOM_NAME="asi_trace_ring" -- the backend
 	  is a Kconfig CHOICE member, and `select` has no effect on choice
-	  symbols, so it has to be chosen in the .conf. See tracing_ring.conf.
+	  symbols, so it has to be chosen in the .conf. See controller_bringup/zephyr/prj-trace-ring.conf.
 
 config ASI_TRACE_RING_SIZE
 	int "Trace ring size in bytes"

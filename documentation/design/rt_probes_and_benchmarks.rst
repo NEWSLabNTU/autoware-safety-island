@@ -155,7 +155,7 @@ tier.
 which the rule reads as "not instrumented" and skips. The default build has
 ``THREAD_STACK_INFO`` but not ``INIT_STACKS``. Only the ``--trace-stats`` variant
 turns stack painting on, through ``CONFIG_THREAD_ANALYZER`` in
-``tracing_stats.conf``. So a default-build run that reports zero headroom
+``controller_bringup/zephyr/prj-trace-stats.conf``. So a default-build run that reports zero headroom
 violations has not checked headroom. The ``--trace-stats`` CI lane is where the
 number is real.
 

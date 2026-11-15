@@ -12,8 +12,8 @@
 #   'nav_msgs'.  Hint: source your ROS 2 setup.bash or set AMENT_PREFIX_PATH.
 #
 # The build that produced the ELF had the environment; the reconfigure that ran
-# the ELF did not. Same shape as the nano-ros knobs (scripts/zephyr-nros-knobs.sh)
-# and the loader paths (add_ros_lib_paths in .github/scripts/ci-helpers.sh):
+# the ELF did not. Same shape as the loader paths (add_ros_lib_paths in
+# .github/scripts/ci-helpers.sh):
 # whatever build.sh resolves, the run has to resolve identically.
 
 # Colours when sourced outside build.sh, which defines its own.

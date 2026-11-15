@@ -95,34 +95,166 @@ priority = 80
 priority = 9
 
 # Images (nano-ros phase-486 W8 retired `[deploy.<t>]`; each target is now an
-# `[image.<id>]` row naming a nano-ros BOARD id). The ids are the tokens
-# build.sh passes as NROS_DEPLOY and the Zephyr entry names as DEPLOY.
+# `[image.<id>]` row naming a nano-ros BOARD id). build.sh maps its flags to
+# an id and runs `nros build <id>`.
 
-# FVP image -- ARM FVP Base_RevC AEMv8-R Cortex-A SMP, Zephyr. The board id's
-# descriptor supplies the Zephyr board (fvp_baser_aemv8r_smp) and the board
-# bundle's prj.conf / overlay (nano_ros_use_board(fvp-aemv8r-smp) in
-# actuation_module/CMakeLists.txt).
+# Zephyr images. `nros build <id>` generates the west application
+# (build/zephyr-cyclonedds/<id>_entry/); build.sh picks the id from its flags
+# (--network tap, --trace-stats, --trace, --trace-ring). Each image's Zephyr
+# settings are os_config fragments under zephyr/, applied after the board
+# package's own files: the application's settings (prj-actuation.conf), the
+# board's (prj-fvp.conf, prj-s32z.conf), then the network and real-time
+# evaluation layers. The fragments assign asi_common's Kconfig symbols, which
+# asi_common defines as a Zephyr module.
+#
+# Sizing knobs, the same on every Zephyr image:
+#   params.max_parameters = 164: the controller declares 149 parameters
+#     (trajectory follower + MPC lateral + PID longitudinal + vehicle info),
+#     plus a 10 % margin. Too few is SILENT: declare_parameter<T>() returns the
+#     compiled default when the store is full. Each slot costs ~8.9 KB of the
+#     executor backing.
+#   executor.max_cbs = 16: 7 subscriptions, a timer and the parameter
+#     services; the default 4 fails at boot.
+#   executor.subscription_buffer_size = 16384: /planning trajectories run
+#     9-14 KiB; an undersized buffer drops the sample after Cyclone ACKed it
+#     (nano-ros issue 0749).
+#   zephyr.heap_size (FVP) = 8 MiB: the nros allocator funnel (z_malloc and
+#     __rust_alloc) holds Cyclone and the controller; the S32Z270's is its
+#     board package's [knobs.zephyr] heap_size.
+
+# The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
-board  = "fvp-aemv8r-smp"
-launch = "system.launch.xml"
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
 
-# The same FVP image on the TAP network (build.sh --network tap), for the demo
+# Layer 1 of the real-time evaluation (documentation/design/rt_evaluation_zephyr.rst):
+# thread runtime statistics, no CTF (build.sh --trace-stats).
+[image.fvp-stats]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-trace-stats.conf",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# CTF tracing streamed to uart1, plus the Layer 1 statistics (build.sh --trace).
+[image.fvp-trace]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-trace-stats.conf",
+  "zephyr/prj-trace.conf",
+  "zephyr/fvp-trace.overlay",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
+# fragment comes after prj-trace.conf: it switches the UART backend off.
+[image.fvp-trace-ring]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-trace-stats.conf",
+  "zephyr/prj-trace.conf",
+  "zephyr/prj-trace-ring.conf",
+  "zephyr/fvp-trace.overlay",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# The FVP image on the TAP network (build.sh --network tap), for the demo
 # stack: Autoware on domain 1, the island on 2, `domain_bridge` between them.
-# Its own row because the domain differs and, since nano-ros 0a4cfcc063, the
-# Zephyr hook renders the domain from the image it configures: a tap conf
-# stating CONFIG_NROS_DOMAIN_ID=2 under [image.fvp] (domain 0) is refused as a
-# disagreement (issue 1550).
 [image.fvp-tap]
 board     = "fvp-aemv8r-smp"
 launch    = "system.launch.xml"
 domain_id = 2
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-fvp-tap.conf",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
 
-# The S32Z270 RTU0 R52 on Zephyr (build.sh -t s32z270dc2_rtu0_r52@D, release
+# [image.fvp-stats] on the TAP network.
+[image.fvp-tap-stats]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+domain_id = 2
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-fvp-tap.conf",
+  "zephyr/prj-trace-stats.conf",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# [image.fvp-trace] on the TAP network.
+[image.fvp-tap-trace]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+domain_id = 2
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-fvp-tap.conf",
+  "zephyr/prj-trace-stats.conf",
+  "zephyr/prj-trace.conf",
+  "zephyr/fvp-trace.overlay",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# [image.fvp-trace-ring] on the TAP network.
+[image.fvp-tap-trace-ring]
+board     = "fvp-aemv8r-smp"
+launch    = "system.launch.xml"
+domain_id = 2
+os_config = [
+  "zephyr/prj-actuation.conf",
+  "zephyr/prj-fvp.conf",
+  "zephyr/prj-fvp-tap.conf",
+  "zephyr/prj-trace-stats.conf",
+  "zephyr/prj-trace.conf",
+  "zephyr/prj-trace-ring.conf",
+  "zephyr/fvp-trace.overlay",
+]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+knobs.zephyr.heap_size = 8388608
+
+# The S32Z270 RTU0 R52 on Zephyr (build.sh --platform zephyr-s32z, release
 # only; no emulator models this SoC). nano-ros has no Zephyr board for it, so
-# the board is this workspace's own package, src/s32z270_zephyr_board.
+# the board is this workspace's own package, src/s32z270_zephyr_board, which
+# also states the image's heap (2 MiB).
 [image.s32z]
-board  = "s32z270-rtu0-zephyr"
-launch = "system.launch.xml"
+board     = "s32z270-rtu0-zephyr"
+launch    = "system.launch.xml"
+os_config = ["zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
+knobs.params.max_parameters = 164
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 
 # Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
 # controller runs as a FreeRTOS TASK under the scheduler the board's main()

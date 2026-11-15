@@ -245,7 +245,7 @@ require_stack_headroom() {
 
   # NO rows is not "no breaches". An assertion that passes when the report is
   # empty is an assertion that stops existing the moment the analyzer does --
-  # a renamed marker, a Kconfig dropped from tracing_stats.conf, an image that
+  # a renamed marker, a Kconfig dropped from prj-trace-stats.conf, an image that
   # prints "Thread analyze:" and nothing under it. Measured against the CI
   # artifact this gate has been reading: 51 rows, worst thread 70%. A run that
   # produces none has not measured anything.
