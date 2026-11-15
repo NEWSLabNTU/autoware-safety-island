@@ -265,14 +265,18 @@ row. The flags pick the image:
 - Zephyr settings: `prj_actuation.conf`, the board / tap / tracing fragments
   and the tracing overlay moved to `src/controller_bringup/zephyr/` and are
   named by each image's `os_config`. They now merge after the board package's
-  files (a hand-written app merged `prj_actuation.conf` first), so two lines
-  that the board had always overridden are dropped to keep the image as it
-  was: `CONFIG_SMP=n` (the FVP image runs SMP, 4 CPUs) and
-  `CONFIG_NET_MAX_CONTEXTS=25` (16). The nros-cyclonedds fragment's
+  files (a hand-written app merged `prj_actuation.conf` first), so the seven
+  lines the board package's prj.conf had always overridden are dropped to
+  keep the images as they were: `CONFIG_SMP=n` (the FVP image runs SMP, 4
+  CPUs), `CONFIG_NET_MAX_CONTEXTS=25`, `CONFIG_NET_BUF_{RX,TX}_COUNT=256`,
+  `CONFIG_MAX_PTHREAD_MUTEX_COUNT=12000`, `CONFIG_MAX_PTHREAD_COND_COUNT=127`
+  and `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=32768`. On the FVP the board
+  fragment states the last five again; on the S32Z270 stating them cost
+  907 KB of RAM (net_pkt pools, the POSIX mutex pool). The nros-cyclonedds fragment's
   diagnostics (`CONFIG_ASSERT`, `CONFIG_ASSERT_VERBOSE`,
   `CONFIG_LOG_MODE_IMMEDIATE`), which `nano_ros_use_board()` merged and the
   generated application does not, are stated in `prj-actuation.conf`. The
-  resolved FVP `.config` equals the hand-written build's except for the knob
+  resolved FVP and S32Z270 `.config`s equal the hand-written builds' except for the knob
   symbols (below), `CONFIG_ZEPHYR_ASI_COMMON_MODULE` and the board's Rust
   support module, which a C++ image does not use.
 - Two workarounds in build.sh, both filed: the generated application's
