@@ -10,14 +10,14 @@ set `nros setup board` applies. Kept here because `zephyr/` is a submodule and
 a provisioning run rewrites its working tree — an unrecorded edit is lost
 silently.
 
-Apply with (paths must be ABSOLUTE — `git -C` resolves them relative to
-`zephyr/`, not to the repo root):
+`scripts/apply-zephyr-patches.sh` applies them idempotently (a patch that
+reverse-applies is already in), and both `scripts/bootstrap-asi.sh` and every
+`build.sh` Zephyr build run it, so a fresh checkout builds the trace images
+with no manual step (without 0002 they fail to link on
+`sys_trace_app_marker`). A patch that neither is applied nor applies stops
+the build. By hand:
 
-    for p in "$PWD"/patches/zephyr/*.patch; do git -C zephyr apply "$p"; done
-
-Check whether one is already applied, so re-provisioning is idempotent:
-
-    git -C zephyr apply --check --reverse "$PWD/patches/zephyr/<name>.patch"
+    scripts/apply-zephyr-patches.sh
 
 ## 0001-ctf-trace-k_thread_priority_set.patch
 

@@ -369,6 +369,10 @@ function run_zephyr_model() {
 # model flags. Shared by the controller images and the test programs.
 function zephyr_env() {
   require_nros_checkout
+  # This repo's Zephyr patches (patches/zephyr): a fresh checkout or a
+  # provisioning run leaves them out, and a trace image does not link
+  # without 0002. Idempotent; a conflicting patch stops the build.
+  "${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
   NROS_CLI_BIN="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
   local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
   if [ ! -f "${nros_cli_manifest}" ]; then

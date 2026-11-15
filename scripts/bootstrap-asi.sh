@@ -198,18 +198,10 @@ say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
 # `nros setup board` rewrites ${ROOT}/zephyr, so anything this repo needs
 # beyond nano-ros's patch set has to be re-applied here or it vanishes on the
 # next provisioning run. Each is checked with --reverse first so re-running
-# bootstrap is idempotent. See patches/zephyr/README.md.
-if compgen -G "${ROOT}/patches/zephyr/*.patch" >/dev/null; then
-  for patch in "${ROOT}"/patches/zephyr/*.patch; do
-    if git -C "${ROOT}/zephyr" apply --check --reverse "${patch}" >/dev/null 2>&1; then
-      say "zephyr patch already applied: $(basename "${patch}")"
-    elif git -C "${ROOT}/zephyr" apply "${patch}" >/dev/null 2>&1; then
-      say "applied zephyr patch: $(basename "${patch}")"
-    else
-      warn "could not apply $(basename "${patch}") — it may need a refresh against the current pin."
-    fi
-  done
-fi
+# bootstrap is idempotent (scripts/apply-zephyr-patches.sh, which build.sh
+# also runs). See patches/zephyr/README.md.
+"${ROOT}/scripts/apply-zephyr-patches.sh" ||
+  warn "a zephyr patch needs a refresh against the current pin (above)."
 
 # Host idlc: the pin's cyclonedds cmake resolves idlc from the nros SDK store
 # (~/.nros/sdk/cyclonedds/<ver>/bin/idlc) before PATH. Provision the board's
