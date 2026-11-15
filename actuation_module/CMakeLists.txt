@@ -54,6 +54,12 @@ endif()
 set(CONFIG_NROS_CAPABILITY_PARAM_SERVICES y CACHE STRING "declared by controller_bringup" FORCE)
 set(CONFIG_NROS_PARAM_STORE y CACHE STRING "controller_bringup's launch seeds parameters" FORCE)
 
+# The application's Kconfig symbols are asi_common's (src/asi_common/zephyr/
+# Kconfig): the package is a Zephyr module, which `nros build` adds to the
+# west application it generates for an image that depends on it. This
+# hand-written application names it itself.
+list(APPEND ZEPHYR_EXTRA_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/src/asi_common")
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(actuation_module)
 include(GNUInstallDirs)
