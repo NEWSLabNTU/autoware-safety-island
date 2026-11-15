@@ -30,15 +30,17 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
   nros-sdk.lock              SDK tool versions (`nros setup`)
   boards/                    Zephyr board overlays + confs
   src/
-    controller_pkg/          The controller component (rclcpp API) + message umbrella
+    controller_pkg/          The controller component (rclcpp API) + the vendored
+                             autoware_trajectory_follower_node (the node class)
     visionpilot_msgs/, safety_island_msgs/  Supervision message packages
     controller_bringup/      system.toml (images, sched tasks) + launch file
     freertos_*_entry/        Hand-written FreeRTOS entry packages
     s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
-    autoware/                Vendored Autoware components
-    asi_common/              Platform layer: include/{common,platform}, support
-                             sources, pthread shim, Eigen patch
+    autoware/                autoware_controller_libs: vendored Autoware controllers
+                             (MPC, PID) and utility libraries
+    asi_common/              Platform layer: include/{common,platform}, message
+                             umbrella, support sources, pthread shim, Eigen patch
   test/                      Test programs; test/host = dependency-free host tests
 build.sh                     Top-level build driver
 scripts/                     Provisioning, demo runners, trace tools

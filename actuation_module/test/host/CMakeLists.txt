@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 get_filename_component(ACTUATION_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
-set(FOLLOWER_INC ${ACTUATION_DIR}/src/autoware/autoware_trajectory_follower_node/include)
+set(FOLLOWER_INC ${ACTUATION_DIR}/src/controller_pkg/autoware_trajectory_follower_node/include)
 set(MPC_INC ${ACTUATION_DIR}/src/autoware/autoware_mpc_lateral_controller/include)
 set(X5H_DIR ${ACTUATION_DIR}/freertos_x5h)
 

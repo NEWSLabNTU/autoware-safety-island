@@ -12,68 +12,24 @@ project(controller_pkg LANGUAGES C CXX)
 # actuation_module root (this file lives at <root>/src/controller_pkg/).
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# The platform layer. Configured before this package in a workspace build;
-# nano-ros's metadata probe adds this package on its own, so add it here when
-# nobody did.
+# The platform layer and the Autoware controller library. Configured before
+# this package in a workspace build; nano-ros's metadata probe adds this
+# package on its own, so add them here when nobody did.
 if(NOT TARGET asi_common)
   add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
 endif()
-
-# RFC-0044 facade: the value-returning ComponentNode parameter API + the
-# std::string / std::vector<T> parameter overloads the vendored MPC/PID use are
-# gated on NROS_CPP_STD. ASI's controller declares std::vector<double> weight
-# matrices + std::string-keyed params, so it must compile with std mode on.
-add_compile_definitions(NROS_CPP_STD=1)
-
-# --- Gather the vendored autoware component sources + include dirs ----------
-# The autoware components are plain implementation libs (roadmap gap I4), not
-# nodes. Their `.cmake` snippets `list(APPEND APP_SOURCES ...)` with paths
-# relative to the actuation_module root; collect them here and absolutise so
-# they compile in this subdir's scope.
-set(APP_SOURCES "")
-set(APP_INCLUDE_DIRS "")
-set(AUTOWARE_COMPONENTS
-  autoware_universe_utils
-  autoware_interpolation
-  autoware_motion_utils
-  autoware_vehicle_info_utils
-  autoware_trajectory_follower_base
-  autoware_mpc_lateral_controller
-  autoware_pid_longitudinal_controller
-  autoware_trajectory_follower_node
-)
-foreach(component IN LISTS AUTOWARE_COMPONENTS)
-  include(${_ACT_ROOT}/src/autoware/${component}/${component}.cmake)
-endforeach()
-
-set(_controller_sources "")
-foreach(_s IN LISTS APP_SOURCES)
-  list(APPEND _controller_sources "${_ACT_ROOT}/${_s}")
-endforeach()
-# The component's own registration TU (carries NROS_COMPONENT(Controller)).
-list(APPEND _controller_sources
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/controller.cpp")
-
-# Per-topic delivery counters in the controller callbacks, for answering "at
-# what RATE is this topic reaching the app?" -- a question the controller's own
-# log cannot answer, because it only reports presence. Off unless asked for;
-# they compile to nothing otherwise. See scripts/an536-rx-counters.py.
-if(DEFINED ENV{ASI_RX_COUNTERS} OR ASI_RX_COUNTERS)
-  add_compile_definitions(ASI_RX_COUNTERS=1)
-  message(STATUS "controller_pkg: ASI_RX_COUNTERS enabled (gdb-readable rx counters)")
+if(NOT TARGET autoware_controller_libs)
+  add_subdirectory("${_ACT_ROOT}/src/autoware" autoware_controller_libs)
 endif()
-
-set(_controller_includes "")
-foreach(_i IN LISTS APP_INCLUDE_DIRS)
-  list(APPEND _controller_includes "${_ACT_ROOT}/${_i}")
-endforeach()
 
 # --- The component library + its registration (RFC-0057) -------------------
 # nano-ros's reference shape, the ament analog: the library owns the sources,
 # the register owns the identity. No DEPLOY: the component is registered
 # carrier-less and each image's entry assembles the bootable binary from the
 # bringup's launch topology.
-nano_ros_auto_add_library(controller_lib STATIC ${_controller_sources})
+nano_ros_auto_add_library(controller_lib STATIC
+  src/controller.cpp
+  autoware_trajectory_follower_node/src/controller_node.cpp)
 nros_components_register_node(controller_lib
   PLUGIN     controller_pkg::Controller
   EXECUTABLE controller
@@ -85,34 +41,22 @@ nros_components_register_node(controller_lib
   CALLBACK_GROUPS control
 )
 
-# PUBLIC throughout: the generated entry TU includes controller_pkg/controller.hpp,
-# which pulls the vendored controller tree, and inherits all of this by
-# linking the component.
-target_include_directories(controller_lib PUBLIC ${_controller_includes})
-target_link_libraries(controller_lib PUBLIC asi_common asi_eigen)
-target_compile_definitions(controller_lib PUBLIC NROS_CPP_STD=1)
+# PUBLIC: the generated entry TU includes controller_pkg/controller.hpp, which
+# pulls the vendored controller tree, and inherits all of this by linking the
+# component.
+target_include_directories(controller_lib PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
+target_link_libraries(controller_lib PUBLIC autoware_controller_libs asi_common asi_eigen)
 
-# State the language standard on the TARGET rather than inheriting whatever
-# the enclosing project set: the nros metadata probe's generated CMakeLists
-# sets `CMAKE_CXX_STANDARD 14`, and the vendored Autoware tree is C++17
-# (nano-ros issue 0939). A floor (`cxx_std_17`), not a pin, so a parent that
-# selects a later standard keeps it.
+# Per-topic delivery counters in the controller callbacks, for answering "at
+# what RATE is this topic reaching the app?" -- a question the controller's own
+# log cannot answer, because it only reports presence. Off unless asked for;
+# they compile to nothing otherwise. See scripts/an536-rx-counters.py.
+if(DEFINED ENV{ASI_RX_COUNTERS} OR ASI_RX_COUNTERS)
+  target_compile_definitions(controller_lib PRIVATE ASI_RX_COUNTERS=1)
+  message(STATUS "controller_pkg: ASI_RX_COUNTERS enabled (gdb-readable rx counters)")
+endif()
 target_compile_features(controller_lib PUBLIC cxx_std_17)
-
-# Messages: nano_ros_auto_add_library() above generated every message
-# package package.xml <depend>s on and linked the generated libraries (on
-# Zephyr their headers reach `app`, whose include directories the library
-# inherits). The hand-written umbrella <autoware/autoware_msgs/messages.hpp>
-# is in this package's include/.
-#
-# The two message packages of this workspace were generated by their own
-# rosidl_generate_interfaces() before this package configured, so the verb
-# finds them already built and does not link them. Link their targets.
-foreach(_msgpkg visionpilot_msgs safety_island_msgs)
-  if(TARGET ${_msgpkg}::${_msgpkg})
-    target_link_libraries(controller_lib PUBLIC ${_msgpkg}::${_msgpkg})
-  endif()
-endforeach()
 
 # --- Zephyr: the generated entry is compiled into `app` ----------------------
 # nano_ros_entry() appends a generated main TU to `app` that includes the
@@ -121,6 +65,6 @@ endforeach()
 if(TARGET app)
   target_include_directories(app PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    ${_controller_includes})
-  target_link_libraries(app PRIVATE asi_common asi_eigen)
+    "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
+  target_link_libraries(app PRIVATE autoware_controller_libs asi_common asi_eigen)
 endif()
