@@ -25,9 +25,12 @@ Inside the development container:
 
   $ ./build.sh --platform zephyr-s32z
 
-The ``@D`` variant selects the RTU0 core on domain D, which is the
-configuration the board overlay targets. ``build.sh`` maps ``zephyr-s32z`` to
-the Zephyr board target ``s32z270dc2_rtu0_r52@D``.
+``build.sh`` runs ``nros build s32z``: the image ``[image.s32z]`` in
+``actuation_module/src/controller_bringup/system.toml`` names this
+workspace's board package ``s32z270-rtu0-zephyr``, whose descriptor names the
+Zephyr board ``s32z2xxdc2/s32z270/rtu0``; ``build.sh`` adds the board
+revision D (``-DBOARD_REVISION=D``), the configuration the board overlay
+targets.
 
 Resulting binary:
 
@@ -39,20 +42,25 @@ Resulting binary:
 Board-specific notes
 **********************
 
-The S32Z configuration lives in two files alongside the default
-``prj_actuation.conf``:
+The S32Z configuration lives in the board package and the image's own
+fragment, applied after the application's settings
+(``actuation_module/src/controller_bringup/zephyr/prj-actuation.conf``):
 
 - ``actuation_module/src/s32z270_zephyr_board/boards/s32z2xxdc2_s32z270_rtu0.overlay``
   -- the devicetree overlay of this workspace's nano-ros board package
-  (``s32z270-rtu0-zephyr``), which ``nano_ros_use_board()`` appends. It
+  (``s32z270-rtu0-zephyr``), which ``nros build`` applies. It
   places code in ``sram2``, pins a unique MAC address on ``enetc_psi0``
   (working around `Zephyr #61478
   <https://github.com/zephyrproject-rtos/zephyr/issues/61478>`_), switches
   the console to UART9, pins the PHY to index 2 and selects ``&can0`` as
   ``zephyr,canbus`` for the ARM Automotive Kit (board revision D).
-- ``actuation_module/boards/s32z270dc2_rtu0_r52_actuation.conf`` — Kconfig
-  fragment. Names the DDS interface ``ethernet@74b00000`` and raises the
-  NXP S32 RX thread stack to 16 KiB.
+- ``actuation_module/src/controller_bringup/zephyr/prj-s32z.conf`` -- the
+  image's Kconfig fragment (``[image.s32z] os_config``). Names the DDS
+  interface ``ethernet@74b00000`` and raises the NXP S32 RX thread stack to
+  16 KiB.
+- ``actuation_module/src/s32z270_zephyr_board/nros-board.toml`` -- the board
+  descriptor; its ``[knobs.zephyr] heap_size`` sizes the nros heap at 2 MiB
+  (the R52 is 32-bit, and the image has to fit the 7 MiB SRAM).
 
 **********
 Flashing

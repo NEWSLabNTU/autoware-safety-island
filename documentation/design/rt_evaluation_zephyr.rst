@@ -46,11 +46,11 @@ the image the FVP lane builds:
      - no ``CONFIG_THREAD_RUNTIME_STATS`` in any ASI conf
    * - Shell
      - **off** (commented out)
-     - ``actuation_module/prj_actuation.conf``
+     - ``actuation_module/src/controller_bringup/zephyr/prj-actuation.conf``
    * - SMP
      - **``CONFIG_SMP=y``, 4 CPUs**
      - nano-ros board bundle (see `How the configuration is actually
-       assembled`_). The app's ``CONFIG_SMP=n`` is overridden.
+       assembled`_).
    * - Tick rate
      - **1000 Hz — a 1 ms tick**
      - nano-ros bundle ``prj.conf`` sets ``CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000``,
@@ -79,28 +79,27 @@ running at the wrong rate.
 How the configuration is actually assembled
 ===========================================
 
-Reading ``build.sh`` alone gives the wrong answer, so this is worth stating
-explicitly. ``build.sh`` passes only ``nano_ros_overlay.conf``, the
-``boards/*_actuation.conf`` fragment and (with the tracing flags) the tracing
-fragments through ``EXTRA_CONF_FILE``. The nano-ros **board bundle** arrives by
-a different route: the nros Zephyr module injects it during CMake configure.
-The merge order the build itself reports is:
+``build.sh`` runs ``nros build <image>``, and the image's row in
+``actuation_module/src/controller_bringup/system.toml`` decides the fragments.
+The merge order the build reports is:
 
 .. code-block:: text
 
-   actuation_module/prj_actuation.conf                         <- CONFIG_SMP=n
-   actuation_module/boards/..._smp_actuation.conf
+   build/zephyr-cyclonedds/<image>_entry/prj.conf               <- generated: NROS, C++17
    modules/nros/.../boards/fvp-aemv8r-smp/prj.conf             <- TICKS_PER_SEC=1000
    modules/nros/.../boards/..._aarch64_smp.conf                <- SMP=y, 4 CPUs
-   modules/nros/zephyr/snippets/nros-cyclonedds/cyclonedds.conf
-   actuation_module/nano_ros_overlay.conf
-   actuation_module/boards/..._smp_actuation.conf
-   actuation_module/tracing_stats.conf    (--trace-stats / --trace)
-   actuation_module/tracing.conf          (--trace)
+   controller_bringup/zephyr/prj-actuation.conf                <- the application
+   controller_bringup/zephyr/prj-fvp.conf
+   controller_bringup/zephyr/prj-trace-stats.conf   ([image.fvp-stats], fvp-trace*)
+   controller_bringup/zephyr/prj-trace.conf         ([image.fvp-trace], fvp-trace-ring)
+   controller_bringup/zephyr/prj-trace-ring.conf    ([image.fvp-trace-ring])
+   <build>/nros/<image>.conf                                    <- rendered from the image row
 
-Later fragments win, so the bundle overrides the app's ``CONFIG_SMP=n`` and the
-tracing fragments override everything. Always verify with
-``grep CONFIG_<SYM> <build>/zephyr/.config`` rather than by reading conf files.
+Later fragments win: the image's own fragments override the board package, and
+the tracing fragments override everything but the rendered row. The
+application's fragment states no ``CONFIG_SMP``, so the board's ``SMP=y``
+stands. Always verify with ``grep CONFIG_<SYM> <build>/zephyr/.config`` rather
+than by reading conf files.
 
 
 The mechanisms
@@ -254,7 +253,7 @@ control tier is being preempted mid-callback. Read from the app with
 ``k_thread_runtime_stats_get()`` / ``k_thread_runtime_stats_all_get()``.
 
 **Via the shell** (``CONFIG_SHELL=y`` is already present, commented out, in
-``prj_actuation.conf``): ``kernel threads`` prints per thread the state,
+``controller_bringup/zephyr/prj-actuation.conf``): ``kernel threads`` prints per thread the state,
 priority, stack usage, and — once the options above are set — total /
 current / peak / average execution cycles and CPU percentage
 (``zephyr/subsys/shell/modules/kernel_service.c:111-165``). ``kernel stacks``
@@ -450,7 +449,7 @@ and the CTF socket hooks dereference their arguments unchecked --
 ``sys_trace_socket_getsockname_exit()`` does
 ``net_addr_ntop(addr->sa_family, &net_sin(addr)->sin_addr, ...)`` and ``*addrlen``
 without a NULL test or consulting ``ret``. It is disabled in
-``tracing.conf``. Note this removes the DDS-bracketing use this document
+``prj-trace.conf``. Note this removes the DDS-bracketing use this document
 advertises for the socket events.
 
 **What a capture looks like.** The DDS-loopback workload, 1 CPU, sync + UART
@@ -834,7 +833,8 @@ detectors for scheduling behaviour, not just liveness. This is the highest
 value-per-effort item on the list.
 
 **Layer 2 — timeline, on demand (a build profile).** ``./build.sh --trace``
-layers ``tracing.conf`` plus the ``zephyr,tracing-uart = &uart1`` overlay and
+builds ``[image.fvp-trace]``: ``prj-trace.conf`` plus the
+``zephyr,tracing-uart = &uart1`` overlay (``fvp-trace.overlay``), and
 appends the ``bp.pl011_uart1.out_file`` flag; ``scripts/capture-fvp-trace.sh``
 drives build, run and decode. Both exist and are exercised. Decode with
 ``scripts/parse-zephyr-ctf.py`` -- upstream's ``parse_ctf.py`` needs the

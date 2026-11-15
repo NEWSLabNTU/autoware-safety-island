@@ -384,7 +384,7 @@ forwarded through ``nros`` / ``nros-c`` / ``nros-cpp``, each declaration
 carrying the mandatory rationale comment. Reaching a Zephyr build is a Kconfig
 symbol (``NROS_TRACE_CALLBACKS``) appended to the feature string in
 ``modules/nros/zephyr/CMakeLists.txt``, with ``CONFIG_NROS_TRACE_CALLBACKS=y``
-in this repo's ``tracing.conf`` — which ``build.sh --trace`` already layers, so
+in this repo's ``controller_bringup/zephyr/prj-trace.conf`` -- which ``build.sh --trace`` already layers, so
 no ``build.sh`` change is required.
 
 Confirmed while checking: nano-ros does not use the ``tracing`` crate anywhere

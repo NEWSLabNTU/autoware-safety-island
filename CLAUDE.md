@@ -24,16 +24,19 @@ Autoware components under `actuation_module/src/autoware/`.
 
 ```
 actuation_module/            nano-ros workspace root (`nros configure .`)
-  CMakeLists.txt             Hand-written Zephyr app (FreeRTOS images: nros build)
+  CMakeLists.txt             Hand-written Zephyr app of the test programs only
+                             (every controller image: `nros build <image>`)
   west.yml                   West manifest (zephyr v3.7.0, nano-ros pin)
   nros-codegen.toml          Message field bounds for codegen
   nros-sdk.lock              SDK tool versions (`nros setup`)
-  boards/                    Zephyr board overlays + confs
+  boards/                    Test-program overlays + confs
   src/
     controller_pkg/          The controller component (rclcpp API) + the vendored
                              autoware_trajectory_follower_node (the node class)
     visionpilot_msgs/, safety_island_msgs/  Supervision message packages
-    controller_bringup/      system.toml (images, sched tasks) + launch file
+    controller_bringup/      system.toml (images, sched tasks, knob rows) + launch
+                             file + contract; zephyr/ = the Zephyr images'
+                             os_config fragments (prj-*.conf, overlays)
     s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
     autoware/                autoware_controller_libs: vendored Autoware controllers
@@ -58,7 +61,11 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
 
 - `scripts/bootstrap-asi.sh` provisions a host; the devcontainer does the
   same (`./launch-dev-container.sh`).
-- `./build.sh --platform zephyr-fvp|zephyr-s32z|freertos-posix|freertos-an536|freertos-s32z2 -d <dir>`.
+- `./build.sh --platform zephyr-fvp|zephyr-s32z|freertos-posix|freertos-an536|freertos-s32z2 -d <dir>`
+  runs `nros build <image>` (images in controller_bringup/system.toml; on
+  the FVP `--network tap`, `--trace-stats`, `--trace`, `--trace-ring` pick
+  the `fvp-tap*` / `*-stats` / `*-trace*` image). Sizing is knob rows in
+  system.toml, never exported variables (an exported one wins over a row).
 - `./build.sh --unit-test | --dds-publisher | --dds-subscriber` build one
   Zephyr test program; clean (`-c`) between test-mode switches.
 - CI lanes run locally as `.github/scripts/run-freertos-posix-ci.sh`,

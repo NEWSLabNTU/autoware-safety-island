@@ -48,8 +48,9 @@ target_include_directories(asi_common INTERFACE
 
 if(_asi_zephyr)
   target_compile_definitions(asi_common INTERFACE PLATFORM_ZEPHYR=1)
-  # The FVP's newlib has no `fabsl`.
-  if(ZEPHYR_TARGET STREQUAL "fvp_baser_aemv8r_smp")
+  # The FVP's newlib has no `fabsl`. BOARD is the Zephyr board name without
+  # its qualifiers (fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp).
+  if(BOARD STREQUAL "fvp_baser_aemv8r")
     target_compile_options(asi_common INTERFACE
       "-Dfabsl(x)=((long double)fabs((double)(x)))")
   endif()

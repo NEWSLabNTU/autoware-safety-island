@@ -1,10 +1,10 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2, 4-11 and 14 done, CI green;
-step 3 done for the FreeRTOS images. Step 12 (Zephyr images by `nros build`)
-is blocked on nano-ros issue 3906, and with it step 13's Zephyr half and
-step 3's Zephyr knobs. Step 9 went before step 8: the Autoware sources
-include the platform layer, so the library package needs `asi_common` first.
+Status: in progress (2026-11-15). Steps 1-12 and 14 done, CI green; step 13
+done for the FreeRTOS images, its Zephyr half (the test programs) next. Step 9
+went before step 8: the Autoware sources include the platform layer, so the
+library package needs `asi_common` first. Open: both S32Z270 images overflow
+RAM at the current nano-ros pin (nano-ros issue 3933, step 1b).
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
@@ -72,8 +72,7 @@ CMakeLists.txt. That is the library/support-package work above.
 1. Pin nano-ros main 37232ecff1. Done.
 2. controller_pkg: `nano_ros_auto_add_library` + `nros_components_register_node`. Done.
 3. Sizing knobs to `[image.*.knobs.*]` / board `[knobs]`; delete the exports.
-   Waits for the `nros build` road (steps 10-12): the hand-written
-   `nano_ros_workspace()` road ignores the rows (nano-ros issue 3866).
+   Done (FreeRTOS with steps 10-11, Zephyr with step 12).
 4. Contract file; derive the spin period and pool sizes. Done.
 5. `CONFIG_NROS_*` out of the conf files; `os_config` per Zephyr image. Done
    (the tap domain comes from `[image.fvp-tap]`).
@@ -85,7 +84,7 @@ CMakeLists.txt. That is the library/support-package work above.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`). Done, see below.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
-    Blocked, see below.
+    Controller images done, see below.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
     FreeRTOS half done (steps 10, 11); the Zephyr half waits for step 12.
 14. CI: `nros check --bringup` / `--workspace` / board check. Done, see below.
@@ -246,34 +245,67 @@ FreeRTOS branch: the root now refuses `NROS_PLATFORM=freertos`.
 - Callers moved to the new artifact path: the POSIX lane, `release.yml`,
   `scripts/run-posix-demo.sh`.
 
-## Step 12. Zephyr images by `nros build` - blocked
+## Step 12. Zephyr controller images by `nros build` - done
 
-`nros build fvp` generates a west application
-(`build/zephyr-cyclonedds/fvp_entry/`) that has no `Kconfig`, adds only the
-launch file's node packages, and passes nano-ros as the only
-`ZEPHYR_EXTRA_MODULES`. `[image.<id>] os_config` takes `.conf` fragments,
-which can assign symbols but not define them. The Zephyr images need the 37
-application symbols of `actuation_module/Kconfig` (control-output mode, SNTP,
-log level, thread-stats reporter, trace ring, ...), which `asi_common`'s
-Zephyr headers and sources read, so a generated application cannot configure
-them. Filed as nano-ros issue 3906 (a workspace Zephyr module, or a bringup
-`Kconfig`, reaching the generated app).
+`build.sh --platform zephyr-fvp|zephyr-s32z` runs `nros build <image>` from
+`actuation_module/` into the `-d` directory (`-- -d <dir>`); nano-ros writes
+the west application (`build/zephyr-cyclonedds/<image>_entry/`) from the image
+row. The flags pick the image:
 
-The ways forward, for a decision:
+| build.sh | image |
+|---|---|
+| `--platform zephyr-fvp` | `fvp` |
+| `--network tap` | `fvp-tap` (domain 2) |
+| `--trace-stats` / `--trace` / `--trace-ring` | `fvp-stats` / `fvp-trace` / `fvp-trace-ring`, and the same three on `fvp-tap-*` |
+| `--platform zephyr-s32z` | `s32z` |
 
-1. Wait for 3906; then `[image.fvp|fvp-tap|s32z] os_config` carries
-   `prj_actuation.conf` and the board / tap / tracing fragments, build.sh
-   wraps `nros build`, and the root CMakeLists.txt and Kconfig go.
-2. `nros materialize controller_bringup:<image>` for each of the three images:
-   three hand-owned west applications, each with the Kconfig. That moves the
-   glue rather than removing it.
-3. Turn the application symbols into launch parameters or compile-time
-   defaults in `asi_common`, so no application Kconfig is needed. That is a
-   change to the controller's configuration surface (build.sh's
-   `--control-output`, `--trace`, `--stats` flags set them today).
+- Kconfig: the 37 application symbols moved to `src/asi_common/zephyr/Kconfig`;
+  asi_common is a Zephyr module (`zephyr/module.yml`, `kconfig:` only), which
+  the generated application adds since nano-ros PR 3924.
+- Zephyr settings: `prj_actuation.conf`, the board / tap / tracing fragments
+  and the tracing overlay moved to `src/controller_bringup/zephyr/` and are
+  named by each image's `os_config`. They now merge after the board package's
+  files (a hand-written app merged `prj_actuation.conf` first), so two lines
+  that the board had always overridden are dropped to keep the image as it
+  was: `CONFIG_SMP=n` (the FVP image runs SMP, 4 CPUs) and
+  `CONFIG_NET_MAX_CONTEXTS=25` (16). The nros-cyclonedds fragment's
+  diagnostics (`CONFIG_ASSERT`, `CONFIG_ASSERT_VERBOSE`,
+  `CONFIG_LOG_MODE_IMMEDIATE`), which `nano_ros_use_board()` merged and the
+  generated application does not, are stated in `prj-actuation.conf`. The
+  resolved FVP `.config` equals the hand-written build's except for the knob
+  symbols (below), `CONFIG_ZEPHYR_ASI_COMMON_MODULE` and the board's Rust
+  support module, which a C++ image does not use.
+- Two workarounds in build.sh, both filed: the generated application's
+  `list(APPEND ZEPHYR_EXTRA_MODULES ...)` is lost because nros build also
+  passes the variable on the west line and Zephyr reads the cache first
+  (nano-ros issue 3948), so build.sh passes the whole list after `--`; and the
+  generated application does not find the workspace's message packages
+  (issue 3952), so build.sh exports `NROS_INTERFACE_SEARCH_PATH`.
+- S32Z270 board revision D: the descriptor's `west_board` carries no revision,
+  so build.sh passes `-DBOARD_REVISION=D`.
+- `asi_common` keys the FVP `fabsl` substitute on `BOARD` (the generated
+  application has no `ZEPHYR_TARGET`).
+- `NROS_SYSTEM_PARAM_SERVICES` is not defined for the controller sources any
+  more and needs not be: since nano-ros phase-426 W4 there is one parameter
+  store, the executor's, and a launch seed is what `declare_parameter` reads
+  back.
 
-The BUILD_TEST programs stay on the hand-written app until then; a guest west
-app for them hits the same Kconfig question.
+## Step 3 (Zephyr). Knob rows - done
+
+Each Zephyr image states `knobs.params.max_parameters = 164`,
+`knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }` and,
+on the FVP, `knobs.zephyr.heap_size = 8388608`; the S32Z270 heap (2 MiB) is
+the board package's `[knobs.zephyr] heap_size`. `scripts/zephyr-nros-knobs.sh`
+and build.sh's S32Z heap export are deleted. Verified in the FVP build:
+`CONFIG_NROS_MAX_PARAMETERS=164`, `CONFIG_NROS_EXECUTOR_MAX_CBS=16`,
+`CONFIG_NROS_SUBSCRIPTION_BUFFER_SIZE=16384`,
+`CONFIG_NROS_ZEPHYR_HEAP_SIZE=8388608` (knob source `kconfig`, i.e. the rows),
+and in the generated crates `MAX_PARAMETERS: usize = 164`, `MAX_CBS: usize =
+16`, `DEFAULT_RX_BUF_SIZE: usize = 16384`, `ARENA_SIZE: usize = 99804`; the
+nros heap static is 0x800b60 B.
+
+The test programs (BUILD_TEST 1-5) are still the hand-written application at
+`actuation_module/CMakeLists.txt`, which now builds nothing else (step 13).
 
 ## Step 14. CI checks - done
 

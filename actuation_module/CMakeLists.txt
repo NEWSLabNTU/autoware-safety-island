@@ -4,16 +4,24 @@
 # PROJECT SETUP
 cmake_minimum_required(VERSION 3.22.1)
 
-# The FreeRTOS images (freertos-posix, an536, s32z2) are built by
-# `nros build <image>` (build.sh), which generates their workspace root; this
-# file is the hand-written Zephyr application only.
+# Every controller image (Zephyr and FreeRTOS) is built by `nros build
+# <image>` (build.sh), which generates its application. This file is the
+# hand-written Zephyr application of the test programs only (BUILD_TEST 1-5).
 if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
   message(FATAL_ERROR
     "actuation_module: FreeRTOS images are built by `nros build <image>` "
     "(build.sh --platform freertos-*), not by this CMakeLists.txt.")
 endif()
+if(NOT DEFINED BUILD_TEST OR BUILD_TEST STREQUAL "0")
+  message(FATAL_ERROR
+    "actuation_module: the controller images are built by `nros build <image>` "
+    "(build.sh --platform zephyr-*); this application builds a test program "
+    "(-DBUILD_TEST=1..5).")
+endif()
 
-set(CONF_FILE "prj_actuation.conf")
+# The controller images' application settings, so a test runs on the
+# configuration the controller ships with.
+set(CONF_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup/zephyr/prj-actuation.conf")
 
 # Phase 2.C / 215.B — board glue is ONE line. `nano_ros_use_board()` layers the
 # fvp-aemv8r-smp board crate's BOARD / per-board prj.conf / DTS overlay / default
@@ -76,9 +84,7 @@ set(NROS_INTERFACE_SEARCH_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src")
 # src/asi_common: headers, PLATFORM_ZEPHYR, Eigen, and the Zephyr support
 # sources (network bring-up, SNTP resync, the entry's network hook, the
 # Kconfig-gated diagnostics). A test image has no generated entry to hook.
-if(NOT BUILD_TEST STREQUAL "0")
-  set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
-endif()
+set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/asi_common)
 target_link_libraries(app PRIVATE asi_common asi_eigen)
 
@@ -91,19 +97,15 @@ target_link_libraries(app PRIVATE asi_common asi_eigen)
 # those compat headers under cyclonedds-ts/_genroot/<pkg>/msg/ and keeps
 # that root PRIVATE to the per-package descriptor libs — expose it to the
 # test sources (includes are spelled <pkg>/msg/<Name>.h).
-if(NOT BUILD_TEST STREQUAL "0")
-  target_include_directories(app PRIVATE
-    "${CMAKE_BINARY_DIR}/cyclonedds-ts/_genroot")
-endif()
+target_include_directories(app PRIVATE
+  "${CMAKE_BINARY_DIR}/cyclonedds-ts/_genroot")
 
-if(NOT BUILD_TEST STREQUAL "0")
-  # The test programs use the message set of asi_common's umbrella header,
-  # with no controller in the image. The Zephyr module provides the verb;
-  # find_package(nano_ros) would resolve an image, which a test is not.
-  nros_find_interfaces(
-    PACKAGE_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/asi_common/package.xml"
-    LANGUAGE CPP SKIP_INSTALL)
-endif()
+# The test programs use the message set of asi_common's umbrella header,
+# with no controller in the image. The Zephyr module provides the verb;
+# find_package(nano_ros) would resolve an image, which a test is not.
+nros_find_interfaces(
+  PACKAGE_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/asi_common/package.xml"
+  LANGUAGE CPP SKIP_INSTALL)
 
 if(BUILD_TEST STREQUAL "1")
   target_sources(app PRIVATE test/unit_test.cpp)
@@ -115,76 +117,4 @@ elseif(BUILD_TEST STREQUAL "4")
   target_sources(app PRIVATE test/can_output_test.cpp)
 elseif(BUILD_TEST STREQUAL "5")
   target_sources(app PRIVATE test/dds_loopback_test.cpp)
-else()
-  # Phase 2.C / 242.5 — workspace mode. The controller is the nano-ros Node pkg
-  # `controller_pkg` (its OWN project()); `nano_ros_node_register(... TYPED SHAPE
-  # rclcpp DEPLOY zephyr)` inside it builds the component lib from the controller
-  # + the 8 vendored autoware libs and generates the bootable `int main()` Zephyr
-  # entry directly into `app`. This SUPERSEDES the pre-2.C monolithic
-  # AUTOWARE_COMPONENTS-into-`app` foreach + the imperative `src/main.cpp` boot
-  # (both removed) — topology is now declarative (controller_bringup/) and the
-  # entry is generated, not hand-written.
-  # Phase 3 W2.b — canonical RFC-0048 shape: the verbs come from
-  # find_package(nano_ros) (287-W6 supplies them on Zephyr without
-  # re-importing the runtime), the node pkg registers a carrier-less
-  # component, and the LAUNCH-only entry below assembles the bootable
-  # image from controller_bringup's launch topology.
-  find_package(nano_ros REQUIRED HINTS "${NROS_REPO_DIR}")
-  # On Zephyr, find_package(nano_ros) sets NROS_DEPLOY / NROS_LEAF_IMAGE_ID
-  # from the APP dir's own system.toml. This app has none (its images are
-  # rows in src/controller_bringup/system.toml), so both come back empty and
-  # shadow build.sh's -DNROS_DEPLOY=fvp; `nros ws board-facts` then sees four
-  # images and refuses as ambiguous (nano-ros 05b7f7d). Name ours again.
-  if(DEFINED CACHE{NROS_DEPLOY} AND NOT "$CACHE{NROS_DEPLOY}" STREQUAL "")
-    set(NROS_DEPLOY "$CACHE{NROS_DEPLOY}")
-  else()
-    set(NROS_DEPLOY fvp)
-  endif()
-  set(NROS_LEAF_IMAGE_ID "${NROS_DEPLOY}")
-
-  # Phase 6 W6 — lower the param_services capability into OUR scope before the
-  # node package is added.
-  #
-  # modules/nros/zephyr/CMakeLists.txt already does
-  # `add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)` under the same
-  # condition, but add_compile_definitions() is DIRECTORY-SCOPED: it applies to
-  # the nros Zephyr module's own directory and never reaches
-  # src/controller_pkg. The component therefore compiled with
-  # ComponentNode::adopt_launch_seed_() #if'd out, so declare_parameter()
-  # never consulted the executor's launch-seeded store and every launch
-  # parameter silently lost to its compiled default.
-  #
-  # MEASURED: `ctrl_period` is seeded 0.03 by the generated entry and the
-  # control loop ran at 151 ms — the 0.15 s default — a 5x slower control loop
-  # than declared. Probe at construction: `adopted=0.150000 has_param=1`.
-  #
-  # nano_ros_workspace(SYSTEM ...) lowers the axes from a scope that parents
-  # the component directories, which is why the freertos-posix lane was
-  # unaffected; the Zephyr lane's mirror sits in the wrong directory. Upstream
-  # names the follow-up ("resolve from the entry's BRINGUP like
-  # nano_ros_workspace(SYSTEM ...) does") — until that lands, lower it here.
-  if("param_services" IN_LIST NROS_FEATURES)
-    add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)
-  endif()
-
-  add_subdirectory(src/autoware)
-  add_subdirectory(src/controller_pkg)
-
-  # Phase 4 — canonical LAUNCH+BRINGUP spelling (nano-ros phase-330 W7):
-  # the SystemModel is resolved at CONFIGURE time from the bringup's
-  # system.toml + launch XML (`nros model-path`), replacing the committed
-  # play_launch model (upstream rule: SystemModels are build artifacts,
-  # never committed). Both entries — this Zephyr one and the
-  # freertos_posix_entry pkg — now read the SAME authored bringup,
-  # including the [tasks.control] RT model.
-  nano_ros_entry(
-    NAME    actuation_entry
-    BOARD   zephyr
-    BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_bringup"
-    LAUNCH  default
-    TYPED
-    DEPLOY  ${NROS_DEPLOY})
 endif()
-
-# nros-cpp + generated message headers + linkage are wired into `app`
-# automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
