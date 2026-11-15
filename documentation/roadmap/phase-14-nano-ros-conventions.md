@@ -1,7 +1,7 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2, 4-7 and 9 done, CI green.
-Steps 3, 8 and 10-14 open. Step 9 went before step 8: the Autoware sources
+Status: in progress (2026-11-15). Steps 1, 2 and 4-9 done, CI green.
+Steps 3 and 10-14 open. Step 9 went before step 8: the Autoware sources
 include the platform layer, so the library package needs `asi_common` first.
 
 Goal: run the port on current nano-ros main and move its layout and build
@@ -78,7 +78,7 @@ CMakeLists.txt. That is the library/support-package work above.
 6. S32Z270 Zephyr overlays into the board package. Done; the heap knob moves
    with step 3.
 7. Messages: rosidl packages, upstream messages by `<depend>`. Done, see below.
-8. autoware library package(s).
+8. autoware library package(s). Done, see below.
 9. `asi_common` support package (logger, clock, diag, network hook, pthread shim). Done, see below.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`).
@@ -140,7 +140,32 @@ declared after `find_package(Zephyr)` is never linked, so the hook's strong
 never started. `-Wl,--allow-multiple-definition` is gone: the per-package FFI
 crates no longer duplicate symbols, and the images link without it.
 
-Two headers in `common/can/` still include the controller's message umbrella;
-they move with the Autoware library package (step 8).
+Two headers in `common/can/` include the message umbrella; with step 8 the
+umbrella moved into `asi_common`, so the package is self-contained.
 
 Size: an536 text 1,741,784 B and FVP RAM 17,792,388 B, both unchanged.
+
+## Step 8. autoware_controller_libs - done
+
+`src/autoware` is the package `autoware_controller_libs` (`package.xml` +
+CMakeLists, `nano_ros_auto_add_library` over the seven libraries' sources:
+universe_utils, interpolation, motion_utils, vehicle_info_utils,
+trajectory_follower_base, mpc_lateral_controller, pid_longitudinal_controller).
+The eight `.cmake` snippets are gone; each component keeps its upstream
+directory and `include/`.
+
+- `autoware_trajectory_follower_node` moved into `controller_pkg/`: it is the
+  node class and reads controller_pkg's `node_identity.hpp`, so a library
+  below the node package could not compile it. controller_pkg's library is
+  now `controller.cpp` + `controller_node.cpp`.
+- The message umbrella moved to `asi_common/include/autoware/autoware_msgs/`
+  (asi_common's `package.xml` `<depend>`s on the message packages it names);
+  the Zephyr test images generate from that `package.xml`.
+- `autoware_osqp_interface` stays vendored and unbuilt (the MPC uses the
+  unconstrained QP solver), as before.
+- The upstream `freertos_x5h` build (`cmake/actuation_core.cmake`) included
+  the snippets; it was already unbuildable on this branch (no `src/main.cpp`,
+  no idlc messages) and is not maintained here.
+
+The metadata probe still records 189 parameter declarations, 4 publishers,
+7 subscriptions and 1 timer. an536 text 1,741,792 B (+8 B).

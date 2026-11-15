@@ -5,7 +5,8 @@
 # the Zephyr test programs. It carries what is specific to a platform or a
 # toolchain, so that no node package has to name one:
 #
-#   asi_common   headers (common/, platform/), the PLATFORM_* define, the
+#   asi_common   headers (common/, platform/, and the message umbrella
+#                autoware/autoware_msgs/messages.hpp), the PLATFORM_* define, the
 #                FreeRTOS CONFIG_* mirror header, the newlib pthread shim on
 #                arm-none-eabi, and the support sources of each platform
 #                (Zephyr: network bring-up, SNTP resync, the entry's network

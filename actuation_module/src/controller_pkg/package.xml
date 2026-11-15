@@ -28,14 +28,16 @@
   <depend>nros</depend>
   <!-- The platform layer (logger, clock, CAN, network, platform defines). -->
   <depend>asi_common</depend>
+  <!-- The vendored Autoware trajectory follower (src/autoware). -->
+  <depend>autoware_controller_libs</depend>
 
   <!--
     The message packages the controller uses. nano-ros generates each from
     its <depend>: the upstream ones from the ROS / Autoware install, the two
     supervision packages from src/ in this workspace. Field bounds live in
-    actuation_module/nros-codegen.toml. The hand-written umbrella
-    include/autoware/autoware_msgs/messages.hpp re-exposes the types under
-    ASI's legacy ...Msg names.
+    actuation_module/nros-codegen.toml. asi_common's umbrella
+    autoware/autoware_msgs/messages.hpp re-exposes the types under ASI's
+    legacy ...Msg names.
   -->
   <depend>builtin_interfaces</depend>
   <depend>std_msgs</depend>
@@ -49,13 +51,6 @@
   <depend>visionpilot_msgs</depend>
   <depend>safety_island_msgs</depend>
 
-  <!--
-    The 8 autoware component libraries the node links are vendored under
-    src/autoware/ as plain CMake libraries (roadmap gap I4: deps, not
-    nodes). They are not standalone ament packages, so they are linked via
-    CMake (the AUTOWARE_COMPONENTS gather + nano_ros_node_register SOURCES in
-    controller_pkg/CMakeLists.txt) rather than declared as <depend> rows here.
-  -->
 
   <export>
     <build_type>ament_cmake</build_type>

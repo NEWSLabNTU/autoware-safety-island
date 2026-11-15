@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22.1)
 # ---------------------------------------------------------------------------
 # Phase 4 W5.a — FreeRTOS POSIX simulator lane (nano-ros workspace mode).
 # Selected by -DNROS_PLATFORM=freertos (build.sh --platform freertos-posix).
-# The same controller_pkg / controller_bringup / autoware_msgs sources build
+# The same workspace packages (controller_pkg, controller_bringup, ...) build
 # as a host process: the nros-board-freertos-posix board owns main() + the
 # scheduler, nodes run as FreeRTOS tasks over host CycloneDDS (nano-ros
 # phase-370). The Zephyr app below is untouched by this branch.
@@ -50,6 +50,7 @@ if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
       src/asi_common
       src/visionpilot_msgs
       src/safety_island_msgs
+      src/autoware
       src/controller_pkg)
   if(_asi_is_armv8r)
     # Cross target: no host rpath. Which entry leaf joins depends on the
@@ -152,8 +153,6 @@ add_subdirectory(src/asi_common)
 target_link_libraries(app PRIVATE asi_common asi_eigen)
 
 ### BUILD ACTUATION MODULE ###
-set(APP_SOURCES "" CACHE INTERNAL "Global source files list")
-set(APP_INCLUDE_DIRS "" CACHE INTERNAL "Global include directories list")
 
 # Build Type
 # Test programs use the idlc-style C headers/types (SteeringReport.h,
@@ -168,13 +167,12 @@ if(NOT BUILD_TEST STREQUAL "0")
 endif()
 
 if(NOT BUILD_TEST STREQUAL "0")
-  # The test programs use the controller's message set and its umbrella
-  # header, with no controller in the image. The Zephyr module provides the
-  # verb; find_package(nano_ros) would resolve an image, which a test is not.
+  # The test programs use the message set of asi_common's umbrella header,
+  # with no controller in the image. The Zephyr module provides the verb;
+  # find_package(nano_ros) would resolve an image, which a test is not.
   nros_find_interfaces(
-    PACKAGE_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/controller_pkg/package.xml"
+    PACKAGE_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/asi_common/package.xml"
     LANGUAGE CPP SKIP_INSTALL)
-  target_include_directories(app PRIVATE src/controller_pkg/include)
 endif()
 
 if(BUILD_TEST STREQUAL "1")
@@ -239,6 +237,7 @@ else()
     add_compile_definitions(NROS_SYSTEM_PARAM_SERVICES)
   endif()
 
+  add_subdirectory(src/autoware)
   add_subdirectory(src/controller_pkg)
 
   # Phase 4 — canonical LAUNCH+BRINGUP spelling (nano-ros phase-330 W7):
@@ -257,19 +256,5 @@ else()
     DEPLOY  ${NROS_DEPLOY})
 endif()
 
-message("=== Build Summary ===")
-message("App sources: ${APP_SOURCES}")
-message("App headers: ${APP_INCLUDE_DIRS}")
-
-# TODO: Eigen fine tuning settings for possible memory alignment issues
-# target_compile_definitions(app PRIVATE
-#   EIGEN_DONT_VECTORIZE
-#   EIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT
-#   # EIGEN_MAX_ALIGN_BYTES=0
-#   EIGEN_DONT_ALIGN
-#   EIGEN_DONT_ALIGN_STATICALLY
-# )
-
 # nros-cpp + generated message headers + linkage are wired into `app`
 # automatically by the nano-ros Zephyr module (CONFIG_NROS_CPP_API=y).
-target_include_directories(app PRIVATE ${APP_INCLUDE_DIRS})
