@@ -90,6 +90,48 @@ CMakeLists.txt. That is the library/support-package work above.
     FreeRTOS half done (steps 10, 11); the Zephyr half waits for step 12.
 14. CI: `nros check --bringup` / `--workspace` / board check. Done, see below.
 
+## Step 1b. Pin nano-ros main a5e0439885 - done
+
+37232ecff1 -> a5e0439885 (82 commits, post-submit green), for PR 3924
+(1081ae5d70): a generated Zephyr west app adds the image's package closure
+and that closure's Zephyr modules, Kconfig included (issue 3906, the step-12
+blocker). The one breaking change in between (phase-562, `framework =
+"zephyr"` refused) is not used here. Issue 3882 is fixed at this pin: the
+alias headers carry rosidl's spelling, so the three tier4_debug_msgs
+includes moved to it. A build directory from the older pin still holds both
+spellings, which is how an incremental build hides a stale include.
+
+Regression at this pin, not in CI: both S32Z270 images stop linking (Zephyr
+`region 'RAM' overflowed by 928388 bytes`, was 6,708,164 B of 7 MiB;
+freertos-s32z2 `overflowed by 266004 bytes`, was 2,355,580 B .bss). Since
+nano-ros f0ee23c06b an `Executor`'s drop glue names the default
+`EXECUTOR_BACKING` static, so a C++ entry keeps it beside its own
+`__nros_sched_task_executor_storage`: two default executors with a 164-slot
+parameter store, 1.56 MB each. Bisected on freertos-s32z2 (bc0dfdb6a5 links,
+f0ee23c06b does not); every main commit with PR 3924 is past it. Filed as
+nano-ros issue 3933. The FVP, POSIX and AN536 images have the RAM to spare.
+
+## Step 1c. Pin nano-ros main 31846e9a7c - done
+
+a5e0439885 -> 31846e9a7c (45 commits, post-submit green), for PR 3969
+(76e0ee0257): an image whose executors all come from `open_in` links no
+default `EXECUTOR_BACKING` (issue 3933 fixed). Both S32Z270 images link
+again with only `__nros_sched_task_executor_storage`: Zephyr RAM
+6,702,596 B of 7 MiB, freertos-s32z2 .bss 2,347,396 B (RAM 2,370,292 B of
+3,670,016 B).
+
+## Step 1d. Pin nano-ros main 5b9e8844a4 - done
+
+31846e9a7c -> 5b9e8844a4 (16 commits, post-submit green), for PR 3972
+(d814e77c0d): a generated Zephyr app keeps its workspace modules (issue
+3948) and finds the workspace's message packages (issue 3952). build.sh
+drops both workarounds: it passes no `ZEPHYR_EXTRA_MODULES` and exports no
+`NROS_INTERFACE_SEARCH_PATH`. The test application
+(`actuation_module/test/zephyr_app`) is hand-written, not generated, so it
+keeps stating both. fvp, fvp-tap, s32z and freertos-s32z2 build; Zephyr
+S32Z270 RAM is unchanged at 6,702,596 B of 7 MiB, and freertos-s32z2 passes
+the stack-floor check (phase-557 W8, e94d7b88a2) at 65,536 B.
+
 ## Step 7. Messages - done
 
 - `src/visionpilot_msgs` and `src/safety_island_msgs` are stock rosidl
@@ -111,8 +153,9 @@ CMakeLists.txt. That is the library/support-package work above.
   still holds 250 points.
 - The umbrella header moved to
   `controller_pkg/include/autoware/autoware_msgs/messages.hpp` and includes
-  ROS-style `<pkg>/msg/<name>.hpp` headers. Three tier4_debug_msgs names use
-  nano-ros's spelling (`float32stamped.hpp`), nano-ros issue 3882.
+  ROS-style `<pkg>/msg/<name>.hpp` headers, spelled as rosidl spells them
+  (`float32_stamped.hpp`) since the a5e0439885 pin; before it nano-ros
+  dropped the underscore at a digit-capital boundary (nano-ros issue 3882).
 - The Zephyr test images (BUILD_TEST 1-5) generate the same set with
   `nros_find_interfaces(PACKAGE_XML src/controller_pkg/package.xml)`.
 - `autoware_msgs/msg/*.idl` stay for the upstream `freertos_x5h` build, which
