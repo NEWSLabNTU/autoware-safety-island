@@ -34,7 +34,7 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
                              autoware_trajectory_follower_node (the node class)
     visionpilot_msgs/, safety_island_msgs/  Supervision message packages
     controller_bringup/      system.toml (images, sched tasks) + launch file
-    freertos_*_entry/        Hand-written FreeRTOS entry packages
+    freertos_posix_entry/    Hand-written FreeRTOS POSIX entry (an536/s32z2: nros build)
     s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
     autoware/                autoware_controller_libs: vendored Autoware controllers

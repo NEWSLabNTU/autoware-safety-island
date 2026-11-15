@@ -6,7 +6,7 @@
 # freshness check is a rate test (0.5 s), so the rate has to be observable.
 #
 # Build with the counters in:
-#   ASI_RX_COUNTERS=1 NROS_DOMAIN_ID=2 ./build.sh --platform freertos-an536
+#   ASI_RX_COUNTERS=1 ./build.sh --platform freertos-an536
 #
 # Usage: [WINDOW=20] scripts/an536-rx-rate.sh [trajectory-points]
 #
@@ -29,7 +29,7 @@ ROOT=/home/aeon/repos/autoware-safety-island
 SP="${TMPDIR:-/tmp}/asi-an536-rx"
 mkdir -p "$SP"
 QEMU_BIN=${QEMU_BIN:-$HOME/.nros/sdk/qemu/11.0.0-nros2/bin/qemu-system-arm}
-ELF=$ROOT/build/freertos-an536/src/freertos_an536_entry/actuation_an536_entry
+ELF=$ROOT/build/freertos-an536/actuation_an536_entry
 LOG=$SP/rt-island.log
 POINTS=${1:-120}
 WINDOW=${WINDOW:-20}

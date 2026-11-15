@@ -204,10 +204,9 @@ mkdir -p "${LOG_DIR}"
 # the model crawls ~1000x under busy code (W3 runbook). Baked at build time.
 say "building the ${LANE} island image (incremental)…"
 if [[ "${LANE}" == "an536" ]]; then
-  # NROS_DOMAIN_ID=2 is load-bearing: the demo bridges Autoware (domain 1) to
-  # the island (domain 2), and the bringup's [deploy.an536].domain_id does not
-  # reach this lane (nano-ros issue 0831) — this knob is what actually bakes it.
-  ( cd "${ROOT}" && NROS_DOMAIN_ID=2 ./build.sh --platform freertos-an536 ) \
+  # The island runs on domain 2 (the demo bridges Autoware's domain 1 to it):
+  # [image.an536] domain_id in controller_bringup/system.toml.
+  ( cd "${ROOT}" && ./build.sh --platform freertos-an536 ) \
     > "${LOG_DIR}/tap-demo-build.log" 2>&1 || die "build failed — see ${LOG_DIR}/tap-demo-build.log"
 else
   export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C cache_state_modelled=0"
@@ -270,7 +269,7 @@ rm -f "${ISLAND_LOG}"
 # west as a FOREGROUND child (bash subshell fork optimization: `$!` was the
 # script's own pid) and the script sat in wait() forever.
 if [[ "${LANE}" == "an536" ]]; then
-  ISLAND_ELF="${BUILD_DIR}/src/freertos_an536_entry/actuation_an536_entry"
+  ISLAND_ELF="${BUILD_DIR}/actuation_an536_entry"
   [[ -f "${ISLAND_ELF}" ]] || die "no image at ${ISLAND_ELF} — build failed?"
   if pgrep -f "qemu-system-arm -machine mps3-an536" >/dev/null 2>&1; then
     die "a QEMU already holds ${TAP_IF} — run: scripts/run-tap-demo.sh --an536 --down"
@@ -319,7 +318,7 @@ rm -f "${ISLAND_LOG}"
 # west as a FOREGROUND child (bash subshell fork optimization: `$!` was the
 # script's own pid) and the script sat in wait() forever.
 if [[ "${LANE}" == "an536" ]]; then
-  ISLAND_ELF="${BUILD_DIR}/src/freertos_an536_entry/actuation_an536_entry"
+  ISLAND_ELF="${BUILD_DIR}/actuation_an536_entry"
   [[ -f "${ISLAND_ELF}" ]] || die "no image at ${ISLAND_ELF} — build failed?"
   if pgrep -f "qemu-system-arm -machine mps3-an536" >/dev/null 2>&1; then
     die "a QEMU already holds ${TAP_IF} — run: scripts/run-tap-demo.sh --an536 --down"
