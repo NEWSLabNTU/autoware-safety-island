@@ -11,7 +11,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${ROOT}/log"
-ISLAND_ELF="${ROOT}/build/freertos-an536/src/freertos_an536_entry/actuation_an536_entry"
+ISLAND_ELF="${ROOT}/build/freertos-an536/actuation_an536_entry"
 TAP_IF="tap1"; TAP_HOST_IP="192.0.3.1"; SNTP_PORT="12123"
 # QEMU: the nano-ros SDK build FIRST, then $PATH.
 #

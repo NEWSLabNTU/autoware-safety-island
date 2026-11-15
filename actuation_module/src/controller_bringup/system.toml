@@ -139,6 +139,18 @@ board = "freertos-posix"
 [image.s32z2]
 board = "s32z270-freertos"
 
+[image.s32z2.knobs.params]
+# The controller declares 149 parameters (MPC lateral + PID longitudinal);
+# the parameter store is a static pool, and below 149 declare_parameter()
+# fails at boot.
+max_parameters = 164
+[image.s32z2.knobs.executor]
+max_cbs = 16
+# 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
+# subscription buffer drops the sample silently after Cyclone ACKed it
+# (nano-ros issue 0749).
+subscription_buffer_size = 65536
+
 # phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
 # phase-385). Same CPU and kernel port as [image.s32z2] above, but nothing
 # about it is licensed or hardware-gated: it boots, schedules on a GICv3 +
@@ -148,14 +160,19 @@ board = "s32z270-freertos"
 [image.an536]
 board = "mps3-an536-freertos"
 # Domain 2 for the demo stack (Autoware on 1, island on 2, `domain_bridge`
-# relaying between them) -- the same split the FVP lane gets from its tap conf's
-# CONFIG_NROS_CYCLONE_DOMAIN_ID=2.
-#
-# DECLARED HERE, BUT NOT WHAT APPLIES. The RFC-0004 ladder
-# ([image.<id>].domain_id over [system].domain_id) does not reach the FreeRTOS
-# typed path: nano-ros hardcodes the app config's domain to 0 and takes the
-# runtime domain from the compile-time NROS_ENTRY_DOMAIN_ID instead. So the
-# value that actually lands is build.sh's NROS_DOMAIN_ID knob. Filed upstream
-# as nano-ros issue 0831; when that lands, this line becomes the SSoT and the
-# build.sh knob goes back to being an override.
+# relaying between them), as [image.fvp-tap]. `nros build an536` generates the
+# entry with it (nano-ros issue 3856 was about a hand-written entry dropping
+# it).
 domain_id = 2
+
+[image.an536.knobs.params]
+# The controller declares 149 parameters (MPC lateral + PID longitudinal);
+# the parameter store is a static pool, and below 149 declare_parameter()
+# fails at boot.
+max_parameters = 164
+[image.an536.knobs.executor]
+max_cbs = 16
+# 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
+# subscription buffer drops the sample silently after Cyclone ACKed it
+# (nano-ros issue 0749).
+subscription_buffer_size = 65536

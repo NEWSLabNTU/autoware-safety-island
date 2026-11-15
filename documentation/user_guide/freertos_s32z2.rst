@@ -36,7 +36,7 @@ Output:
 
 .. code-block:: text
 
-  build/freertos-s32z2/src/freertos_s32z2_entry/actuation_s32z2_entry
+  build/freertos-s32z2/actuation_s32z2_entry
 
 The FreeRTOS kernel is env-provisioned: ``FREERTOS_DIR``/``FREERTOS_PORT``
 default to the nano-ros-pinned kernel with the generic ``GCC/ARM_CRx_No_GIC``

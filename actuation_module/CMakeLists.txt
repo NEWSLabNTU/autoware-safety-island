@@ -13,32 +13,15 @@ cmake_minimum_required(VERSION 3.22.1)
 # phase-370). The Zephyr app below is untouched by this branch.
 # ---------------------------------------------------------------------------
 if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
-  # Phase 4 W5.b — one workspace, one board per configure (the nano-ros
-  # example-workspace contract). A cross board needs its CMAKE_TOOLCHAIN_FILE
-  # set BEFORE project() (the first compiler probe); host-sim boards
-  # (freertos-posix) need none.
+  # Only the host-simulated freertos-posix board takes this road; the
+  # ARMv8-R images (an536, s32z2) are built by `nros build <image>`.
   if(NOT DEFINED NROS_BOARD)
     set(NROS_BOARD freertos-posix)
   endif()
-  # Every ARMv8-R cross board takes the same Cortex-R52 toolchain file: the
-  # NXP S32Z270 (hardware) and QEMU's mps3-an536 (emulated, phase-6) differ in
-  # what they can RUN, not in how they are compiled. Listed rather than
-  # duplicated so a third R52 board is one entry, not a fourth copy of this
-  # block.
-  set(_asi_armv8r_boards "s32z270-freertos" "mps3-an536-freertos")
-  set(_asi_is_armv8r FALSE)
-  if(NROS_BOARD IN_LIST _asi_armv8r_boards)
-    set(_asi_is_armv8r TRUE)
-  endif()
-  if(NOT CMAKE_TOOLCHAIN_FILE AND _asi_is_armv8r)
-    if(DEFINED ENV{NROS_REPO_DIR})
-      set(_asi_nros_root "$ENV{NROS_REPO_DIR}")
-    else()
-      get_filename_component(_asi_nros_root
-          "${CMAKE_CURRENT_SOURCE_DIR}/../modules/nros" ABSOLUTE)
-    endif()
-    set(CMAKE_TOOLCHAIN_FILE
-        "${_asi_nros_root}/cmake/toolchain/arm-freertos-armcr52.cmake")
+  if(NOT NROS_BOARD STREQUAL "freertos-posix")
+    message(FATAL_ERROR
+      "actuation_module: board '${NROS_BOARD}' is built by `nros build <image>` "
+      "(see build.sh), not by this CMakeLists.txt.")
   endif()
 
   project(actuation_module_freertos LANGUAGES C CXX)
@@ -46,36 +29,16 @@ if(DEFINED NROS_PLATFORM AND NROS_PLATFORM STREQUAL "freertos")
   if(NOT DEFINED NROS_RMW)
     set(NROS_RMW cyclonedds)
   endif()
+  # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
+  # bake the run path so the entry runs without LD_LIBRARY_PATH.
+  set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
   set(_asi_freertos_subdirs
       src/asi_common
       src/visionpilot_msgs
       src/safety_island_msgs
       src/autoware
-      src/controller_pkg)
-  if(_asi_is_armv8r)
-    # Cross target: no host rpath. Which entry leaf joins depends on the
-    # board.
-    if(NROS_BOARD STREQUAL "s32z270-freertos")
-      # The NXP-licensed board glue (RTD NETC netif override etc.) joins only
-      # when its SDK env is provisioned — the pkg's own CMakeLists gates and
-      # reports.
-      list(APPEND _asi_freertos_subdirs
-          src/s32z2_board_glue
-          src/freertos_s32z2_entry)
-    else()
-      # phase-6 A3 — the emulated lane needs no board glue at all: the
-      # nano-ros mps3-an536 bundle carries startup, GICv3, tick and netif.
-      list(APPEND _asi_freertos_subdirs
-          src/freertos_an536_entry)
-    endif()
-    # The Eigen patch and the newlib pthread shim this cross toolchain needs
-    # come from src/asi_common.
-  else()
-    # The self-provisioned CycloneDDS builds shared libddsc into <build>/lib;
-    # bake the run path so the entry runs without LD_LIBRARY_PATH.
-    set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/lib")
-    list(APPEND _asi_freertos_subdirs src/freertos_posix_entry)
-  endif()
+      src/controller_pkg
+      src/freertos_posix_entry)
 
   nano_ros_workspace(
     ORDER_FROM_DEPENDS

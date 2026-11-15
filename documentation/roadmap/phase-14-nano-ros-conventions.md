@@ -1,7 +1,7 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2 and 4-9 done, CI green.
-Steps 3 and 10-14 open. Step 9 went before step 8: the Autoware sources
+Status: in progress (2026-11-15). Steps 1, 2 and 4-10 done, CI green; step 3
+done for the an536 and s32z2 images. Steps 11-14 open. Step 9 went before step 8: the Autoware sources
 include the platform layer, so the library package needs `asi_common` first.
 
 Goal: run the port on current nano-ros main and move its layout and build
@@ -80,7 +80,7 @@ CMakeLists.txt. That is the library/support-package work above.
 7. Messages: rosidl packages, upstream messages by `<depend>`. Done, see below.
 8. autoware library package(s). Done, see below.
 9. `asi_common` support package (logger, clock, diag, network hook, pthread shim). Done, see below.
-10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages.
+10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`).
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
@@ -169,3 +169,34 @@ directory and `include/`.
 
 The metadata probe still records 189 parameter declarations, 4 publishers,
 7 subscriptions and 1 timer. an536 text 1,741,792 B (+8 B).
+
+## Step 10. an536 and s32z2 by `nros build` - done
+
+`build.sh --platform freertos-an536|freertos-s32z2` runs `nros build
+an536|s32z2` from `actuation_module/` and links the artifact it reports to
+`<build dir>/actuation_{an536,s32z2}_entry`. `src/freertos_an536_entry` and
+`src/freertos_s32z2_entry` are deleted; nano-ros generates the root and the
+entry from the image row. The root CMakeLists.txt's ARMv8-R branch is gone
+(it now refuses a board other than freertos-posix).
+
+- Domain: the generated an536 entry carries `DOMAIN_ID 2` from `[image.an536]`
+  (Cyclone sends to port 7900); `NROS_DOMAIN_ID` is refused by build.sh, and
+  `run-tap-demo.sh` no longer sets it.
+- Step 3 for these two images: `[image.<id>.knobs.params] max_parameters =
+  164`, `[image.<id>.knobs.executor] max_cbs = 16, subscription_buffer_size =
+  65536`; build.sh no longer exports them for this lane. Verified in the
+  generated crates: `MAX_PARAMETERS: usize = 164`, `MAX_CBS: usize = 16`,
+  `DEFAULT_RX_BUF_SIZE: usize = 65536`, `ARENA_SIZE: usize = 99804`; the boot
+  log reports `parameter store: 164 slots`.
+- Profile: nros build's CMake road configures `Release`; build.sh passes
+  `-DCMAKE_BUILD_TYPE=RelWithDebInfo` (the profile these images had; Release
+  is 130 KB more text on an536). `[image.<id>] profile` reaches only the cargo
+  road (nano-ros issue 3899).
+- NXP port: a board fact nano-ros reads as `-DFREERTOS_PORT` (the board module
+  ignores the environment). build.sh forwards `FREERTOS_DIR` / `FREERTOS_PORT`
+  as native arguments when the machine exports them
+  (`scripts/provision-nxp-freertos.sh`), and `asi_common` keys the pthread
+  shim's NXP variants on the same variable. Not exercised here (no NXP SDK).
+- Sizes: an536 text 1,744,824 B (+3 KB, the runtime crates now build with
+  cargo's `release` profile); s32z2 1,716,440 B text, 2,355,580 B bss,
+  identical to the hand-written entry.
