@@ -40,6 +40,17 @@ echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 echo "Phase 1b - nros configure --check"
 ( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
 
+# nano-ros's layout checks: the bringup is pure declarative, every
+# [[component]] row names <pkg>::<Class> and no system.toml sits beside a
+# component, and the workspace's own Zephyr board package resolves (descriptor,
+# package.xml announcement, network, nano_ros_use_board() projection). None of
+# them builds anything.
+echo "Phase 1c - nros check: bringup, workspace layout, S32Z270 Zephyr board package"
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS}/packages/cli/target/release/nros" check --bringup src/controller_bringup && \
+    "${NROS}/packages/cli/target/release/nros" check --workspace && \
+    "${NROS}/packages/cli/target/release/nros" check s32z270-rtu0-zephyr )
+
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/actuation_posix_entry"
 test -x "${entry}"
