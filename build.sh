@@ -478,31 +478,32 @@ function build_zephyr_controller() {
 }
 
 # The Zephyr test programs (--unit-test, --dds-publisher, --dds-subscriber,
-# --can-output-test, --dds-loopback-test): the west application
-# actuation_module/test/zephyr_app, one program per build. They take the
-# controller images' Kconfig fragments, so a test runs on the configuration
-# the controller ships with.
+# --can-output-test, --dds-loopback-test): hand-written main()s, built by
+# their own west application, actuation_module/test/zephyr_app (nano-ros's
+# "A Zephyr app you build with west": no bringup image, no generated entry),
+# one program per build. They take the controller images' Kconfig
+# fragments, so a test runs on the configuration the controller ships with.
 function build_zephyr_test() {
   local tests=("" unit_test dds_pub dds_sub can_output_test dds_loopback_test)
   local test="${tests[${BUILD_TEST_FLAG}]}"
   echo -e "${GREEN}Building Zephyr test program ${test}...${NC}"
-  local app="${ROOT_DIR}/actuation_module"
+  local app="${ROOT_DIR}/actuation_module/test/zephyr_app"
   local zconf="${ROOT_DIR}/actuation_module/src/controller_bringup/zephyr"
 
   # Zephyr 3.7 hardware-model-v2 board identifiers.
   local board_id="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
-  local confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-fvp.conf")
+  local confs=("${app}/nano_ros.conf" "${zconf}/prj-fvp.conf")
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     board_id="s32z270dc2_rtu0_r52@D"
-    confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-s32z.conf")
+    confs=("${app}/nano_ros.conf" "${zconf}/prj-s32z.conf")
   fi
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
     confs+=("${zconf}/prj-fvp-tap.conf")
   fi
   local overlays=()
   if [ "${BUILD_TEST_FLAG}" = "4" ]; then
-    confs+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.conf")
-    overlays+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.overlay")
+    confs+=("${app}/can_loopback.conf")
+    overlays+=("${app}/can_loopback.overlay")
   fi
   if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
     confs+=("${zconf}/prj-trace-stats.conf")
@@ -528,8 +529,7 @@ function build_zephyr_test() {
   fi
 
   local build_args=(
-    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
-    -DNROS_DEPLOY=fvp
+    -DASI_TEST="${test}"
     -D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"

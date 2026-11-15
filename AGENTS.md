@@ -18,8 +18,8 @@ dependency.
 
 - `./launch-dev-container.sh`: start the project dev container with host
   networking, ccache, and this repo mounted at `/autoware-safety-island`.
-- `./build.sh`: build CycloneDDS host tools, then build the default Zephyr FVP
-  target `fvp_baser_aemv8r_smp`.
+- `./build.sh`: build the default Zephyr FVP image (`nros build fvp`; the
+  images are rows in `actuation_module/src/controller_bringup/system.toml`).
 - `./build.sh -t s32z270dc2_rtu0_r52@D`: build for the S32Z board target.
 - `./build.sh -c`: remove `build/` and `install/`.
 - `python3 -m pip install -r documentation/requirements.txt`: install docs
@@ -48,11 +48,13 @@ MPC/PID/CAN application logic in C++ and prefer adapter layers around
 
 ## Testing Guidelines
 
-Standalone Zephyr test programs live in `actuation_module/test/`. Build one at
-a time: `./build.sh --unit-test`, `./build.sh --dds-publisher`, or
-`./build.sh --dds-subscriber`; the resulting ELF is
-`build/actuation_module/zephyr/zephyr.elf`. Clean between test-mode switches
-with `./build.sh -c`. Add focused tests near the subsystem changed, for example
+Standalone Zephyr test programs live in `actuation_module/test/`; their west
+application is `actuation_module/test/zephyr_app`. Build one at a time:
+`./build.sh --unit-test`, `./build.sh --dds-publisher`,
+`./build.sh --dds-subscriber`, `./build.sh --can-output-test` or
+`./build.sh --dds-loopback-test`; the resulting ELF is
+`build/zephyr-fvp/zephyr/zephyr.elf` (or under `-d <dir>`). Use a separate
+`-d` per program, or clean between test-mode switches with `./build.sh -c`. Add focused tests near the subsystem changed, for example
 DDS/node checks in `unit_test.cpp` or CAN checks in `can_output_test.cpp`.
 For nano-ros work, keep CAN tests middleware-independent and add backend smoke
 tests before replacing the legacy Cyclone path.

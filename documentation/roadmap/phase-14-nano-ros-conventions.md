@@ -1,7 +1,6 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1-12 and 14 done, CI green; step 13
-done for the FreeRTOS images, its Zephyr half (the test programs) next. Step 9
+Status: done (2026-11-15). Steps 1-14 done, CI green. Step 9
 went before step 8: the Autoware sources include the platform layer, so the
 library package needs `asi_common` first. Open: both S32Z270 images overflow
 RAM at the current nano-ros pin (nano-ros issue 3933, step 1b).
@@ -84,9 +83,9 @@ CMakeLists.txt. That is the library/support-package work above.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`). Done, see below.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
-    Controller images done, see below.
+    Done, see below.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
-    FreeRTOS half done (steps 10, 11); the Zephyr half waits for step 12.
+    Done (FreeRTOS with steps 10, 11; Zephyr below).
 14. CI: `nros check --bringup` / `--workspace` / board check. Done, see below.
 
 ## Step 1b. Pin nano-ros main a5e0439885 - done
@@ -308,8 +307,35 @@ and in the generated crates `MAX_PARAMETERS: usize = 164`, `MAX_CBS: usize =
 16`, `DEFAULT_RX_BUF_SIZE: usize = 16384`, `ARENA_SIZE: usize = 99804`; the
 nros heap static is 0x800b60 B.
 
-The test programs (BUILD_TEST 1-5) are still the hand-written application at
-`actuation_module/CMakeLists.txt`, which now builds nothing else (step 13).
+## Step 13 (Zephyr). The test programs' own west application - done
+
+The BUILD_TEST 1-5 programs (`test/unit_test.cpp`, `dds_pub.cpp`,
+`dds_sub.cpp`, `can_output_test.cpp`, `dds_loopback_test.cpp`) are
+hand-written `main()`s over the platform layer, with no bringup image, so they
+are what the book calls a Zephyr application you build with west:
+`actuation_module/test/zephyr_app/` (CMakeLists.txt, `nano_ros.conf`, the CAN
+loopback conf and overlay, the FVP board overlay). build.sh builds one per run
+with `west build ... test/zephyr_app -- -DASI_TEST=<program>`; the flags are
+unchanged (`--unit-test`, `--dds-publisher`, `--dds-subscriber`,
+`--can-output-test`, `--dds-loopback-test`, with `--trace-stats` / `--trace`
+and `--network tap` layering the same fragments the controller images use).
+
+- The application takes `controller_bringup/zephyr/prj-actuation.conf` as its
+  `CONF_FILE` and the board fragment after the board package's files, the
+  order the hand-written application had, so each test's `.config` is the
+  one it had (diffed: only `CONFIG_ZEPHYR_ASI_COMMON_MODULE` is new).
+- asi_common is a Zephyr module there too (`ZEPHYR_EXTRA_MODULES`).
+- A test program has no knob rows, so build.sh exports the controller
+  images' sizing for it (164 / 16 / 16384 and the heap); the exports are in
+  the test road only.
+- `actuation_module/CMakeLists.txt` is deleted, and with it the last of the
+  root glue: the root holds no build file. `boards/` is gone (its files moved
+  into the bringup and the test application); `nano_ros_overlay.conf` is the
+  test application's `nano_ros.conf`. Three confs no build.sh flag has named
+  since `--control-output` was dropped (`output_can_only.conf`,
+  `output_dds_and_can.conf`, `can_udp_tunnel.conf`) moved with the test
+  application; `.github/scripts/run-zephyr-fvp-tap-ci.sh` (not in CI) still
+  passes the retired `--control-output`.
 
 ## Step 14. CI checks - done
 
