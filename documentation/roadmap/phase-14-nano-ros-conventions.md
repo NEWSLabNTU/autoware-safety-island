@@ -1,7 +1,9 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1, 2 and 4-11 done, CI green; step 3
-done for the FreeRTOS images. Steps 12-14 open. Step 9 went before step 8: the Autoware sources
+Status: in progress (2026-11-15). Steps 1, 2, 4-11 and 14 done, CI green;
+step 3 done for the FreeRTOS images. Step 12 (Zephyr images by `nros build`)
+is blocked on nano-ros issue 3906, and with it step 13's Zephyr half and
+step 3's Zephyr knobs. Step 9 went before step 8: the Autoware sources
 include the platform layer, so the library package needs `asi_common` first.
 
 Goal: run the port on current nano-ros main and move its layout and build
@@ -83,8 +85,10 @@ CMakeLists.txt. That is the library/support-package work above.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`). Done, see below.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
+    Blocked, see below.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
-14. CI: `nros check --bringup` / `--workspace` / board check.
+    FreeRTOS half done (steps 10, 11); the Zephyr half waits for step 12.
+14. CI: `nros check --bringup` / `--workspace` / board check. Done, see below.
 
 ## Step 7. Messages - done
 
@@ -219,3 +223,43 @@ FreeRTOS branch: the root now refuses `NROS_PLATFORM=freertos`.
   `MAX_PARAMETERS = 164`, `MAX_CBS = 16`, `DEFAULT_RX_BUF_SIZE = 16384`.
 - Callers moved to the new artifact path: the POSIX lane, `release.yml`,
   `scripts/run-posix-demo.sh`.
+
+## Step 12. Zephyr images by `nros build` - blocked
+
+`nros build fvp` generates a west application
+(`build/zephyr-cyclonedds/fvp_entry/`) that has no `Kconfig`, adds only the
+launch file's node packages, and passes nano-ros as the only
+`ZEPHYR_EXTRA_MODULES`. `[image.<id>] os_config` takes `.conf` fragments,
+which can assign symbols but not define them. The Zephyr images need the 37
+application symbols of `actuation_module/Kconfig` (control-output mode, SNTP,
+log level, thread-stats reporter, trace ring, ...), which `asi_common`'s
+Zephyr headers and sources read, so a generated application cannot configure
+them. Filed as nano-ros issue 3906 (a workspace Zephyr module, or a bringup
+`Kconfig`, reaching the generated app).
+
+The ways forward, for a decision:
+
+1. Wait for 3906; then `[image.fvp|fvp-tap|s32z] os_config` carries
+   `prj_actuation.conf` and the board / tap / tracing fragments, build.sh
+   wraps `nros build`, and the root CMakeLists.txt and Kconfig go.
+2. `nros materialize controller_bringup:<image>` for each of the three images:
+   three hand-owned west applications, each with the Kconfig. That moves the
+   glue rather than removing it.
+3. Turn the application symbols into launch parameters or compile-time
+   defaults in `asi_common`, so no application Kconfig is needed. That is a
+   change to the controller's configuration surface (build.sh's
+   `--control-output`, `--trace`, `--stats` flags set them today).
+
+The BUILD_TEST programs stay on the hand-written app until then; a guest west
+app for them hits the same Kconfig question.
+
+## Step 14. CI checks - done
+
+The POSIX lane runs `nros check --bringup src/controller_bringup`,
+`nros check --workspace` and `nros check s32z270-rtu0-zephyr` (Phase 1c); all
+three pass, and none builds anything.
+
+The contract census stays at `[census] on_missing = "warn"`: a census is a
+host (`linux`) build of the controller, and `asi_common` has no host platform
+(its POSIX road is the FreeRTOS simulator's). A `[image.linux]` needs a
+Linux implementation of the platform interfaces first.
