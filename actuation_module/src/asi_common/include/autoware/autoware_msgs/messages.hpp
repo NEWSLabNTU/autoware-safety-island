@@ -36,12 +36,9 @@
 #include <safety_island_msgs/msg/approved_request.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/header.hpp>
-// nano-ros spells a digit-to-capital boundary without the underscore rosidl
-// puts there (float32stamped.hpp, not float32_stamped.hpp); nano-ros issue
-// 3882.
-#include <tier4_debug_msgs/msg/float32multi_array_stamped.hpp>
-#include <tier4_debug_msgs/msg/float32stamped.hpp>
-#include <tier4_debug_msgs/msg/float64stamped.hpp>
+#include <tier4_debug_msgs/msg/float32_multi_array_stamped.hpp>
+#include <tier4_debug_msgs/msg/float32_stamped.hpp>
+#include <tier4_debug_msgs/msg/float64_stamped.hpp>
 #include <visionpilot_msgs/msg/driving_command.hpp>
 #include <visionpilot_msgs/msg/driving_reference.hpp>
 
