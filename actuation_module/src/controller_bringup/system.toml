@@ -132,6 +132,15 @@ launch = "system.launch.xml"
 [image.freertos-posix]
 board = "freertos-posix"
 
+[image.freertos-posix.knobs.params]
+# The controller declares 149 parameters; below 149 declare_parameter()
+# fails at boot.
+max_parameters = 164
+[image.freertos-posix.knobs.executor]
+max_cbs = 16
+# The controller receives 8.8 KiB trajectory samples.
+subscription_buffer_size = 16384
+
 # Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree
 # GCC/ARM_CRx_No_GIC port; hardware runs the NXP-provisioned GCC/ARM_CR52_GIC

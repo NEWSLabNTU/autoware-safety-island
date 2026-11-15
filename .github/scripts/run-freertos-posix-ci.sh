@@ -41,7 +41,7 @@ echo "Phase 1b - nros configure --check"
 ( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
 
 echo "Phase 2 - runtime smoke (bounded spin)"
-entry="${BUILD_ROOT}/src/freertos_posix_entry/actuation_posix_entry"
+entry="${BUILD_ROOT}/actuation_posix_entry"
 test -x "${entry}"
 
 # CycloneDDS on this lane links whatever the image supplies -- in the Autoware

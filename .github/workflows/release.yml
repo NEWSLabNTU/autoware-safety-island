@@ -233,7 +233,7 @@ jobs:
           set -euo pipefail
           out=build/freertos-posix/release
           mkdir -p "${out}"
-          cp build/freertos-posix/src/freertos_posix_entry/actuation_posix_entry \
+          cp build/freertos-posix/actuation_posix_entry \
              "${out}/actuation_freertos"
           ddsc="$(ldd "${out}/actuation_freertos" | awk '$1 == "libddsc.so.0" { print $3 }')"
           test -n "${ddsc}"
