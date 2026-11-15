@@ -109,6 +109,16 @@ parameter store, 1.56 MB each. Bisected on freertos-s32z2 (bc0dfdb6a5 links,
 f0ee23c06b does not); every main commit with PR 3924 is past it. Filed as
 nano-ros issue 3933. The FVP, POSIX and AN536 images have the RAM to spare.
 
+## Step 1c. Pin nano-ros main 31846e9a7c - done
+
+a5e0439885 -> 31846e9a7c (45 commits, post-submit green), for PR 3969
+(76e0ee0257): an image whose executors all come from `open_in` links no
+default `EXECUTOR_BACKING` (issue 3933 fixed). Both S32Z270 images link
+again with only `__nros_sched_task_executor_storage`: Zephyr RAM
+6,702,596 B of 7 MiB, freertos-s32z2 .bss 2,347,396 B (RAM 2,370,292 B of
+3,670,016 B). Issues 3948 and 3952 are still open, so `build.sh` keeps
+both workarounds.
+
 ## Step 7. Messages - done
 
 - `src/visionpilot_msgs` and `src/safety_island_msgs` are stock rosidl
