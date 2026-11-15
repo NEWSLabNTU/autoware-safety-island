@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# Privileged FVP TAP UDP → gateway → vcan0. Exit 77 if tap/vcan cannot be created.
+# FVP TAP UDP -> gateway -> vcan0. Exit 77 if tap/vcan cannot be set up.
+#
+# The network comes from, in order:
+#   1. a tap0 (and vcan0) already configured on the host: used as found, no
+#      CAP_NET_ADMIN needed (a persistent tap owned by this user, 192.168.10.1/24,
+#      up);
+#   2. creating them on the host (CAP_NET_ADMIN, e.g. CI);
+#   3. a private network namespace (`unshare -rn`, unprivileged user
+#      namespaces): the script re-runs itself there with its own tap0 and
+#      vcan0, so nothing on the host changes. FVP_TAP_NETNS=0 disables it.
 
 set -euo pipefail
 
@@ -19,26 +28,65 @@ fi
 
 if [ ! -f "${BUILD_DIR}/zephyr/zephyr.elf" ]; then
   echo "Missing ELF: ${BUILD_DIR}/zephyr/zephyr.elf" >&2
-  echo "Build first: ./build.sh --platform zephyr-fvp --network tap --can-output-test --control-output CAN_ONLY -d ${BUILD_DIR}" >&2
+  echo "Build first: ./build.sh --platform zephyr-fvp --network tap --can-output-test -d ${BUILD_DIR}" >&2
   exit 1
 fi
 
-if ! ip tuntap add dev "${TAP}" mode tap 2>/dev/null; then
-  if ! ip link show "${TAP}" >/dev/null 2>&1; then
-    echo "SKIP: cannot create ${TAP} (need CAP_NET_ADMIN and tun)" >&2
-    exit 77
-  fi
-fi
-ip addr replace 192.168.10.1/24 dev "${TAP}"
-ip link set dev "${TAP}" up
+TAP_HOST_ADDR="192.168.10.1/24"
 
-if ! ip link show "${IFACE}" >/dev/null 2>&1; then
-  if ! ip link add "${IFACE}" type vcan 2>/dev/null; then
-    echo "SKIP: cannot create ${IFACE}" >&2
-    exit 77
+# Re-run this script inside a private user + network namespace, where it holds
+# CAP_NET_ADMIN over its own devices. Returns only when that is unavailable.
+run_in_netns() {
+  if [ "${FVP_TAP_IN_NETNS:-0}" = "1" ] || [ "${FVP_TAP_NETNS:-1}" = "0" ]; then
+    return 0
   fi
+  if ! unshare -rn true 2>/dev/null; then
+    return 0
+  fi
+  echo "No usable ${TAP} on the host: running in a private network namespace"
+  exec unshare -rn env FVP_TAP_IN_NETNS=1 "$0" "${BUILD_DIR}"
+}
+
+link_is_up() {
+  ip -o link show "$1" 2>/dev/null | grep -q '<[^>]*\bUP\b'
+}
+
+tap_is_ready() {
+  link_is_up "${TAP}" &&
+    ip -o addr show dev "${TAP}" 2>/dev/null | grep -q "inet ${TAP_HOST_ADDR} "
+}
+
+setup_tap() {
+  if tap_is_ready; then
+    return 0
+  fi
+  if ! ip link show "${TAP}" >/dev/null 2>&1; then
+    ip tuntap add dev "${TAP}" mode tap 2>/dev/null || return 1
+  fi
+  ip addr replace "${TAP_HOST_ADDR}" dev "${TAP}" 2>/dev/null &&
+    ip link set dev "${TAP}" up 2>/dev/null
+}
+
+setup_vcan() {
+  if ! ip link show "${IFACE}" >/dev/null 2>&1; then
+    ip link add "${IFACE}" type vcan 2>/dev/null || return 1
+  fi
+  link_is_up "${IFACE}" || ip link set up "${IFACE}" 2>/dev/null
+}
+
+if [ "${FVP_TAP_IN_NETNS:-0}" = "1" ]; then
+  ip link set lo up
 fi
-ip link set up "${IFACE}"
+if ! setup_tap; then
+  run_in_netns
+  echo "SKIP: cannot set up ${TAP} (need a configured user-owned ${TAP}, CAP_NET_ADMIN, or user namespaces)" >&2
+  exit 77
+fi
+if ! setup_vcan; then
+  run_in_netns
+  echo "SKIP: cannot set up ${IFACE} (need CAP_NET_ADMIN and the vcan module)" >&2
+  exit 77
+fi
 
 accepted_file="$(mktemp)"
 gateway_log="$(mktemp)"

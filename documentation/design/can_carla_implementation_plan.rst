@@ -13,6 +13,17 @@ work in https://github.com/autowarefoundation/autoware-safety-island/issues/43.
 It supersedes the original open-loop sketch in :doc:`can_carla_integration`
 where the two disagree.
 
+.. note::
+
+   On the nano-ros branch ``build.sh`` has no ``--control-output`` option:
+   it went with the CycloneDDS lanes, and the controller's output mode is
+   fixed per bringup image (``freertos-posix`` ``DDS_AND_CAN`` on the CAN
+   stub, ``fvp`` / ``fvp-tap`` ``DDS_ONLY``, ``s32z`` ``DDS_AND_CAN``). The
+   ``--control-output`` builds below describe the upstream lanes. Here the
+   CAN paths run in the ``--can-output-test`` programs: ``freertos-posix``
+   adds the SocketCAN ``can_vcan_sender``, ``zephyr-fvp --network tap``
+   builds ``CAN_ONLY`` over the UDP tunnel (:doc:`../user_guide/testing`).
+
 The placeholder frame contract in :doc:`can_output` is unchanged: IDs
 ``0x100`` / ``0x101`` / ``0x102``, classic 8-byte DLC, existing scaling.
 

@@ -60,7 +60,8 @@ function usage() {
   echo -e "${GREEN}    --unit-test        ${NC}Build unit test program."
   echo -e "${GREEN}    --dds-publisher    ${NC}Build DDS publisher test program."
   echo -e "${GREEN}    --dds-subscriber   ${NC}Build DDS subscriber test program."
-  echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program."
+  echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program (freertos-posix: the"
+  echo -e "${GREEN}                       ${NC}controller image plus the can_vcan_sender host program)."
   echo -e "${GREEN}    --dds-loopback-test${NC}Build Zephyr DDS loopback test program."
   echo ""
   echo -e "${GREEN}    Runtime target matrix:${NC}"
@@ -468,31 +469,37 @@ function build_zephyr_controller() {
 }
 
 # The Zephyr test programs (--unit-test, --dds-publisher, --dds-subscriber,
-# --can-output-test, --dds-loopback-test): the west application
-# actuation_module/test/zephyr_app, one program per build. They take the
-# controller images' Kconfig fragments, so a test runs on the configuration
-# the controller ships with.
+# --can-output-test, --dds-loopback-test): hand-written main()s, built by
+# their own west application, actuation_module/test/zephyr_app (nano-ros's
+# "A Zephyr app you build with west": no bringup image, no generated entry),
+# one program per build. They take the controller images' Kconfig
+# fragments, so a test runs on the configuration the controller ships with.
 function build_zephyr_test() {
   local tests=("" unit_test dds_pub dds_sub can_output_test dds_loopback_test)
   local test="${tests[${BUILD_TEST_FLAG}]}"
   echo -e "${GREEN}Building Zephyr test program ${test}...${NC}"
-  local app="${ROOT_DIR}/actuation_module"
+  local app="${ROOT_DIR}/actuation_module/test/zephyr_app"
   local zconf="${ROOT_DIR}/actuation_module/src/controller_bringup/zephyr"
 
   # Zephyr 3.7 hardware-model-v2 board identifiers.
   local board_id="fvp_baser_aemv8r/fvp_aemv8r_aarch64/smp"
-  local confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-fvp.conf")
+  local confs=("${app}/nano_ros.conf" "${zconf}/prj-fvp.conf")
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     board_id="s32z270dc2_rtu0_r52@D"
-    confs=("${app}/nano_ros_overlay.conf" "${zconf}/prj-s32z.conf")
+    confs=("${app}/nano_ros.conf" "${zconf}/prj-s32z.conf")
   fi
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
     confs+=("${zconf}/prj-fvp-tap.conf")
   fi
   local overlays=()
-  if [ "${BUILD_TEST_FLAG}" = "4" ]; then
-    confs+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.conf")
-    overlays+=("${app}/boards/fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp_can_loopback.overlay")
+  if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${NETWORK_PROFILE}" = "tap" ]; then
+    # On the tap network the CAN frames leave over the FVP UDP tunnel to the
+    # host gateway (actuation_module/test/run-fvp-tap-tunnel.sh), not the
+    # CAN loopback device.
+    confs+=("${app}/output_can_only.conf" "${app}/can_udp_tunnel.conf")
+  elif [ "${BUILD_TEST_FLAG}" = "4" ]; then
+    confs+=("${app}/can_loopback.conf")
+    overlays+=("${app}/can_loopback.overlay")
   fi
   if [ "${TRACE_STATS_ENABLED}" = "1" ] || [ "${TRACE_ENABLED}" = "1" ]; then
     confs+=("${zconf}/prj-trace-stats.conf")
@@ -518,8 +525,7 @@ function build_zephyr_test() {
   fi
 
   local build_args=(
-    "-DBUILD_TEST=${BUILD_TEST_FLAG}"
-    -DNROS_DEPLOY=fvp
+    -DASI_TEST="${test}"
     -D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"
@@ -564,8 +570,15 @@ function build_freertos_nros() {
   local label="$2"
   local artifact_name="$3"
   echo -e "${GREEN}Building FreeRTOS ${label} runtime (nros build ${image})...${NC}"
-  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
-    echo -e "${RED}test programs are Zephyr-lane only; this lane builds the controller image${NC}" 1>&2
+  # The test programs are the Zephyr lane's, with one exception: on the POSIX
+  # simulator --can-output-test also builds can_vcan_sender, the host SocketCAN
+  # sender actuation_module/test/run-vcan-roundtrip.sh drives (beside the
+  # controller image, which it does not replace).
+  local vcan_sender=0
+  if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${image}" = "freertos-posix" ]; then
+    vcan_sender=1
+  elif [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only (freertos-posix takes --can-output-test); this lane builds the controller image${NC}" 1>&2
     exit 1
   fi
   # The domain is the image's ([image.<id>] domain_id), rendered into the
@@ -615,6 +628,15 @@ function build_freertos_nros() {
   if [ -n "${FREERTOS_PORT:-}" ]; then
     native+=(-DFREERTOS_PORT="${FREERTOS_PORT}")
   fi
+  # Stated either way: nros build reuses the image's CMake cache, where an
+  # earlier ON would otherwise stay.
+  if [ "${image}" = "freertos-posix" ]; then
+    if [ "${vcan_sender}" = "1" ]; then
+      native+=(-DASI_CAN_VCAN_SENDER=ON)
+    else
+      native+=(-DASI_CAN_VCAN_SENDER=OFF)
+    fi
+  fi
 
   local log
   log="$(mktemp)"
@@ -637,6 +659,16 @@ function build_freertos_nros() {
   mkdir -p "${BUILD_DIR}"
   ln -sfn "${artifact}" "${BUILD_DIR}/${artifact_name}"
   echo -e "${GREEN}${label} image: ${BUILD_DIR}/${artifact_name} -> ${artifact}${NC}"
+  if [ "${vcan_sender}" = "1" ]; then
+    local sender
+    sender="$(dirname "${artifact}")/can_vcan_sender"
+    if [ ! -x "${sender}" ]; then
+      echo -e "${RED}nros build ${image} built no can_vcan_sender (${sender}).${NC}" 1>&2
+      exit 1
+    fi
+    ln -sfn "${sender}" "${BUILD_DIR}/can_vcan_sender"
+    echo -e "${GREEN}vcan sender: ${BUILD_DIR}/can_vcan_sender -> ${sender}${NC}"
+  fi
 }
 
 # The FreeRTOS POSIX simulator: a host process, board-owned main() and

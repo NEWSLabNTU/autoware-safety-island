@@ -1,10 +1,11 @@
 # Phase 14 - modern nano-ros conventions
 
-Status: in progress (2026-11-15). Steps 1-12 and 14 done, CI green; step 13
-done for the FreeRTOS images, its Zephyr half (the test programs) next. Step 9
+Status: done (2026-11-15). Steps 1-14 done, CI green. Step 9
 went before step 8: the Autoware sources include the platform layer, so the
-library package needs `asi_common` first. Open: both S32Z270 images overflow
-RAM at the current nano-ros pin (nano-ros issue 3933, step 1b).
+library package needs `asi_common` first. Every image links at the current
+nano-ros pin (the S32Z270 RAM overflow, issue 3933, fixed in step 1c), and
+build.sh carries no nano-ros workaround (issues 3948 and 3952, fixed in step
+1d). Open: no hardware run of the images.
 
 Goal: run the port on current nano-ros main and move its layout and build
 onto nano-ros's own conventions, so that `nros build <image>` builds every
@@ -84,9 +85,9 @@ CMakeLists.txt. That is the library/support-package work above.
 10. FreeRTOS an536 / s32z2 images via `nros build`; delete their entry packages. Done, see below.
 11. FreeRTOS POSIX via `nros build` (network-wait hook in `asi_common`). Done, see below.
 12. Zephyr controller images via `nros build`; BUILD_TEST mains as a guest west app.
-    Controller images done, see below.
+    Done, see below.
 13. Delete the root CMakeLists.txt / Kconfig glue; `build.sh` becomes a thin wrapper.
-    FreeRTOS half done (steps 10, 11); the Zephyr half waits for step 12.
+    Done (FreeRTOS with steps 10, 11; Zephyr below).
 14. CI: `nros check --bringup` / `--workspace` / board check. Done, see below.
 
 ## Step 1b. Pin nano-ros main a5e0439885 - done
@@ -326,8 +327,50 @@ and in the generated crates `MAX_PARAMETERS: usize = 164`, `MAX_CBS: usize =
 16`, `DEFAULT_RX_BUF_SIZE: usize = 16384`, `ARENA_SIZE: usize = 99804`; the
 nros heap static is 0x800b60 B.
 
-The test programs (BUILD_TEST 1-5) are still the hand-written application at
-`actuation_module/CMakeLists.txt`, which now builds nothing else (step 13).
+## Step 13 (Zephyr). The test programs' own west application - done
+
+The BUILD_TEST 1-5 programs (`test/unit_test.cpp`, `dds_pub.cpp`,
+`dds_sub.cpp`, `can_output_test.cpp`, `dds_loopback_test.cpp`) are
+hand-written `main()`s over the platform layer, with no bringup image, so they
+are what the book calls a Zephyr application you build with west:
+`actuation_module/test/zephyr_app/` (CMakeLists.txt, `nano_ros.conf`, the CAN
+loopback conf and overlay, the FVP board overlay). build.sh builds one per run
+with `west build ... test/zephyr_app -- -DASI_TEST=<program>`; the flags are
+unchanged (`--unit-test`, `--dds-publisher`, `--dds-subscriber`,
+`--can-output-test`, `--dds-loopback-test`, with `--trace-stats` / `--trace`
+and `--network tap` layering the same fragments the controller images use).
+
+- The application takes `controller_bringup/zephyr/prj-actuation.conf` as its
+  `CONF_FILE` and the board fragment after the board package's files, the
+  order the hand-written application had, so each test's `.config` is the
+  one it had (diffed: only `CONFIG_ZEPHYR_ASI_COMMON_MODULE` is new).
+- asi_common is a Zephyr module there too (`ZEPHYR_EXTRA_MODULES`).
+- A test program has no knob rows, so build.sh exports the controller
+  images' sizing for it (164 / 16 / 16384 and the heap); the exports are in
+  the test road only.
+- `actuation_module/CMakeLists.txt` is deleted, and with it the last of the
+  root glue: the root holds no build file. `boards/` is gone (its files moved
+  into the bringup and the test application); `nano_ros_overlay.conf` is the
+  test application's `nano_ros.conf`. Three confs no build.sh flag has named
+  since `--control-output` was dropped (`output_can_only.conf`,
+  `output_dds_and_can.conf`, `can_udp_tunnel.conf`) moved with the test
+  application. `--network tap --can-output-test` takes two of them
+  (`output_can_only.conf`, `can_udp_tunnel.conf`) in place of the CAN
+  loopback, as before the drop, and `.github/scripts/run-zephyr-fvp-tap-ci.sh`
+  (not in CI) no longer passes `--control-output`.
+- The two privileged CAN scripts run unprivileged now (not in CI).
+  `--platform freertos-posix --can-output-test` builds the controller image
+  and, beside it, the host `can_vcan_sender` (option `ASI_CAN_VCAN_SENDER` in
+  controller_pkg: the controller's compile context, the SocketCAN backend, no
+  nros runtime linked); `run-freertos-vcan-ci.sh` drives it. Without
+  CAP_NET_ADMIN, `run-vcan-roundtrip.sh` and `run-fvp-tap-tunnel.sh` re-run
+  in a private user + network namespace (`unshare -rn`) with their own
+  `vcan0` / `tap0`; the tunnel script also takes a `tap0` already configured
+  on the host. Both pass locally that way (vcan classic + FD + low-MTU
+  fail-closed + UDP gateway; FVP tap tunnel, 1 command accepted).
+- Open: no bringup image sends control on CAN only, so the CARLA CAN demos
+  (`can_carla_closed_loop.rst`, `demo/`) have no controller build; the docs
+  say so.
 
 ## Step 14. CI checks - done
 

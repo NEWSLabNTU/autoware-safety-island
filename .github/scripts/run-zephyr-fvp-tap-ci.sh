@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Privileged Zephyr FVP TAP UDP tunnel. Requires CAP_NET_ADMIN and /dev/net/tun.
+# Zephyr FVP TAP UDP tunnel. Needs /dev/net/tun and one of: a configured
+# tap0, CAP_NET_ADMIN, or unprivileged user namespaces (see
+# actuation_module/test/run-fvp-tap-tunnel.sh).
 #
 # The workflow runs this in the devcontainer with host networking so the vcan0
 # interface prepared on the runner is visible and FVP can attach to host tap0.
@@ -29,12 +31,22 @@ skip_or_fail()
 
 # Probe the tunnel prerequisites before the FVP download and Zephyr build so
 # an unusable environment fails in seconds instead of after several minutes.
+# run-fvp-tap-tunnel.sh takes a tap0 already configured on the host, creates
+# one (CAP_NET_ADMIN), or runs in a private network namespace (`unshare -rn`);
+# any of the three will do.
 ensure_tunnel_devices()
 {
   [ -e /dev/net/tun ] || skip_or_fail "/dev/net/tun is missing"
+  if ip -o addr show dev "${TAP}" 2>/dev/null | grep -q 'inet 192\.168\.10\.1/24 '; then
+    return 0
+  fi
+  if [ "${FVP_TAP_NETNS:-1}" != "0" ] &&
+     unshare -rn sh -c "ip tuntap add dev ${TAP} mode tap && ip link add ${IFACE} type vcan" 2>/dev/null; then
+    return 0
+  fi
   if ! ip link show "${TAP}" >/dev/null 2>&1; then
     ip tuntap add dev "${TAP}" mode tap 2>/dev/null ||
-      skip_or_fail "cannot create ${TAP} (need CAP_NET_ADMIN and tun)"
+      skip_or_fail "cannot create ${TAP} (need a configured ${TAP}, CAP_NET_ADMIN, or user namespaces)"
   fi
   if ! ip link show "${IFACE}" >/dev/null 2>&1; then
     ip link add "${IFACE}" type vcan 2>/dev/null ||
@@ -63,7 +75,7 @@ ensure_fvp_available
 
 echo "Zephyr FVP TAP UDP tunnel build"
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap --can-output-test \
-  --control-output CAN_ONLY -d "${BUILD_ROOT}"
+  -d "${BUILD_ROOT}"
 
 set +e
 "${ROOT_DIR}/actuation_module/test/run-fvp-tap-tunnel.sh" "${BUILD_ROOT}"

@@ -37,34 +37,26 @@ From the repository root:
 
   $ ./build.sh --platform freertos-posix -d build/freertos-posix
 
-``build.sh`` builds the host ``idlc``, builds a static CycloneDDS target
-library for the POSIX runtime, and then builds the application.
+``build.sh`` runs ``nros build freertos-posix``: nano-ros generates the
+workspace root and the entry from ``[image.freertos-posix]`` in
+``actuation_module/src/controller_bringup/system.toml`` and builds it.
 
-Output:
+Output (a link to the artifact ``nros build`` reports):
 
 .. code-block:: text
 
-  build/freertos-posix/actuation_freertos
+  build/freertos-posix/actuation_posix_entry
 
-The default DDS interface is ``lo`` so local smoke builds do not need network
-setup. To communicate with the demo containers or another host, select the
-host interface explicitly:
+The build has no DDS-interface or output-mode option: the image publishes
+control on DDS (``DDS_AND_CAN`` on the CAN stub). The DDS interface is
+chosen at runtime with ``SI_DDS_INTERFACE``. It takes an interface name, an
+IPv4 address, or ``auto`` (let CycloneDDS choose):
 
 .. code-block:: console
 
-  $ ./build.sh --platform freertos-posix -d build/freertos-posix \
-      --dds-interface wlp2s0 \
-      --control-output DDS_ONLY
+  $ SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
 
 Replace ``wlp2s0`` with the interface that should carry domain-2 DDS traffic.
-
-The interface can also be chosen at runtime without rebuilding:
-``SI_DDS_INTERFACE`` overrides the compile-time value. It takes an interface
-name, an IPv4 address, or ``auto`` (let CycloneDDS choose):
-
-.. code-block:: console
-
-  $ SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_freertos
 
 The released ``actuation_freertos`` binary is built with ``lo`` and relies on
 this override for LAN use; see :doc:`open_ad_kit`.
@@ -77,7 +69,7 @@ Run the built executable from the repository root:
 
 .. code-block:: console
 
-  $ ./build/freertos-posix/actuation_freertos
+  $ ./build/freertos-posix/actuation_posix_entry
 
 With the default loopback DDS interface this starts the runtime and waits for
 input topics on domain 2. It is useful as a smoke test for startup and logging.
@@ -102,10 +94,8 @@ interface:
 .. code-block:: console
 
   $ cd ..
-  $ ./build.sh --platform freertos-posix -d build/freertos-posix \
-      --dds-interface wlp2s0 \
-      --control-output DDS_ONLY
-  $ ./build/freertos-posix/actuation_freertos
+  $ ./build.sh --platform freertos-posix -d build/freertos-posix
+  $ SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
 
 Verify bridged control commands from the ``demo/`` directory:
 
@@ -116,7 +106,7 @@ Verify bridged control commands from the ``demo/`` directory:
       'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && ROS_DOMAIN_ID=1 ros2 topic echo --once /control/trajectory_follower/control_cmd'
 
 If discovery stalls, check that ``SAFETY_ISLAND_DDS_INTERFACE`` and
-``--dds-interface`` name the same multicast-capable host interface. See
+``SI_DDS_INTERFACE`` name the same multicast-capable host interface. See
 :doc:`troubleshooting`.
 
 ``scripts/run-posix-demo.sh`` does all of the above in one command, from the

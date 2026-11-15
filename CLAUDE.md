@@ -24,12 +24,11 @@ Autoware components under `actuation_module/src/autoware/`.
 
 ```
 actuation_module/            nano-ros workspace root (`nros configure .`)
-  CMakeLists.txt             Hand-written Zephyr app of the test programs only
-                             (every controller image: `nros build <image>`)
+                             (no build file at the root: every image is
+                             `nros build <image>`, which generates its app)
   west.yml                   West manifest (zephyr v3.7.0, nano-ros pin)
   nros-codegen.toml          Message field bounds for codegen
   nros-sdk.lock              SDK tool versions (`nros setup`)
-  boards/                    Test-program overlays + confs
   src/
     controller_pkg/          The controller component (rclcpp API) + the vendored
                              autoware_trajectory_follower_node (the node class)
@@ -45,7 +44,9 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
                              umbrella, support sources, pthread shim, Eigen patch;
                              a Zephyr module for the application's Kconfig
                              symbols (zephyr/module.yml, zephyr/Kconfig)
-  test/                      Test programs; test/host = dependency-free host tests
+  test/                      Test programs; test/zephyr_app = their west
+                             application (no bringup, own confs);
+                             test/host = dependency-free host tests
 build.sh                     Top-level build driver
 scripts/                     Provisioning, demo runners, trace tools
 demo/                        Docker Compose demo (Autoware 2.0.0 + bridge)
@@ -66,8 +67,10 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
   the FVP `--network tap`, `--trace-stats`, `--trace`, `--trace-ring` pick
   the `fvp-tap*` / `*-stats` / `*-trace*` image). Sizing is knob rows in
   system.toml, never exported variables (an exported one wins over a row).
-- `./build.sh --unit-test | --dds-publisher | --dds-subscriber` build one
-  Zephyr test program; clean (`-c`) between test-mode switches.
+- `./build.sh --unit-test | --dds-publisher | --dds-subscriber |
+  --can-output-test | --dds-loopback-test` build one Zephyr test program with
+  `west build` of test/zephyr_app (the controller images' fragments plus its
+  own); use one `-d` per program.
 - CI lanes run locally as `.github/scripts/run-freertos-posix-ci.sh`,
   `run-freertos-an536-ci.sh` and `run-zephyr-fvp-ci.sh` from the repo root.
   Unset `CYCLONEDDS_URI`, `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` first: an
