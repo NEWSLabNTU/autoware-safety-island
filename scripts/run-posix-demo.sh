@@ -19,6 +19,9 @@
 #
 # Interface selection: set SAFETY_ISLAND_DDS_INTERFACE to a multicast-capable
 # host interface; unset, the default-route interface is used.
+# SAFETY_ISLAND_DDS_INTERFACE=lo is loopback mode: every DDS domain of every
+# participant stays on lo (demo/cyclonedds.lo.xml, docker-compose.lo.yaml) and
+# the visualizer is not started, so nothing leaves the machine.
 #
 # Prereqs (one-time): scripts/bootstrap-asi.sh (nros CLI toolchain; build.sh
 # self-provisions the rest).
@@ -30,7 +33,8 @@ set -euo pipefail
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 BUILD_DIR="${ROOT}/build/freertos-posix"
 ENTRY="${BUILD_DIR}/actuation_posix_entry"
-ENTRY_PATTERN="freertos-posix/actuation_posix_entry"
+# This checkout's entry only: another worktree's island is not debris of this run.
+ENTRY_PATTERN="${ENTRY}"
 LOG_DIR="${ROOT}/log"
 ISLAND_LOG="${LOG_DIR}/posix-demo-island.log"
 ISLAND_PID_FILE="${LOG_DIR}/posix-demo-island.pid"
@@ -103,6 +107,17 @@ fi
 export SAFETY_ISLAND_DDS_INTERFACE
 ip link show "${SAFETY_ISLAND_DDS_INTERFACE}" >/dev/null 2>&1 || \
   die "interface '${SAFETY_ISLAND_DDS_INTERFACE}' does not exist."
+# Loopback mode: SAFETY_ISLAND_DDS_INTERFACE=lo pins every domain of every
+# participant (containers and island) to lo, and leaves the visualizer (a
+# web port on all interfaces) down, so the demo sends nothing off the machine.
+ISLAND_CYCLONEDDS_XML="${ROOT}/demo/cyclonedds.posix.xml"
+COMPOSE_SERVICES=()
+if [[ "${SAFETY_ISLAND_DDS_INTERFACE}" == "lo" ]]; then
+  COMPOSE_FILES+=(-f docker-compose.lo.yaml)
+  ISLAND_CYCLONEDDS_XML="${ROOT}/demo/cyclonedds.lo.xml"
+  COMPOSE_SERVICES=(safety-island-autoware safety-island-bridge)
+  say "loopback mode: DDS pinned to lo, visualizer not started."
+fi
 mkdir -p "${LOG_DIR}"
 
 # ---- build (incremental; no-op when up to date) ----
@@ -113,7 +128,7 @@ say "building the freertos-posix island (incremental)…"
 
 # ---- compose stack ----
 say "starting demo compose stack (posix override, iface ${SAFETY_ISLAND_DDS_INTERFACE})…"
-( cd "${ROOT}/demo" && docker compose "${COMPOSE_FILES[@]}" up -d )
+( cd "${ROOT}/demo" && docker compose "${COMPOSE_FILES[@]}" up -d "${COMPOSE_SERVICES[@]}" )
 
 # ---- boot the island ----
 kill_stale_islands
@@ -123,7 +138,7 @@ rm -f "${ISLAND_LOG}"
 # no rebuild needed. Plain background + disown — see run-tap-demo.sh for why
 # not a `( cmd & echo $! )` subshell.
 nohup env ROS_DOMAIN_ID=2 \
-  CYCLONEDDS_URI="file://${ROOT}/demo/cyclonedds.posix.xml" \
+  CYCLONEDDS_URI="file://${ISLAND_CYCLONEDDS_XML}" \
   SAFETY_ISLAND_DDS_INTERFACE="${SAFETY_ISLAND_DDS_INTERFACE}" \
   "${ENTRY}" > "${ISLAND_LOG}" 2>&1 &
 ISLAND_PID=$!
@@ -193,7 +208,7 @@ if echo "${HZ_OUT}" | grep -q "average rate"; then
   say "CLOSED LOOP OK — healthy is ~31.7 Hz (30 ms control tier + posix-sim tick skew). Island keeps running;"
   say "  stop everything:  scripts/run-posix-demo.sh --down"
   say "  island log:       tail -f ${ISLAND_LOG}"
-  say "  visualizer:       http://localhost:6080"
+  ((${#COMPOSE_SERVICES[@]})) || say "  visualizer:       http://localhost:6080"
 else
   die "no control_cmd traffic — island log: ${ISLAND_LOG}; bridge: docker logs demo-safety-island-bridge-1"
 fi
