@@ -5,6 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
+On branch `nano-ros-next` nano-ros is pinned at main ea94566e87 and built
+with `--dev-cli`.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -50,7 +52,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4007 | fvp runner: model parameters (SMSC NIC, tap hostbridge, uart out_file) | P10, P11 |
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
 | 4009 | public trace marker through the installed trace sink | P11 |
-| 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE` | P4 |
+| 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
 | 4011 | board network file for Zephyr images (`NET_CONFIG_*`) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
 | 4013 | SDK Eigen 3.4 for arm-none-eabi | P9 |
@@ -58,9 +60,23 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4015 | s32z270-freertos RTD variant (GIC port, NETC netif) | P11 |
 | 4016 | public opt-out for a host helper executable in a board build | P9 |
 | 4017 | fvp-aemv8r-smp newlib lacks `fabsl` | P9 |
-| 4018 | bug: `declare_parameter` past the store capacity silently returns the default | P3, P8 |
+| 4018 | bug: `declare_parameter` past the store capacity silently returns the default; fixed at the pin (PR 4030: the boot stops) | P3, P8 |
 
 Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
+
+## Pin on nano-ros-next
+
+nano-ros main ea94566e87 (2026-11-16), 31 commits past the nros11 tag
+(09219edc75), built with `./build.sh --dev-cli` / `NROS_DEV_CLI=1`: a
+declaration with no store slot stops the boot (PR 4030, issue 2634), a launch
+list parameter seeds as a typed array (PR 4034, 2638), `RCLCPP_*_THROTTLE` on
+the clock argument plus `_ONCE` / `_SKIPFIRST` (PR 4042, 2636),
+`list_parameters` past 64 names with rclcpp's prefix and depth filtering
+(PR 4043, 2639), and a metadata probe store of 1024 (PR 4044, 2640). The
+launch resolver is rebuilt with it (`just setup-launch-resolve`, or the
+dev CLI path's own build). Every
+param file and launch value was re-checked for the coming type-mismatch
+refusal: every double is a float literal, every integer an integer.
 
 ## Steps
 

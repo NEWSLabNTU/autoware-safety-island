@@ -45,7 +45,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # RELEASE 0.6.0-nros11, 2026-11-16: 09219edc75, the commit tag
+    # ON main, 2026-11-16: ea94566e87, past PRs 4030 (a declaration with no
+    # store slot stops the boot, issue 2634), 4034 (a launch list parameter
+    # seeds as a typed array, 2638), 4042 (RCLCPP_*_THROTTLE / _ONCE /
+    # _SKIPFIRST, 2636), 4043 (list_parameters past 64 names, 2639) and 4044
+    # (the metadata probe's store is 1024, 2640). Branch nano-ros-next only,
+    # built with NROS_DEV_CLI=1 (the release path refuses a checkout that is
+    # not its tag); it moves to the nros12 tag, with nros-toolchain.toml,
+    # when that release ships.
+    #
+    # Before that, RELEASE 0.6.0-nros11, 2026-11-16: 09219edc75, the commit tag
     # nros-0.6.0-nros11 names. The default build runs that release's prebuilt
     # CLI (actuation_module/nros-toolchain.toml pins it, scripts/nros-cli.sh);
     # this checkout must be the same commit, so a pin move changes all three
@@ -107,7 +116,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 09219edc75c9b9a788590c6ac586a7ba45185eab
+      revision: ea94566e87c2b6e9bb70df151951c3070ebabbe2
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
