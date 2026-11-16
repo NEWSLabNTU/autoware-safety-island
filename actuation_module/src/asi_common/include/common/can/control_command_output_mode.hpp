@@ -3,8 +3,6 @@
 
 #include <cstdint>
 
-#include "platform/platform_config.h"
-
 namespace common::can
 {
 
@@ -39,8 +37,7 @@ constexpr const char * output_mode_name(const ControlCommandOutputMode mode)
 }
 
 /// Phase 4 (0745 follow-up) — parse a launch-seeded `control_output` string.
-/// Unknown/empty falls back to `fallback` (the compile-time configuration),
-/// so a bringup that seeds nothing behaves exactly as before.
+/// Unknown/empty falls back to `fallback`.
 inline ControlCommandOutputMode output_mode_from_name(
   const char * name, const ControlCommandOutputMode fallback)
 {
@@ -59,15 +56,12 @@ inline ControlCommandOutputMode output_mode_from_name(
   return fallback;
 }
 
-constexpr ControlCommandOutputMode configured_control_command_output_mode()
+/// The mode when the `control_output` parameter is unset or unknown: the
+/// launch arg's own default (system.launch.xml). The deployment owns the
+/// mode; whether the image can send CAN at all is CONFIG_CONTROL_CMD_CAN_OUTPUT.
+constexpr ControlCommandOutputMode default_control_command_output_mode()
 {
-#if defined(CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY) && CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY
-  return ControlCommandOutputMode::CAN_ONLY;
-#elif defined(CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN) && CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN
-  return ControlCommandOutputMode::DDS_AND_CAN;
-#else
   return ControlCommandOutputMode::DDS_ONLY;
-#endif
 }
 
 }  // namespace common::can

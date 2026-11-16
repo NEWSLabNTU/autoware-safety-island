@@ -81,7 +81,7 @@ public:
         g_state.timer.count++;
         log_info("Timer #%d\n", g_state.timer.count);
         // Exercise a parameter write from a dispatched callback.
-        set_param<int64_t>("int_param", g_state.timer.count);
+        (void)set_parameter<int64_t>("int_param", g_state.timer.count);
     }
 
     void on_pose(const PoseStampedMsg & msg)
@@ -90,16 +90,6 @@ public:
                         msg.pose.position.z};
         log_info("Received pose: (%.1f, %.1f, %.1f)\n",
                  msg.pose.position.x, msg.pose.position.y, msg.pose.position.z);
-    }
-
-    // The value-returning ComponentNode facade has no public set_parameter.
-    // Since nano-ros phase-426 W4 the node's parameters live in the
-    // executor-owned store (the owned `params_` server is gone), so write
-    // through the same forwarder the facade's declare/get use.
-    template <typename T>
-    bool set_param(const char * name, T value)
-    {
-        return rclcpp::detail::node_param_set(ffi_handle(), name, value).ok();
     }
 };
 
@@ -134,12 +124,12 @@ static void test_parameters(TestNode & node)
     ASSERT_MSG(node.has_parameter("enabled"), "Should have declared parameter");
     ASSERT_MSG(node.get_parameter<bool>("enabled") == true,
                "Parameter value retrieval failed");
-    ASSERT_MSG(node.set_param<bool>("enabled", false), "Parameter set failed");
+    ASSERT_MSG(node.set_parameter<bool>("enabled", false).ok(), "Parameter set failed");
     ASSERT_MSG(node.get_parameter<bool>("enabled") == false,
                "Updated value retrieval failed");
     ASSERT_MSG(!node.has_parameter("disabled"),
                "Should not have undeclared parameter");
-    ASSERT_MSG(!node.set_param<bool>("disabled", true),
+    ASSERT_MSG(!node.set_parameter<bool>("disabled", true).ok(),
                "Should not be able to set undeclared parameter");
 
     TEST_END(Parameters)

@@ -27,10 +27,6 @@ using namespace common::logger;
 // pkg's single declared-defaults header; the bringup launch.xml remaps them.
 #include "controller_pkg/node_identity.hpp"
 
-#if defined(PLATFORM_FREERTOS_X5H)
-#include "si_channel.h"
-#endif
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -222,13 +218,13 @@ Controller::Controller(rclcpp::NodeHandle handle)
 
   // The deployment owns the output mode: read the launch-seeded
   // `control_output` param (declared in system.launch.xml), falling back to
-  // the compile-time configuration when unseeded/unknown.
+  // the launch arg's default when unseeded/unknown.
   {
     const std::string mode_str = declare_parameter<std::string>(
       "control_output", common::can::output_mode_name(
-                          common::can::configured_control_command_output_mode()));
+                          common::can::default_control_command_output_mode()));
     output_mode_ = common::can::output_mode_from_name(
-      mode_str.c_str(), common::can::configured_control_command_output_mode());
+      mode_str.c_str(), common::can::default_control_command_output_mode());
   }
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
 
@@ -813,17 +809,6 @@ void Controller::callbackTimerControl()
         stale_reason, stale_age, supervision_.fault_id);
     }
   }
-#if defined(PLATFORM_FREERTOS_X5H)
-  // rpmsg-si fault input from Linux. A fault rising edge latches even when
-  // fault=0 follows before this tick: the event count keeps the edge after
-  // the level is back at 0. fault=0 does not release a stop, only an
-  // operator re-enable does.
-  const unsigned si_fault_events = si_channel_fault_events();
-  if (si_fault_events != si_fault_events_seen_) {
-    si_fault_events_seen_ = si_fault_events;
-    latchFault("si fault input");
-  }
-#endif
 
   // 2. Re-enable: an explicit operator request clears the latch only once
   // every checked source is fresh again — a still-dead source cannot resume
@@ -1105,12 +1090,6 @@ bool Controller::allSourcesFresh(double now) const
   if (watch_heartbeat_.stale(now, source_timeout_heartbeat_)) {
     return false;
   }
-#if defined(PLATFORM_FREERTOS_X5H)
-  // A fault input still held at 1 has not recovered.
-  if (si_channel_fault() != 0) {
-    return false;
-  }
-#endif
   const supervision::SourceWatch * selected =
     supervision_mode_ == supervision::Mode::VP_CONTROL ? &watch_vp_cmd_ : &watch_candidate_;
   if (!selected->ever() ||

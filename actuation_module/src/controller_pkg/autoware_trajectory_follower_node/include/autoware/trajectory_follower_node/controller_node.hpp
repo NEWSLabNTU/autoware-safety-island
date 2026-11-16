@@ -45,12 +45,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include "autoware/autoware_msgs/messages.hpp"
 
-// SI_STOP deceleration when the stop_decel_mps2 parameter is unset. A target
-// that loads no node parameters (the X5H) selects its value at build time.
-#ifndef SI_DEFAULT_STOP_DECEL_MPS2
-#define SI_DEFAULT_STOP_DECEL_MPS2 1.5f
-#endif
-
 namespace autoware::motion::control
 {
 using trajectory_follower::LateralOutput;
@@ -143,7 +137,7 @@ private:
   // Publishers -- RFC-0044 value-typed `rclcpp::Publisher<M>` members
   // (default-constructed; assigned from create_publisher_in<M>(topic) in the ctor).
   rclcpp::Publisher<ControlMsg> control_cmd_pub_;
-  common::can::ControlCommandOutputMode output_mode_{common::can::configured_control_command_output_mode()};
+  common::can::ControlCommandOutputMode output_mode_{common::can::default_control_command_output_mode()};
   std::shared_ptr<common::can::ControlCommandCanOutput> can_output_;
   rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
   rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
@@ -198,11 +192,9 @@ private:
 
   // SI_STOP acceleration demand (m/s^2, signed negative requested via
   // StopControl): the actuator realizes the explicit stop without deciding.
-  float stop_decel_mps2_ = SI_DEFAULT_STOP_DECEL_MPS2;
+  float stop_decel_mps2_ = 1.5f;
   // Fresh ego speed and monotonic time at the latch: the SI_STOP ramp origin.
   supervision::StopRamp stop_ramp_;
-  // X5H rpmsg-si fault event count already latched (si_channel_fault_events()).
-  unsigned si_fault_events_seen_ = 0;
 
   supervision::SourceWatch watch_heartbeat_;
   supervision::SourceWatch watch_steering_;

@@ -16,26 +16,31 @@ mode.
 Output modes
 **********************
 
-``CONFIG_CONTROL_CMD_OUTPUT_*`` selects one mode at build time:
+The launch arg ``control_output`` (``system.launch.xml``, passed to the node
+as a parameter) selects one mode at run time:
 
-- ``DDS_ONLY`` — publish ``/control/trajectory_follower/control_cmd`` only.
+- ``DDS_ONLY`` (the default) — publish
+  ``/control/trajectory_follower/control_cmd`` only.
 - ``CAN_ONLY`` — send CAN frames only.
 - ``DDS_AND_CAN`` — publish DDS and send CAN frames.
 
-Current defaults:
+An image binds it in its ``[image.<id>] args`` row of ``system.toml``; no
+image does today, so every image runs ``DDS_ONLY``. An unknown value falls
+back to ``DDS_ONLY``.
 
-- ``zephyr-fvp``: ``DDS_ONLY``. The tap network's ``--can-output-test``
-  program selects ``CAN_ONLY`` over the UDP tunnel.
-- ``zephyr-s32z``: ``DDS_AND_CAN``.
-- ``freertos-posix``: ``DDS_AND_CAN`` on the CAN stub (no SocketCAN in the
-  image). SocketCAN runs in the ``--can-output-test`` host program
+Whether an image can send CAN at all is a build fact,
+``CONFIG_CONTROL_CMD_CAN_OUTPUT``:
+
+- ``zephyr-fvp``: not built. The tap network's ``--can-output-test``
+  program builds it over the UDP tunnel.
+- ``zephyr-s32z``: built (native CAN).
+- ``freertos-posix``: built, on the CAN stub (no SocketCAN in the image).
+  SocketCAN runs in the ``--can-output-test`` host program
   ``can_vcan_sender`` with ``SAFETY_ISLAND_CAN_IFACE``. The in-memory mock
   is test-only.
+- ``freertos-s32z2``: the CAN stub; CAN is not part of this stack there.
 
-The output mode is fixed per bringup image; ``build.sh`` has no
-``--control-output`` option.
-- ``freertos-s32z2`` / ``freertos-x5h``: ``DDS_ONLY``; CAN is not part of
-  this stack on those targets.
+``build.sh`` has no ``--control-output`` option.
 
 **********************
 Frame format

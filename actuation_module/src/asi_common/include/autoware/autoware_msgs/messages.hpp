@@ -73,25 +73,6 @@ using DrivingReferenceMsg             = visionpilot_msgs::msg::DrivingReference;
 using ApprovedRequestMsg              = safety_island_msgs::msg::ApprovedRequest;
 using BoolMsg                         = std_msgs::msg::Bool;
 
-// supervision octet values; keep in sync with safety_island_msgs/msg/ApprovedRequest.msg
-#define SIR_DECISION_NORMAL 0
-#define SIR_DECISION_SI_STOP 1
-#define SIR_DECISION_HOLD 2
-#define SIR_MODE_SI_CONTROL 0
-#define SIR_MODE_VP_CONTROL 1
-#define SIR_SOURCE_FOLLOWER 0
-#define SIR_SOURCE_VP_COMMAND 1
-
-// nros codegen emits message constants as `<MessageName>_<CONSTANT>`
-// constexpr at namespace scope (per message_cpp.hpp.jinja template),
-// NOT as inline static members. Redirect ASI's existing macros so
-// `mpc_lateral_controller.cpp:236` etc. stay untouched.
-#define OPERATION_MODE_STATE_UNKNOWN      autoware_adapi_v1_msgs::msg::OperationModeState_UNKNOWN
-#define OPERATION_MODE_STATE_STOP         autoware_adapi_v1_msgs::msg::OperationModeState_STOP
-#define OPERATION_MODE_STATE_AUTONOMOUS   autoware_adapi_v1_msgs::msg::OperationModeState_AUTONOMOUS
-#define OPERATION_MODE_STATE_LOCAL        autoware_adapi_v1_msgs::msg::OperationModeState_LOCAL
-#define OPERATION_MODE_STATE_REMOTE       autoware_adapi_v1_msgs::msg::OperationModeState_REMOTE
-
 // (Phase 5 W5: the polling shim's sentinel `<type>_desc` stubs are gone —
 // every nros-mode call site now uses ComponentNode's descriptor-less
 // typed entities.)

@@ -39,12 +39,13 @@ Build tree layout
 The Phase 5 build is an additional CMake entry point under
 ``actuation_module/freertos_s32z2/`` that does not modify the existing
 ``actuation_module/freertos/`` POSIX-simulator build or the Zephyr boards under
-``actuation_module/boards/``. S32Z2-specific PAL headers live under
+``actuation_module/boards/``. The kernel and lwIP configuration are the nano-ros board package's
+(``nros-board-s32z270-freertos``). The NETC lwIP bring-up lives in
+``actuation_module/src/s32z2_board_glue/`` (``board/lwip_bringup.c``,
+``board/lwip_init.h``), called from the board's strong netif hook in
+``src/s32z2_netif_glue.c``. Of the former S32Z2 PAL headers only the newlib
+``pthread.h`` shim remains, under
 ``actuation_module/src/asi_common/include/platform/freertos/s32z2/``.
-
-``platform_network.h`` dispatches ``PLATFORM_FREERTOS_S32Z2`` to
-``platform/freertos/s32z2/freertos_network.h``, which calls the blocking lwIP
-bring-up. POSIX FreeRTOS still uses ``platform/freertos/freertos_network.h``.
 
 Boot bring-up (B-1)
 -------------------

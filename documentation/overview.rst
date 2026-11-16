@@ -14,7 +14,7 @@ MPC lateral and PID longitudinal control, and publishes control commands back
 out over DDS. No changes to the upstream Autoware codebase are required.
 
 The module supports Zephyr and FreeRTOS runtime targets for local
-validation and for S32Z and R-Car X5H hardware. A platform abstraction layer
+validation and for S32Z hardware. A platform abstraction layer
 (``actuation_module/src/asi_common/include/platform/``) keeps the controller logic shared
 between runtime backends.
 
@@ -30,14 +30,12 @@ between runtime backends.
      - ``zephyr-s32z`` (S32Z)
    * - FreeRTOS
      - ``freertos-posix``
-     - ``freertos-s32z2`` (S32Z2), ``freertos-x5h`` (R-Car X5H)
+     - ``freertos-s32z2`` (S32Z2)
 
 ``zephyr-fvp`` and ``freertos-posix`` are validated local development targets.
 ``zephyr-fvp`` also covers AVH workflows. ``zephyr-s32z`` is the existing S32Z
 Zephyr hardware target.
 ``freertos-s32z2`` is hardware-specific and requires NXP-licensed SDK inputs.
-``freertos-x5h`` is the FreeRTOS target for the R-Car X5H CR52 (Core1); see
-``actuation_module/freertos_x5h/README.md``.
 
 The main compute and the safety island run on separate DDS domains. A
 domain bridge on the main compute forwards the relevant topics between them,
@@ -111,10 +109,6 @@ and compiled as part of the safety island application.
 
    * - Component
      - Role
-   * - autoware_msgs
-     - Message definitions (IDL)
-   * - autoware_osqp_interface
-     - OSQP solver wrapper for MPC
    * - autoware_universe_utils
      - General utilities
    * - autoware_motion_utils

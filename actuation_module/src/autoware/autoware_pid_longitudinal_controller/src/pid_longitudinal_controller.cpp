@@ -537,7 +537,7 @@ void PidLongitudinalController::updateControlState(const ControlData & control_d
   const bool has_nonzero_target_vel = std::abs(current_vel_cmd) > 1.0e-5;
 
   const bool is_under_control = m_current_operation_mode.is_autoware_control_enabled &&
-                                m_current_operation_mode.mode == OPERATION_MODE_STATE_AUTONOMOUS;
+                                m_current_operation_mode.mode == OperationModeStateMsg::AUTONOMOUS;
 
   if (is_under_control != m_prev_vehicle_is_under_control) {
     m_prev_vehicle_is_under_control = is_under_control;
@@ -938,7 +938,7 @@ PidLongitudinalController::StateAfterDelay PidLongitudinalController::predictedS
   double pred_vel = current_vel;
   double pred_acc = current_acc;
 
-  if (m_ctrl_cmd_vec.empty() || m_current_operation_mode.mode != OPERATION_MODE_STATE_AUTONOMOUS) {
+  if (m_ctrl_cmd_vec.empty() || m_current_operation_mode.mode != OperationModeStateMsg::AUTONOMOUS) {
     // check time to stop
     const double time_to_stop = -current_vel / current_acc;
     const double delay_time_calculation =
@@ -994,7 +994,7 @@ double PidLongitudinalController::applyVelocityFeedback(const ControlData & cont
     control_data.interpolated_traj.points.at(control_data.target_idx).acceleration_mps2};
   const double diff_vel = (target_motion.vel - current_vel) * vel_sign;
   const bool is_under_control = m_current_operation_mode.is_autoware_control_enabled &&
-                                m_current_operation_mode.mode == OPERATION_MODE_STATE_AUTONOMOUS;
+                                m_current_operation_mode.mode == OperationModeStateMsg::AUTONOMOUS;
 
   const bool vehicle_is_moving = std::abs(current_vel) > m_current_vel_threshold_pid_integrate;
   const double time_under_control = getTimeUnderControl();

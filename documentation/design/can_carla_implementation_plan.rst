@@ -221,8 +221,8 @@ FreeRTOS POSIX
 Backend isolation
 =================
 
-``platform_network.h`` already special-cases ``PLATFORM_FREERTOS_S32Z2``
-and ``PLATFORM_FREERTOS_X5H`` before the generic FreeRTOS header.
+``platform_network.h`` already special-cases the S32Z2 and X5H platforms
+before the generic FreeRTOS header (both cases were removed in phase 15).
 ``platform_can.h`` must do the same:
 
 - ``actuation_module/freertos/CMakeLists.txt`` defines

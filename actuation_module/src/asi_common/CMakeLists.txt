@@ -56,23 +56,14 @@ if(_asi_zephyr)
   endif()
 else()
   target_compile_definitions(asi_common INTERFACE PLATFORM_FREERTOS=1)
-  # platform_config.h reads a Kconfig-mirror header on FreeRTOS. Transport
-  # values in it are inert (nano-ros owns the transport); the logger, CAN and
-  # thread values are the controller's FreeRTOS defaults (DDS_AND_CAN keeps
-  # the mock CAN path exercised).
+  # platform_config.h reads a Kconfig-mirror header on FreeRTOS: the
+  # controller's FreeRTOS logger, network and CAN defaults (the CAN output is
+  # built in, so the mock CAN path stays exercised).
   set(CONFIG_LOG_LEVEL 1)
   set(CONFIG_LOG_THROTTLE_RATE 3)
-  set(CONFIG_DDS_DOMAIN_ID 2)
-  set(CONFIG_DDS_NETWORK_INTERFACE "lo")
-  set(CONFIG_DDS_LOG_LEVEL 0)
-  set(CONFIG_THREAD_STACK_SIZE 262144)
   set(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX 0)
   set(CONFIG_ENABLE_SNTP OFF)
-  set(CONFIG_CONTROL_CMD_OUTPUT_DDS_ONLY 0)
-  set(CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY 0)
-  set(CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN 1)
   set(CONFIG_CONTROL_CMD_CAN_OUTPUT 1)
-  set(CONFIG_CONTROL_CMD_DDS_OUTPUT 1)
   configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/freertos_config_generated.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/freertos_config_generated.h")
@@ -84,8 +75,8 @@ endif()
 if(_asi_newlib_cross)
   # newlib's <pthread.h> declares the types but implements nothing on
   # arm-none-eabi, and common/logger needs mutexes. The FreeRTOS-backed shim
-  # shadows it. Staged ALONE: its source directory also holds a
-  # FreeRTOSConfig.h that must not shadow the board's.
+  # shadows it, staged into a directory of its own so that nothing else
+  # lands ahead of the system headers.
   set(_asi_pthread_dir "${CMAKE_CURRENT_BINARY_DIR}/newlib-pthread-shim")
   configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/s32z2/pthread.h"

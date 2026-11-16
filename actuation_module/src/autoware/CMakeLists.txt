@@ -7,9 +7,8 @@
 # and include/ tree. The node class (autoware_trajectory_follower_node) is
 # controller_pkg's: it is the node, and it reads controller_pkg's identity.
 #
-# Not vendored into the build: autoware_osqp_interface (the MPC uses the
-# unconstrained fast QP solver) and autoware_msgs/msg/*.idl (the upstream
-# freertos_x5h build's input).
+# The MPC uses the unconstrained fast QP solver; upstream's OSQP solver and
+# autoware_osqp_interface are not vendored.
 
 cmake_minimum_required(VERSION 3.22.1)
 project(autoware_controller_libs LANGUAGES C CXX)

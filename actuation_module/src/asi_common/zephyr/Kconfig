@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # asi_common's Kconfig symbols: the Safety Island application's settings that
-# asi_common's Zephyr headers and sources read (SNTP, logging, the control
-# command output mode and CAN transport, the interface addresses, the
+# asi_common's Zephyr headers and sources read (SNTP, logging, the CAN
+# output path and its transport, the interface addresses, the
 # real-time evaluation reporters). asi_common is a Zephyr module
 # (zephyr/module.yml), so the symbols reach every application whose image
 # depends on it: the west application `nros build` generates for a
@@ -61,19 +61,6 @@ config ASI_SNTP_RESYNC_INTERVAL_S
 	  racing guest clock re-syncs more often in real time. Set 0 to keep
 	  the old one-shot behaviour.
 
-config DDS_DOMAIN_ID
-	int "Domain ID for CycloneDDS"
-	default 2
-	help
-		This config sets the domain ID for CycloneDDS.
-
-config DDS_NETWORK_INTERFACE
-	string "Name of the network interface to be used by CycloneDDS"
-	default ""
-	help
-	  When left undefined, CycloneDDS will automatically select an interface
-	  based on its own criteria.
-
 config LOG_LEVEL
 	int "Log level for actuation module"
 	default 1
@@ -92,43 +79,14 @@ config LOG_THROTTLE_RATE
 	  This config sets the throttle rate in seconds for rclcpp-like messages.
 	  It is used to limit the rate of messages being published to the console.
 
-config DDS_LOG_LEVEL
-	int "Log level for CycloneDDS"
-	default 0
-	range 0 2
-	help
-	  This config sets the log level for CycloneDDS.
-	  0: No logs
-	  1: Fatal, Error, Warning, Config
-	  2: Debug
-	  It is used to limit the rate of messages being published to the console.
-
-choice CONTROL_CMD_OUTPUT_MODE
-	prompt "Control command output mode"
-	default CONTROL_CMD_OUTPUT_DDS_ONLY
-	help
-	  Select where final actuation control commands are sent.
-
-config CONTROL_CMD_OUTPUT_DDS_ONLY
-	bool "DDS only"
-	help
-	  Publish final control commands only through DDS.
-
-config CONTROL_CMD_OUTPUT_CAN_ONLY
-	bool "CAN only"
-	help
-	  Send final control commands only through CAN.
-
-config CONTROL_CMD_OUTPUT_DDS_AND_CAN
-	bool "DDS and CAN"
-	help
-	  Publish final control commands through DDS and send placeholder CAN frames.
-
-endchoice
-
 config CONTROL_CMD_CAN_OUTPUT
-	bool
-	default y if CONTROL_CMD_OUTPUT_CAN_ONLY || CONTROL_CMD_OUTPUT_DDS_AND_CAN
+	bool "Build the CAN control-command output"
+	help
+	  Compile the CAN output path, over the transport chosen below, into
+	  the image. Where the commands go at run time (DDS_ONLY, CAN_ONLY or
+	  DDS_AND_CAN) is the launch arg control_output, which reaches the
+	  node as a parameter. Without this symbol a CAN mode has no backend
+	  and the CAN send fails at can_init().
 
 choice CONTROL_CMD_CAN_TRANSPORT
 	prompt "CAN control-command transport"
@@ -163,18 +121,6 @@ config CONTROL_CMD_CAN_TUNNEL_PORT
 	default 5555
 	range 1 65535
 	depends on CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL
-
-config CONTROL_CMD_DDS_OUTPUT
-	bool
-	default y if CONTROL_CMD_OUTPUT_DDS_ONLY || CONTROL_CMD_OUTPUT_DDS_AND_CAN
-
-# TODO: Fine tune this if things go wrong with the stack size
-config THREAD_STACK_SIZE
-	int "Stack size for threads"
-	default 262144
-	help
-	  This config sets the stack size for threads.
-	  It is used to limit the stack size for user threads.
 
 # Override the range of MAX_PTHREAD_MUTEX_COUNT from zephyr/lib/posix/Kconfig
 config MAX_PTHREAD_MUTEX_COUNT
