@@ -336,7 +336,6 @@ run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}" \
 require_marker "${LOG_DIR}/controller.log" "Starting Controller Node"
 require_marker "${LOG_DIR}/controller.log" "Controller Node Started"
 require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
-forbid_marker "${LOG_DIR}/controller.log" "Safety Island parameters incomplete"
 # [tasks.control.zephyr] priority = 9 reached `main`, the boot sched task's
 # thread: nano-ros reads the priority back after k_thread_priority_set(), which
 # Zephyr 3.7 does not trace (nano-ros PR 3705).

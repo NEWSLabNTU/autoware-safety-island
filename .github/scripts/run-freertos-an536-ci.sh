@@ -111,7 +111,6 @@ require_marker "${log}" "Network ready"
 require_marker "${log}" "Starting Controller Node"
 require_marker "${log}" "Controller Node Started"
 require_marker "${log}" "Actuation Safety Island is Live"
-forbid_marker "${log}" "Safety Island parameters incomplete"
 # The bringup's seeded control_output drives the node — launch-param seeding
 # end to end, on the cross target.
 require_marker "${log}" "Control command output mode: DDS_ONLY"

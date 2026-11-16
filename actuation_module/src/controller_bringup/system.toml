@@ -119,9 +119,9 @@ priority = 9
 
 [image_defaults]
 # The controller declares 149 parameters (trajectory follower + MPC lateral +
-# PID longitudinal + vehicle info), plus a 10 % margin. Too few is SILENT:
-# declare_parameter<T>() returns the compiled default when the store is full
-# (nano-ros issue 4018). Each slot costs ~8.9 KB of the executor backing.
+# PID longitudinal + vehicle info), plus a 10 % margin. Too few stops the
+# boot at the first declaration with no slot. Each slot costs ~8.9 KB of the
+# executor backing.
 knobs.params.max_parameters = 164
 # max_cbs = 16: 7 subscriptions, a timer and the parameter services; the
 # default 4 fails at boot. subscription_buffer_size = 16384: /planning

@@ -13,11 +13,11 @@ produced:
 1. A declared parameter that no param file or inline <param> seeds runs on
    its C++ default, which nothing checks against the deployment.
 2. More parameters than an image's parameter store holds
-   (knobs.params.max_parameters): past it, declare_parameter() returns the
-   default (nano-ros issue 4018).
+   (knobs.params.max_parameters): nano-ros stops the boot at the first
+   declaration with no slot; this says so at build time.
 3. A param file value of another type than the declaration (`kp: 1` for a
-   double). Today nano-ros coerces it; with the 4018 fix it refuses the boot,
-   as upstream rclcpp does. Every double is a float literal.
+   double, `[1, 2]` for a double array). nano-ros is to refuse the boot for
+   it, as upstream rclcpp does. Every double is a float literal.
 
 Inputs: the census metadata (every declare_parameter<T>() the code runs, with
 T), the launch record (the seeds), the param files, and each image's store
@@ -37,10 +37,6 @@ import tempfile
 import yaml
 
 NODE = "controller"
-# Array parameters are not seeded at nano-ros 5b9e8844a4: a YAML list reaches
-# the parameter store as one comma-joined string, so the declaration keeps its
-# C++ default. Refused if seeded; exempt from the unseeded check.
-UNSEEDABLE = ("double_array", "integer_array", "bool_array", "string_array")
 # census type -> the YAML value type it takes
 TYPES = {
     "double": lambda v: isinstance(v, float),
@@ -96,13 +92,9 @@ def main():
         if node.get("name") == NODE:
             seeds.update(name for name, _ in node.get("params", []))
 
-    unseeded = [n for n, t in declared.items() if n not in seeds and t not in UNSEEDABLE]
+    unseeded = [n for n in declared if n not in seeds]
     if unseeded:
         errors.append("declared, but no param file or <param> seeds: " + ", ".join(unseeded))
-    arrays = sorted(n for n in seeds if declared.get(n) in UNSEEDABLE)
-    if arrays:
-        errors.append("array parameters seeded (they would reach the node as a string): "
-                      + ", ".join(arrays))
     undeclared = sorted(seeds - set(declared))
     if undeclared:
         errors.append("seeded, but never declared (each costs a store slot): " + ", ".join(undeclared))
@@ -128,8 +120,7 @@ def main():
         elif size < len(declared):
             errors.append(f"[image.{img}] stores {size} parameters, the controller declares {len(declared)}")
 
-    print(f"parameters: {len(declared)} declared, {len(seeds)} seeded "
-          f"({sum(t in UNSEEDABLE for t in declared.values())} arrays keep their C++ default), "
+    print(f"parameters: {len(declared)} declared, {len(seeds)} seeded, "
           f"{len(files)} param files; store sizes {sorted(set(sizes.values()), key=str)}")
     for e in errors:
         print("ERROR: " + e, file=sys.stderr)
