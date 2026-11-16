@@ -1,7 +1,7 @@
 # Phase 15 - a platform-agnostic island on nano-ros
 
-Status: planned (2026-11-16). Nothing started. nano-ros gaps filed as
-issues 4005-4018.
+Status: in progress (2026-11-16). P1 done. nano-ros gaps filed as issues
+4005-4018.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -82,6 +82,38 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 - Depends on: nothing.
 - Done when: all lanes green, `rg PLATFORM_FREERTOS_X5H` and
   `rg PLATFORM_FREERTOS_S32Z2` return nothing.
+- Status: done (2026-11-16).
+  - x5h: deleted (it was unbuilt, absent from build.sh, its CI stale). Gone
+    with it: `.github/workflows/x5h-freertos-ci.yml`, the `rcar_bsp` and
+    `lwip` submodules, `asi_common/include/platform/freertos/x5h/`, the
+    controller's `PLATFORM_FREERTOS_X5H` si_channel fault input, the two
+    x5h host tests (`test_rpmsg_netif_core.c`, `test_si_channel.c`), the
+    second Eigen patch copy, `cmake/actuation_core.cmake`. Git history keeps
+    the lane.
+  - Deleted, never compiled: `autoware_msgs/msg/*.idl`,
+    `autoware_osqp_interface/`, `qp_solver_osqp.cpp`; the s32z2 headers
+    except `pthread.h` (the NETC bring-up's `lwip_init.h` moved to
+    `s32z2_board_glue/board/`, next to `lwip_bringup.c`).
+  - Kconfig: `DDS_DOMAIN_ID`, `DDS_NETWORK_INTERFACE`, `DDS_LOG_LEVEL`,
+    `THREAD_STACK_SIZE`, their conf assignments and FreeRTOS mirrors, gone.
+    `choice CONTROL_CMD_OUTPUT_MODE` and `CONTROL_CMD_DDS_OUTPUT` gone; the
+    launch arg `control_output` is the mode (it always overrode the choice:
+    every image already ran the launch default `DDS_ONLY`), and Kconfig keeps
+    `CONTROL_CMD_CAN_OUTPUT` as "build the CAN backend" (set by
+    `prj-s32z.conf` and the CAN test confs). The `MAX_PTHREAD_MUTEX_COUNT`
+    range override went too: Zephyr 3.7 states no range for it, so the
+    override only added a cap (the confs assign 1024 and 64). The unused `output_dds_and_can.conf` test fragment went too.
+  - `OperationModeStateMsg::AUTONOMOUS` replaces the legacy namespace-level
+    constant; the unused `SIR_*` defines went; `unit_test.cpp` uses the
+    public `set_parameter<T>()`.
+  - Checks: `rg PLATFORM_FREERTOS_X5H` and `rg PLATFORM_FREERTOS_S32Z2`
+    return nothing outside the roadmap. Host tests 5/5. CI run 43806537782
+    (posix, an536, fvp incl. the test programs) green on 62f8a3a. Link-only
+    lanes built locally; the s32z `.config` has
+    `CONFIG_CONTROL_CMD_CAN_OUTPUT=y` and `..._TRANSPORT_NATIVE=y` as before.
+  - Sizes (text / data / bss, bytes), before (f8904f5) -> after:
+    s32z Zephyr 2104024 / 43984 / 4556707 -> 2104024 / 43984 / 4556643;
+    s32z2 FreeRTOS 1710896 / 15880 / 2355588 -> 1710752 / 15880 / 2355580.
 
 ### P2. Fold the bringup - S
 
