@@ -392,7 +392,8 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
     together: the pin file's `version`, the submodule and `west.yml`.
   - The release's Cyclone DDS is a checkout source in its own tree:
     `build.sh` runs `nros setup --source cyclonedds-src` before a Zephyr
-    build on the release path (idempotent).
+    build on the release path, and `--source freertos-kernel` and
+    `--source lwip` (SDK store) before a FreeRTOS one (idempotent).
   - `build.sh` states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on every configure: a
     build directory configured with the other CLI otherwise keeps it from
     its CMake cache (the in-tree CLI, then refused as stale).

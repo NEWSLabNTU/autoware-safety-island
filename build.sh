@@ -586,6 +586,14 @@ function build_freertos_nros() {
   require_nros_checkout
   nros_cli_select || exit 1
   local nros_cli_bin="${NROS_CLI}"
+  if [ "${NROS_CLI_MODE}" = "release" ]; then
+    # The FreeRTOS board's kernel and lwIP sources come from the SDK store on
+    # the release path (with --dev-cli they are modules/nros's submodules);
+    # the board's CMake finds them through `nros locate`. Idempotent.
+    ( cd "${ROOT_DIR}/actuation_module" && \
+        "${nros_cli_bin}" setup --source freertos-kernel && \
+        "${nros_cli_bin}" setup --source lwip ) || exit 1
+  fi
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
