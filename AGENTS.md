@@ -21,6 +21,10 @@ dependency.
 - `./build.sh`: build the default Zephyr FVP image (`nros build fvp`; the
   images are rows in `actuation_module/src/controller_bringup/system.toml`).
 - `./build.sh -t s32z270dc2_rtu0_r52@D`: build for the S32Z board target.
+- The nros CLI is the nano-ros release `actuation_module/nros-toolchain.toml`
+  pins, installed into `~/.nros` on first use (`scripts/nros-cli.sh`).
+  `./build.sh --dev-cli ...` (or `NROS_DEV_CLI=1` for the CI scripts) builds
+  it from `modules/nros` instead, for nano-ros changes no release has yet.
 - `./build.sh -c`: remove `build/` and `install/`.
 - `python3 -m pip install -r documentation/requirements.txt`: install docs
   dependencies before local Sphinx builds.

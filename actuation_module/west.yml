@@ -45,7 +45,14 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-16: 5b9e8844a4 (post-submit green), past PR 3972
+    # RELEASE 0.6.0-nros11, 2026-11-16: 09219edc75, the commit tag
+    # nros-0.6.0-nros11 names. The default build runs that release's prebuilt
+    # CLI (actuation_module/nros-toolchain.toml pins it, scripts/nros-cli.sh);
+    # this checkout must be the same commit, so a pin move changes all three
+    # together. Work that needs nano-ros past this release waits on branch
+    # nano-ros-next, built with NROS_DEV_CLI=1.
+    #
+    # Before that, ON main, 2026-11-16: 5b9e8844a4 (post-submit green), past PR 3972
     # (d814e77c0d): a generated Zephyr app keeps its workspace modules
     # (issue 3948) and finds the workspace's message packages (issue 3952).
     #
@@ -100,7 +107,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 5b9e8844a49cb23b15d57683aa1d72a0ab541979
+      revision: 09219edc75c9b9a788590c6ac586a7ba45185eab
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

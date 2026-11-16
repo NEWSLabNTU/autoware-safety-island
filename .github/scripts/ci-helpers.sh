@@ -17,6 +17,11 @@ set -euo pipefail
 # cannot hang the runner.
 CI_KILL_AFTER_SECONDS="${CI_KILL_AFTER_SECONDS:-5}"
 
+# nros_cli_select: the release actuation_module/nros-toolchain.toml pins, or
+# modules/nros's CLI with NROS_DEV_CLI=1. Each lane calls it in its Phase 0.
+# shellcheck source=../../scripts/nros-cli.sh
+source "${ROOT_DIR}/scripts/nros-cli.sh"
+
 # Put the image's ROS / Autoware library directories on LD_LIBRARY_PATH.
 #
 # Two different things in this repo need it, and both failed the same way:

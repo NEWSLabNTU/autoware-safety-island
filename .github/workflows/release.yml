@@ -140,13 +140,10 @@ jobs:
         run: |
           set -euo pipefail
           NROS=modules/nros
-          cargo build --release --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
-          mkdir -p "${NROS}/packages/cli/target/release"
-          ln -sf "$PWD/${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
-                 "${NROS}/packages/cli/target/release/nros-launch-resolve"
-          cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
-          ( cd actuation_module && "../${NROS}/packages/cli/target/release/nros" setup \
-              --index "../${NROS}/nros-sdk-index.toml" --tool corrosion )
+          export ROOT_DIR="$PWD"
+          source scripts/nros-cli.sh
+          nros_cli_select
+          ( cd actuation_module && "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --tool corrosion )
           bash "${NROS}/scripts/zephyr/patches/3.7.sh" "$PWD"
 
       # Builds the ELF it publishes and runs it; S32Z needs hardware to run.

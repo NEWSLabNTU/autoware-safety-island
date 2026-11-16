@@ -21,19 +21,14 @@ set -euo pipefail
 ROOT_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
 BUILD_ROOT="${ROOT_DIR}/build/freertos-an536"
 NROS="${ROOT_DIR}/modules/nros"
-NROS_CLI="${NROS}/packages/cli/target/release/nros"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
 cd "${ROOT_DIR}"
 
 echo "Phase 0 - nano-ros provisioning (CLI, launch-resolve, FreeRTOS kernel, SDK tools)"
-cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
-cargo build --release \
-  --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
-ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
-       "${NROS}/packages/cli/target/release/nros-launch-resolve"
-( cd "${NROS}" && "${NROS_CLI}" setup --source freertos-kernel )
+nros_cli_select
+( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --source freertos-kernel )
 
 # Corrosion is needed by every CMake-road lane (see run-freertos-posix-ci.sh).
 #
@@ -53,7 +48,7 @@ ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-reso
 # versions (the lock is the project's record; `nros update` moves it).
 for tool in qemu arm-none-eabi-gcc corrosion; do
   ( cd "${ROOT_DIR}/actuation_module" && \
-      "${NROS_CLI}" setup --index "${NROS}/nros-sdk-index.toml" --tool "${tool}" ) || {
+      "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --tool "${tool}" ) || {
     echo "SDK provisioning failed for ${tool} — see the nros setup output above." >&2
     exit 1
   }
@@ -88,7 +83,7 @@ echo "Phase 1 - AN536 (emulated Cortex-R52) controller build"
 # build.sh ran `nros configure` before the cmake configure; this asserts nothing it writes
 # is missing or stale afterwards (nano-ros's CI hook for the same check).
 echo "Phase 1b - nros configure --check"
-( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
+( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" configure --check . )
 
 echo "Phase 2 - runtime smoke on QEMU"
 entry="${BUILD_ROOT}/actuation_an536_entry"

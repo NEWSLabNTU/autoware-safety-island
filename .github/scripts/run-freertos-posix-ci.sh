@@ -19,18 +19,13 @@ source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 cd "${ROOT_DIR}"
 
 echo "Phase 0 - nano-ros provisioning (CLI, launch-resolve, FreeRTOS kernel)"
-cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
-cargo build --release \
-  --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
-ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
-       "${NROS}/packages/cli/target/release/nros-launch-resolve"
-( cd "${NROS}" && ./packages/cli/target/release/nros setup --source freertos-kernel )
+nros_cli_select
+( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --source freertos-kernel )
 # Corrosion (the CMake road's Rust bridge) comes from the SDK store and a
 # configure no longer fetches it (nano-ros RFC-0104 D10). Provisioned from the
 # workspace root so actuation_module/nros-sdk.lock governs the version.
 ( cd "${ROOT_DIR}/actuation_module" && \
-    "${NROS}/packages/cli/target/release/nros" setup \
-      --index "${NROS}/nros-sdk-index.toml" --tool corrosion )
+    "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --tool corrosion )
 
 echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}"
@@ -38,7 +33,7 @@ echo "Phase 1 - FreeRTOS POSIX (nano-ros) controller build"
 # build.sh ran `nros configure` before the cmake configure; this asserts nothing it writes
 # is missing or stale afterwards (nano-ros's CI hook for the same check).
 echo "Phase 1b - nros configure --check"
-( cd "${ROOT_DIR}/actuation_module" && "${NROS}/packages/cli/target/release/nros" configure --check . )
+( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" configure --check . )
 
 # nano-ros's layout checks: the bringup is pure declarative, every
 # [[component]] row names <pkg>::<Class> and no system.toml sits beside a
@@ -47,9 +42,9 @@ echo "Phase 1b - nros configure --check"
 # them builds anything.
 echo "Phase 1c - nros check: bringup, workspace layout, S32Z270 Zephyr board package"
 ( cd "${ROOT_DIR}/actuation_module" && \
-    "${NROS}/packages/cli/target/release/nros" check --bringup src/controller_bringup && \
-    "${NROS}/packages/cli/target/release/nros" check --workspace && \
-    "${NROS}/packages/cli/target/release/nros" check s32z270-rtu0-zephyr )
+    "${NROS_CLI}" check --bringup src/controller_bringup && \
+    "${NROS_CLI}" check --workspace && \
+    "${NROS_CLI}" check s32z270-rtu0-zephyr )
 
 # The controller's parameters have no C++ defaults: every declared one must be
 # seeded by controller_bringup/config/*.param.yaml or the launch file, with a
@@ -59,7 +54,7 @@ echo "Phase 1d - parameter seeds"
 # the configuration-hashed build directory `nros build` used.
 plan_dir="$(ls -td "${ROOT_DIR}"/actuation_module/build/freertos-cyclonedds-freertos-posix-cfg*-controller_bringup/cmake/nros-plan | head -1)"
 python3 "${ROOT_DIR}/.github/scripts/check-param-seeds.py" "${plan_dir}" \
-  "${ROOT_DIR}/actuation_module/src/controller_bringup" "${NROS}/packages/cli/target/release/nros"
+  "${ROOT_DIR}/actuation_module/src/controller_bringup" "${NROS_CLI}"
 
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/actuation_posix_entry"

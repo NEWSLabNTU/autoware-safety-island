@@ -62,6 +62,12 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
 
 - `scripts/bootstrap-asi.sh` provisions a host; the devcontainer does the
   same (`./launch-dev-container.sh`).
+- The nros CLI is the released nano-ros that
+  `actuation_module/nros-toolchain.toml` pins (installed into `~/.nros` on
+  first use, `scripts/nros-cli.sh`); `modules/nros` and `west.yml` pin the
+  same release's tag commit. `--dev-cli` / `NROS_DEV_CLI=1` builds the CLI
+  from `modules/nros` instead, for unreleased nano-ros (branch
+  `nano-ros-next`).
 - `./build.sh --platform zephyr-fvp|zephyr-s32z|freertos-posix|freertos-an536|freertos-s32z2 -d <dir>`
   runs `nros build <image>` (images in controller_bringup/system.toml; on
   the FVP `--network tap`, `--trace-stats`, `--trace`, `--trace-ring` pick
