@@ -5,8 +5,9 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main e845661f0b and the
-CLI is built from source; there P4 is done too.
+On branch `nano-ros-next` nano-ros is pinned at main 5871cd6e45 and the
+CLI is built from source; there P4 is done too, and the P9 `fabsl` item and
+the P11 S32Z Zephyr board item (see "Dropped on nano-ros-next", below).
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -56,18 +57,29 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4011 | board network file for Zephyr images (`NET_CONFIG_*`) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
 | 4013 | SDK Eigen 3.4 for arm-none-eabi | P9 |
-| 4014 | Zephyr board descriptor for S32Z270 RTU0 (`s32z2xxdc2@D`) | P11 |
-| 4015 | s32z270-freertos RTD variant (GIC port, NETC netif) | P11 |
+| 4014 | Zephyr board descriptor for S32Z270 RTU0 (`s32z2xxdc2@D`); fixed on main (PR 4086), used on nano-ros-next | P11 |
+| 4015 | s32z270-freertos RTD variant (GIC port, NETC netif); the variant is on main (PR 4096), without the NETC netif | P11 |
 | 4016 | public opt-out for a host helper executable in a board build | P9 |
-| 4017 | fvp-aemv8r-smp newlib lacks `fabsl` | P9 |
+| 4017 | fvp-aemv8r-smp newlib lacks `fabsl`; fixed on main (PR 4039), used on nano-ros-next | P9 |
 | 4018 | bug: `declare_parameter` past the store capacity silently returns the default; fixed at the pin (PR 4030: the boot stops) | P3, P8 |
 
 Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main e845661f0b (2026-11-17), past the nros11 tag (09219edc75).
-Over ea94566e87 it adds PR 4063 (phase-567 W4, an island-shaped workspace in
+nano-ros main 5871cd6e45 (2026-11-17), past the nros11 tag (09219edc75).
+Over e845661f0b it adds PR 4080 (89d696e5d7, issue 2652: `nros build`
+passes its own `-D_NANO_ROS_CODEGEN_TOOL` on every configure it starts),
+4039 (f29f50aa0d, issue 2630: `fabsl` / `copysignl` in nano-ros's Zephyr
+`<cmath>` on newlib aarch64), 4086 (3ceb48628d, issue 2631: board
+`s32z270-rtu0-zephyr`, the revision in `west_board`), 4066 (3c2e8cf685:
+board-facts uses `nros build`'s lookup and finds workspace board packages),
+4096 (5871cd6e45, issue 2632: board `s32z270-freertos-rtd`), 4090
+(`PYO3_PYTHON` pin), 4095 and 4081 (play_launch 0.36.0, rlm v0.3.27; the
+contract needed no edit). The workarounds these made dead went, each its own
+commit (below).
+
+Before that, e845661f0b (2026-11-17): over ea94566e87 it adds PR 4063 (phase-567 W4, an island-shaped workspace in
 nano-ros's merge queue) and 7f2e306c13 (issue 2644, a C + Rust image with no
 C++ source configures and seeds its bounds); the island needed no change for
 either.
@@ -113,8 +125,60 @@ refusal: every double is a float literal, every integer an integer.
   already in rlm v0.3.27's spellings: it parses, and `migrate` finds 0
   edits (a node's own `paths:` keep the word), so nano-ros PR 4081 needs no
   island change.
-- `build.sh` still states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on every
-  configure, until nano-ros stops caching it.
+- `build.sh` no longer states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on an
+  `nros build` configure (PR 4080). The Zephyr test programs keep it: there
+  `build.sh` runs `west build` itself, not `nros build`.
+
+### Dropped on nano-ros-next (pin 5871cd6e45)
+
+Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
+
+- cdc5c01, `build.sh`: the `-D_NANO_ROS_CODEGEN_TOOL` on the Zephyr
+  controller and FreeRTOS `nros build` configures (PR 4080). The existing
+  `build/zephyr-fvp` and `build/freertos-posix` directories build.
+- 6d3d71e, `asi_common/CMakeLists.txt`: the `fvp_baser_aemv8r`
+  `-Dfabsl(x)=...` define (P9, issue 4017, PR 4039). zephyr-fvp rebuilds
+  its 34 C++ units and links.
+- a3e3df1, `src/s32z270_zephyr_board/` (removed), `build.sh`
+  (`-DBOARD_REVISION=D`, the `NROS_EXTRA_BOARD_PATH` export),
+  `system.toml` and the S32Z docs (P11, issue 4014, PRs 4086 and 4066):
+  `[image.s32z]` names nano-ros's `s32z270-rtu0-zephyr`. The image still
+  states what that board leaves to it: `CONFIG_MAIN_STACK_SIZE=32768` and
+  the C++ runtime (`zephyr/prj-actuation.conf`; the S32ZE SoC default 1024
+  wins otherwise), and `hal_nxp` in `actuation_module/west.yml` (not in
+  nano-ros's west allowlist). Read back from the build: the configure says
+  `Board: s32z2xxdc2, Revision: D`; `zephyr.dts` chooses `uart9` (Zephyr's
+  revision-D overlay), `can0` (the RTU0 devicetree) and `sram2` (nano-ros's
+  overlay). zephyr-s32z links on a fresh directory: text / data / bss
+  1947888 / 43964 / 4595678, RAM 89.72% of 7 MiB (nros11, P12: 1954456 /
+  43972 / 4556655).
+- Not switched: `[image.s32z2]` to `s32z270-freertos-rtd`. That variant
+  refuses a configure without both `NXP_FREERTOS_S32ZE_DIR` and
+  `S32_RTD_PATH`, and `s32z2_board_glue` stops the configure when
+  `S32_RTD_PATH` is set (its RTD source wiring is the hardware bring-up's,
+  phase-4 W5.b item 5). So the switch lands with that wiring, on a host with
+  the NXP trees: the image (or a second one) names `s32z270-freertos-rtd`;
+  `build.sh` passes `NXP_FREERTOS_S32ZE_DIR` (what
+  `scripts/provision-nxp-freertos.sh` stages) instead of `FREERTOS_DIR` /
+  `FREERTOS_PORT`; the pthread shim keys its `xTaskCreate*Fpu` choice on the
+  variant's `nrosconfigTASK_CREATE_FPU` (its `config-rtd/FreeRTOSConfig.h`)
+  instead of the `ASI_S32Z2_NXP_PORT` switch in `asi_common/CMakeLists.txt`.
+  The s32ct_config submodule and the NXP RTD are not on this host, so none
+  of it can be built here.
+
+What remains of P9 and P11 after this:
+
+- P9: Eigen 3.4 for arm-none-eabi (4013) and the `asi_common` Eigen patch;
+  the host helper opt-out (4016) for `can_vcan_sender`; the controller_pkg
+  `add_subdirectory` fallbacks; the package split and the rclcpp spellings.
+- P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
+  none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
+  (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
+  hand upstream as is; the RTD switch above; one pin and the west import
+  (4006); FVP model parameters from the runner (4007); the Zephyr patches
+  and trace marker (4008, 4009).
+- P7 (CAN behind one interface) still waits on the board-owned CAN frame
+  driver (4012).
 
 ## Steps
 
@@ -404,6 +468,8 @@ refusal: every double is a float literal, every integer an integer.
   needed after nano-ros phase-478 I10.
 - Done when: no private nano-ros variable and no board-keyed define in
   ASI CMake, all lanes green.
+- Status on nano-ros-next (pending nros12 for `nano-ros`): the `fabsl`
+  define is gone (6d3d71e). The rest waits; see "Dropped on nano-ros-next".
 
 ### P10. Tests and CI on nros run - M
 
@@ -441,6 +507,11 @@ refusal: every double is a float literal, every integer an integer.
   it reproduces.
 - Done when: one pin, no carried Zephyr patch, no consumer-owned board
   package, `build.sh` exports no `NROS_*` or `ARMFVP_*` variable.
+- Status on nano-ros-next (pending nros12 for `nano-ros`): the S32Z270
+  Zephyr board moved upstream; `src/s32z270_zephyr_board/`,
+  `-DBOARD_REVISION=D` and the `NROS_EXTRA_BOARD_PATH` export are gone
+  (a3e3df1). The RTD variant exists upstream but is not used yet; see
+  "Dropped on nano-ros-next".
 
 ### P12. The released nano-ros CLI by default - S
 
