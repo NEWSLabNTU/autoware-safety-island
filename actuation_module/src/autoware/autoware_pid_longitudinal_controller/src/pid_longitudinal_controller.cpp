@@ -32,7 +32,6 @@ using namespace common::logger;
 namespace autoware::motion::control::pid_longitudinal_controller
 {
 PidLongitudinalController::PidLongitudinalController(AsiNode & node)
-: logger_(node.get_logger()), clock_(node.get_clock())
 {
   using std::placeholders::_1;
 
@@ -231,12 +230,12 @@ void PidLongitudinalController::setCurrentOperationMode(const OperationModeState
 void PidLongitudinalController::setTrajectory(const TrajectoryMsg & msg)
 {
   if (!longitudinal_utils::isValidTrajectory(msg)) {
-    RCLCPP_WARN_THROTTLE(logger_, *clock_, 3000, "received invalid trajectory. ignore.");
+    log_warn_throttle("received invalid trajectory. ignore.");
     return;
   }
 
   if (msg.points.size() < 2) {
-    RCLCPP_WARN_THROTTLE(logger_, *clock_, 3000, "Unexpected trajectory size < 2. Ignored.");
+    log_warn_throttle("Unexpected trajectory size < 2. Ignored.");
     return;
   }
 
@@ -433,8 +432,7 @@ PidLongitudinalController::ControlData PidLongitudinalController::getControlData
       control_data.slope_angle = m_lpf_pitch->filter(raw_pitch);
     }
   } else {
-    RCLCPP_WARN_THROTTLE(
-      logger_, *clock_, 3000, "Slope source is not valid. Using raw_pitch option as default");
+    log_warn_throttle("Slope source is not valid. Using raw_pitch option as default");
     control_data.slope_angle = m_lpf_pitch->filter(raw_pitch);
   }
 

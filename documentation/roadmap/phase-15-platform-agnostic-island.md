@@ -1,8 +1,8 @@
 # Phase 15 - a platform-agnostic island on nano-ros
 
-Status: in progress (2026-11-16). P1, P2 done; P3, P4 done with interim
-workarounds waiting on nano-ros. nano-ros pinned at main ea94566e87.
-nano-ros gaps filed as issues 4005-4018.
+Status: in progress (2026-11-16). P1, P2 done; P3 done with interim
+workarounds waiting on nano-ros. nano-ros gaps filed as issues
+4005-4018.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -48,7 +48,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4007 | fvp runner: model parameters (SMSC NIC, tap hostbridge, uart out_file) | P10, P11 |
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
 | 4009 | public trace marker through the installed trace sink | P11 |
-| 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
+| 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE` | P4 |
 | 4011 | board network file for Zephyr images (`NET_CONFIG_*`) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
 | 4013 | SDK Eigen 3.4 for arm-none-eabi | P9 |
@@ -56,21 +56,9 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4015 | s32z270-freertos RTD variant (GIC port, NETC netif) | P11 |
 | 4016 | public opt-out for a host helper executable in a board build | P9 |
 | 4017 | fvp-aemv8r-smp newlib lacks `fabsl` | P9 |
-| 4018 | bug: `declare_parameter` past the store capacity silently returns the default; fixed at the pin (PR 4030: the boot stops) | P3, P8 |
+| 4018 | bug: `declare_parameter` past the store capacity silently returns the default | P3, P8 |
 
 Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
-
-## Pin
-
-nano-ros main ea94566e87 (2026-11-16), 65 commits past 5b9e8844a4: a
-declaration with no store slot stops the boot (PR 4030, issue 2634), a launch
-list parameter seeds as a typed array (PR 4034, 2638), `RCLCPP_*_THROTTLE` on
-the clock argument plus `_ONCE` / `_SKIPFIRST` (PR 4042, 2636),
-`list_parameters` past 64 names with rclcpp's prefix and depth filtering
-(PR 4043, 2639), and a metadata probe store of 1024 (PR 4044, 2640). The
-launch resolver is rebuilt with it (`just setup-launch-resolve`). Every
-param file and launch value was re-checked for the coming type-mismatch
-refusal: every double is a float literal, every integer an integer.
 
 ## Steps
 
@@ -193,7 +181,7 @@ refusal: every double is a float literal, every integer an integer.
 - Done when: `actuation_param_profile.h` is gone, the YAML values reach
   the node on every lane (checked by `ros2 param get` on posix), all lanes
   green.
-- Status: done (2026-11-16); two sub-items wait on nano-ros.
+- Status: done (2026-11-16); three sub-items wait on nano-ros.
   - The values are `controller_bringup/config/`:
     `trajectory_follower_node.param.yaml` (16: control period, supervision
     timeouts and bounds, controller modes, the shared `ego_nearest_*`),
@@ -208,33 +196,31 @@ refusal: every double is a float literal, every integer an integer.
     `wheel_base`, `max_pitch_rad`, `min_pitch_rad`) stay inline. Every double
     is a float literal.
   - `.github/scripts/check-param-seeds.py` (posix CI phase 1d) refuses a
-    declared parameter no file seeds (the four arrays included), a seeded
-    one nobody declares, a param file value of another type than the
-    declaration (so the coming nano-ros refusal of a mistyped launch value is
-    safe to pin), and an image whose `max_parameters` is below the declared
-    count (164 >= 149 on all 13).
-  - The four steer-rate-limit arrays (`steer_rate_lim_dps_list_by_*`,
-    `*_list_for_steer_rate_lim`) are in `lateral/mpc.param.yaml`: a launch
-    list seeds as a typed array since nano-ros PR 4034.
-  - No island boot check: a declaration past the store's capacity stops the
-    boot in nano-ros (PR 4030) and the metadata probe's store holds 1024
-    (PR 4044), so the `has_parameter("control_output")` check and the CI
-    lanes' "Safety Island parameters incomplete" refusal went at the pin
-    move to ea94566e87.
+    declared parameter no file seeds, a seeded one nobody declares, a param
+    file value of another type than the declaration (so the coming 4018 fix,
+    which refuses a mistyped launch value, is safe to pin), and an image whose
+    `max_parameters` is below the declared count (164 >= 149 on all 13).
+  - Boot check: `has_parameter("control_output")` (the last declared) must
+    hold, else "Safety Island parameters incomplete"; the posix, an536 and
+    FVP CI lanes forbid that line. It logs, not exits: the metadata probe runs
+    the constructor with a store smaller than 149 and must finish.
   - Waiting on nano-ros, interim in place:
     - the C++ `declare_parameter()` defaults stay (same values as the files):
       the per-component metadata probe constructs the node with no launch
-      values, so a node declaring without defaults cannot be probed. Goes
-      with P8's census or a probe that seeds the image.
+      values and a small store, so a node declaring without defaults cannot
+      be probed. Goes with P8's census or a probe that seeds the image.
+    - the four steer-rate-limit arrays stay C++ defaults: a YAML list reaches
+      the store as one comma-joined string (type string, not double_array).
+      The checker exempts arrays and refuses one that is seeded.
+    - `ros2 param list` shows 64 of the 149 (the ListParameters reply caps at
+      64 names), so the readback below reads by name.
     - a param-file edit alone does not re-resolve the model (its
       `meta.inputs` omit `<param from>` files): locally, delete
       `build/nros/models/controller_bringup/system_model*.yaml` after editing
       `config/`. CI builds fresh.
   - Checks: on the posix image, all 149 parameters read back by name
-    (`~/get_parameters`) have the same type and value as on the pre-P3 image.
-    At ea94566e87 `ros2 param list /controller` on the posix image lists all
-    149, and `ros2 param get` reads the four steer-rate-limit lists back as
-    double arrays with the file's values. The resolved models give the
+    (`~/get_parameters`) have the same type and value as on the pre-P3 image
+    (`ros2 param list` would show 64). The resolved models give the
     `before` profile exactly the old `ACTUATION_PARAM_PROFILE_BEFORE` values
     (stopped_acc -0.4, emergency_acc -0.75, emergency_jerk -1.0, min_acc
     -0.75, min_jerk -1.0), and the CARLA image its three args, with every
@@ -260,35 +246,6 @@ refusal: every double is a float literal, every integer an integer.
 - Done when: no `std::map` / pthread mutex in the logger, CI greps still
   see "Actuation Safety Island is Live" through nros_log (printk only while
   2165 is open), all lanes green.
-- Status: done (2026-11-16) at nano-ros ea94566e87 (4010 fixed by PR 4042);
-  two sub-items wait on nano-ros.
-  - Every throttled line is upstream's `RCLCPP_{INFO,WARN}_THROTTLE(logger,
-    clock, 3000, ...)`, measured on the clock argument: the node's
-    `get_logger()` / `*get_clock()` in `controller_node.cpp` (17 sites);
-    `logger_` / `clock_` members taken from the node in
-    `PidLongitudinalController` (3) and `MpcLateralController` (4), and
-    `m_logger` / `m_clock` in `MPC` (1), as upstream Autoware holds them;
-    `rclcpp::get_logger("mpc_utils")` and a steady `rclcpp::Clock` in the
-    free function `calcNearestPoseInterp` (2). The window stays 3 s. The
-    SNTP re-sync failure (`clock_resync.cpp`) is a plain `log_warn`: its loop
-    already paces at `CONFIG_ASI_SNTP_RESYNC_INTERVAL_S` (>= 1 s).
-  - `logger.hpp` lost `log_{info,warn}_throttle`, the `std::map` and the two
-    pthread mutexes; `CONFIG_LOG_THROTTLE_RATE` went from the Kconfig, the
-    FreeRTOS config header and asi_common's CMake. No site needed `_ONCE` or
-    `_SKIPFIRST`: the island had no hand-rolled once or skip-first logging.
-  - Waiting on nano-ros:
-    - 2165 is open, so the `log_*` mapping keeps its Zephyr printk bypass and
-      the controller's own unthrottled lines stay `log_*`: on the SMP FVP an
-      nros_log record past the first four never reaches the console, and the
-      FVP lane greps "Actuation Safety Island is Live". The throttled lines go
-      through nros_log on every target, so on the FVP they are lost with the
-      rest until 2165 is fixed; no FVP check greps one (posix and an536 grep
-      "Control is skipped since input data is not ready.").
-    - the level stays `CONFIG_LOG_LEVEL` (compile time: `log_debug` and
-      `PROFILE_*` compile out below 2). `knobs.log.max_level` is a ceiling
-      nros_log checks at run time, after the call site has evaluated its
-      arguments, so it would not keep the per-cycle debug work out of the
-      control loop.
 
 ### P5. Clock - M
 

@@ -11,6 +11,11 @@
 # .github/scripts/check-param-seeds.py checks that every declared parameter
 # is seeded here or in the launch file, with a value of its declared type:
 # every double is a float literal (1.0, not 1).
+#
+# Not here: the four steer-rate-limit lists (steer_rate_lim_dps_list_by_*,
+# *_list_for_steer_rate_lim). At nano-ros 5b9e8844a4 a YAML list reaches the
+# store as one comma-joined STRING, not a double array, so they keep their
+# C++ defaults until nano-ros seeds arrays as arrays.
 /**:
   ros__parameters:
     enable_path_smoothing: false
@@ -21,11 +26,6 @@
     extend_trajectory_for_end_yaw_control: false
     admissible_position_error: 5.0
     admissible_yaw_error_rad: 1.57
-    # steer rate limit [deg/s], interpolated by curvature and by velocity
-    steer_rate_lim_dps_list_by_curvature: [40.0, 50.0, 60.0]
-    curvature_list_for_steer_rate_lim: [0.001, 0.002, 0.01]
-    steer_rate_lim_dps_list_by_velocity: [60.0, 50.0, 40.0]
-    velocity_list_for_steer_rate_lim: [10.0, 15.0, 20.0]
     use_steer_prediction: false
     vehicle_model_steer_tau: 0.27
     stop_state_entry_ego_speed: 0.001

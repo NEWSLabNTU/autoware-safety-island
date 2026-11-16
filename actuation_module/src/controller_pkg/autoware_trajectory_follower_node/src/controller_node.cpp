@@ -228,6 +228,19 @@ Controller::Controller(rclcpp::NodeHandle handle)
   }
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
 
+  // control_output is the last parameter declared. Past the parameter store's
+  // capacity (knobs.params.max_parameters) declare_parameter() returns its C++
+  // default silently (nano-ros issue 4018), so a store that did not hold it
+  // did not hold the param-file values either. Logged, not fatal: nano-ros's
+  // metadata probe runs this constructor with a small store and no launch
+  // values, and must finish. The CI lanes refuse the line, and
+  // check-param-seeds.py refuses an image whose store is too small.
+  if (!has_parameter("control_output")) {
+    log_error(
+      "Safety Island parameters incomplete: %s",
+      "the parameter store is smaller than the declared parameters (knobs.params.max_parameters)");
+  }
+
   // Supervision I/O: the VP command candidate (used in VP_CONTROL and for
   // cross-checking in either mode), the explicit operator re-enable topic,
   // and the single actuator-facing supervised output (ApprovedRequest carrying
@@ -489,8 +502,7 @@ void Controller::on_driving_reference(const DrivingReferenceMsg& msg_ref)
   // accepted reference refreshes the source watchdog, which owns the stop.
   auto ignore = [controller](const char * why) {
       ++controller->vp_reference_rejects_;
-      RCLCPP_WARN_THROTTLE(
-        controller->get_logger(), *controller->get_clock(), 3000,
+      log_warn_throttle(
         "VP driving reference ignored: %s (%llu ignored so far)", why,
         (unsigned long long)controller->vp_reference_rejects_);
     };
@@ -585,15 +597,13 @@ void Controller::on_driving_command(const DrivingCommandMsg& msg_ref)
   // legitimate miss, not itself a fault: persistent loss is covered by the
   // per-source freshness check on the control timer.
   if (!in.valid) {
-    RCLCPP_WARN_THROTTLE(
-      controller->get_logger(), *controller->get_clock(), 3000,
+    log_warn_throttle(
       "VP cycle %llu invalid: no usable plan this cycle",
       (unsigned long long)in.cycle);
     return;
   }
   if (!in.has_source_stamp) {
-    RCLCPP_WARN_THROTTLE(
-      controller->get_logger(), *controller->get_clock(), 3000,
+    log_warn_throttle(
       "VP cycle %llu has no source stamp: driving decision cannot be traced",
       (unsigned long long)in.cycle);
     return;
@@ -703,28 +713,28 @@ bool Controller::processData()
 {
   bool is_ready = true;
 
-  // Each wait gets its OWN RCLCPP_INFO_THROTTLE call site. The throttle state
-  // is per call site, so routing all five through one shared lambda gave
+  // Each wait gets its OWN log_info_throttle call site. The throttle keys on
+  // (__FILE__, __LINE__), so routing all five through one shared lambda gave
   // them a single throttle slot: the first missing input printed and the
   // other four were silently dropped (issue 0836).
   if (!has_accel_) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Waiting for acceleration data");
+    log_info_throttle("Waiting for acceleration data");
     is_ready = false;
   }
   if (!has_steering_) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Waiting for steering data");
+    log_info_throttle("Waiting for steering data");
     is_ready = false;
   }
   if (!has_trajectory_) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Waiting for trajectory data");
+    log_info_throttle("Waiting for trajectory data");
     is_ready = false;
   }
   if (!has_odometry_) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Waiting for odometry data");
+    log_info_throttle("Waiting for odometry data");
     is_ready = false;
   }
   if (!has_operation_mode_) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Waiting for operation mode data");
+    log_info_throttle("Waiting for operation mode data");
     is_ready = false;
   }
 
@@ -737,11 +747,11 @@ bool Controller::isTimeOut(
 {
   const auto now = Clock::now();
   if ((now - Clock::toDouble(lat_out.control_cmd.stamp)) > timeout_thr_sec_) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Lateral control command too old, control_cmd will not be published.");
+    log_warn_throttle("Lateral control command too old, control_cmd will not be published.");
     return true;
   }
   if ((now - Clock::toDouble(lon_out.control_cmd.stamp)) > timeout_thr_sec_) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Longitudinal control command too old, control_cmd will not be published.");
+    log_warn_throttle("Longitudinal control command too old, control_cmd will not be published.");
     return true;
   }
   return false;
@@ -826,8 +836,7 @@ void Controller::callbackTimerControl()
     const bool requested = reenable_.pending;
     if (supervision_.stopThisTick(reenable_.pending, requested && allSourcesFresh(now))) {
       if (requested) {
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 3000,
+        log_warn_throttle(
           "Re-enable requested but not all sources are fresh; staying in SI_STOP");
       }
       publishSiStop(now);
@@ -847,7 +856,7 @@ void Controller::callbackTimerControl()
     // Supervise-and-pass: SI must not recompute VP's driving decision, so
     // the accepted VP command becomes the approved payload unchanged.
     if (!has_vp_cmd_) {
-      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "VP_CONTROL: no accepted VP command yet");
+      log_info_throttle("VP_CONTROL: no accepted VP command yet");
       publishHold();
       cycle_exit(common::diag::CycleOutcome::safe_stop);
       return;
@@ -858,7 +867,7 @@ void Controller::callbackTimerControl()
     // never delivers odometry, acceleration, steering or operation mode would
     // let VisionPilot's commands through as NORMAL indefinitely.
     if (!feedbackSeen()) {
-      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "VP_CONTROL: waiting for vehicle feedback (odometry, acceleration, steering, operation mode)");
+      log_info_throttle("VP_CONTROL: waiting for vehicle feedback (odometry, acceleration, steering, operation mode)");
       publishHold();
       cycle_exit(common::diag::CycleOutcome::safe_stop);
       return;
@@ -887,7 +896,7 @@ void Controller::callbackTimerControl()
   if (!input_data) {
     // Silence is not safe: HOLD carries the stopped payload every cycle for
     // as long as the inputs are missing (see publishHold()).
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Control is skipped since input data is not ready.");
+    log_info_throttle("Control is skipped since input data is not ready.");
     publishHold();
     cycle_exit(common::diag::CycleOutcome::safe_stop);
     return;
@@ -899,7 +908,7 @@ void Controller::callbackTimerControl()
   const bool is_lat_ready = lateral_controller_->isReady(*input_data);
   const bool is_lon_ready = longitudinal_controller_->isReady(*input_data);
   if (!is_lat_ready || !is_lon_ready) {
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000, "Control is skipped since lateral and/or longitudinal controllers are not ready to run.");
+    log_info_throttle("Control is skipped since lateral and/or longitudinal controllers are not ready to run.");
     publishHold();
     cycle_exit(common::diag::CycleOutcome::not_ready);
     return;
@@ -1031,7 +1040,7 @@ void Controller::latchFault(const std::string & why)
     // A different fault than the one the operator's press answered: the press
     // predates it, so it must not clear it.
     reenable_.clear();
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "SI_STOP continues: %s (fault_id %u)", why.c_str(), supervision_.fault_id);
+    log_warn_throttle("SI_STOP continues: %s (fault_id %u)", why.c_str(), supervision_.fault_id);
   }
 }
 
@@ -1157,7 +1166,7 @@ void Controller::publishApprovedRequest(
       if (output_mode_ == common::can::ControlCommandOutputMode::CAN_ONLY) {
         log_error("Control command not sent over CAN in CAN_ONLY mode");
       } else {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Control command not sent over CAN; DDS output remains active");
+        log_warn_throttle("Control command not sent over CAN; DDS output remains active");
       }
     }
   }

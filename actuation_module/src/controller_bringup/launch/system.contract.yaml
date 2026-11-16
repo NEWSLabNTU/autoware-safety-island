@@ -27,7 +27,7 @@ nodes:
     paths:
       # ctrl_period = 0.03 s in system.launch.xml.
       on_timer:
-        trigger: { timer: { rate: 33.333Hz } }
+        trigger: { timer: { rate_hz: 33.333 } }
         output: [control_cmd, approved_request, processing_time_lat, processing_time_lon]
     sub:
       steering_status:   { qos: { history: keep_last, depth: 1 } }

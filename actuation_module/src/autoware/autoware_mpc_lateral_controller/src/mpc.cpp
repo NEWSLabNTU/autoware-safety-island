@@ -34,7 +34,7 @@ using autoware::universe_utils::calcDistance2d;
 using autoware::universe_utils::normalizeRadian;
 using autoware::universe_utils::rad2deg;
 
-MPC::MPC(AsiNode & node) : m_logger(node.get_logger()), m_clock(node.get_clock())
+MPC::MPC(AsiNode & node)
 {
 }
 
@@ -203,8 +203,7 @@ void MPC::setReferenceTrajectory(
   const auto [success_resample, mpc_traj_resampled] = MPCUtils::resampleMPCTrajectoryByDistance(
     mpc_traj_raw, param.traj_resample_dist, nearest_seg_idx, ego_offset_to_segment);
   if (!success_resample) {
-    RCLCPP_WARN_THROTTLE(
-      m_logger, *m_clock, 3000, "[setReferenceTrajectory] spline error when resampling by distance");
+    log_warn_throttle("[setReferenceTrajectory] spline error when resampling by distance");
     return;
   }
 
