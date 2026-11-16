@@ -78,6 +78,8 @@ board-facts uses `nros build`'s lookup and finds workspace board packages),
 (`PYO3_PYTHON` pin), 4095 and 4081 (play_launch 0.36.0, rlm v0.3.27; the
 contract needed no edit). The workarounds these made dead went, each its own
 commit (below).
+CI run 43968504048 (adc0cab) is green on all three lanes: Zephyr FVP 24
+min, FreeRTOS POSIX 13, FreeRTOS AN536 13.
 
 Before that, e845661f0b (2026-11-17): over ea94566e87 it adds PR 4063 (phase-567 W4, an island-shaped workspace in
 nano-ros's merge queue) and 7f2e306c13 (issue 2644, a C + Rust image with no
