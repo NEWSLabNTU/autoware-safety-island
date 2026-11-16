@@ -1,8 +1,10 @@
 # Phase 15 - a platform-agnostic island on nano-ros
 
 Status: in progress (2026-11-16). P1, P2 done; P3 done with interim
-workarounds waiting on nano-ros. nano-ros gaps filed as issues
-4005-4018.
+workarounds waiting on nano-ros; P12 done: the default build runs the
+released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
+main pin, the parameter workarounds' removal, P4) waits on branch
+`nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -181,7 +183,7 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 - Done when: `actuation_param_profile.h` is gone, the YAML values reach
   the node on every lane (checked by `ros2 param get` on posix), all lanes
   green.
-- Status: done (2026-11-16); three sub-items wait on nano-ros.
+- Status: done (2026-11-16); two sub-items wait on nano-ros.
   - The values are `controller_bringup/config/`:
     `trajectory_follower_node.param.yaml` (16: control period, supervision
     timeouts and bounds, controller modes, the shared `ego_nearest_*`),
@@ -214,10 +216,6 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
       The checker exempts arrays and refuses one that is seeded.
     - `ros2 param list` shows 64 of the 149 (the ListParameters reply caps at
       64 names), so the readback below reads by name.
-    - a param-file edit alone does not re-resolve the model (its
-      `meta.inputs` omit `<param from>` files): locally, delete
-      `build/nros/models/controller_bringup/system_model*.yaml` after editing
-      `config/`. CI builds fresh.
   - Checks: on the posix image, all 149 parameters read back by name
     (`~/get_parameters`) have the same type and value as on the pre-P3 image
     (`ros2 param list` would show 64). The resolved models give the
@@ -358,6 +356,65 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
   it reproduces.
 - Done when: one pin, no carried Zephyr patch, no consumer-owned board
   package, `build.sh` exports no `NROS_*` or `ARMFVP_*` variable.
+
+### P12. The released nano-ros CLI by default - S
+
+- What: the island uses nano-ros as a released product. The default build,
+  CI and the runbook run the prebuilt CLI of the release
+  `actuation_module/nros-toolchain.toml` pins (`version = "0.6.0-nros11"`),
+  installed the way the nano-ros book pins one
+  (`book/src/guide/build/install-options.md`, "Pinning a version"). Building
+  the CLI from `modules/nros` is opt-in, for nano-ros changes no release has
+  yet.
+- Files: `scripts/nros-cli.sh` (new, `nros_cli_select`);
+  `actuation_module/nros-toolchain.toml` (new); `build.sh`;
+  `.github/scripts/ci-helpers.sh`, `run-freertos-posix-ci.sh`,
+  `run-freertos-an536-ci.sh`, `run-zephyr-fvp-ci.sh`;
+  `.github/workflows/release.yml`; `scripts/bootstrap-asi.sh`;
+  `actuation_module/west.yml`, `modules/nros`; `actuation_module/nros-sdk.lock`.
+- Status: done (2026-11-16).
+  - Default: `nros_cli_select` runs `$NROS_HOME/sdk/nros/<version>/bin/nros`
+    (default `~/.nros`) and its `nros-launch-resolve`, installing the release
+    with its own `install.sh --version <version>` when it is missing. The
+    release's binary runs, not the launcher, so no dispatch is involved. No
+    staleness gate applies: the binary is the release's.
+  - Opt-in: `./build.sh --dev-cli ...` or `NROS_DEV_CLI=1` (build.sh, CI
+    scripts, `bootstrap-asi.sh`) builds the CLI and the launch resolver from
+    `modules/nros`. Only this path sets `NROS_SKIP_STALE_CHECK`, and only on
+    a checkout with no edits (nested submodule pointers ignored).
+  - `modules/nros` and `west.yml` pin 09219edc75, the commit tag
+    `nros-0.6.0-nros11` names (LOCKSTEP kept). On the release path a Zephyr
+    image takes the release's own module (`nros build` names
+    `share/nano-ros` in `ZEPHYR_EXTRA_MODULES`), while the FreeRTOS images'
+    CMake road reads `NROS_REPO_DIR=modules/nros`; `nros_cli_select`
+    refuses a checkout that is not the pinned release's tag commit, so the
+    two are the same sources. Moving to a new release is three edits
+    together: the pin file's `version`, the submodule and `west.yml`.
+  - The release's Cyclone DDS is a checkout source in its own tree:
+    `build.sh` runs `nros setup --source cyclonedds-src` before a Zephyr
+    build on the release path (idempotent).
+  - `build.sh` states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on every configure: a
+    build directory configured with the other CLI otherwise keeps it from
+    its CMake cache (the in-tree CLI, then refused as stale).
+  - `nros setup` runs from `actuation_module/` with the release's own index
+    (with `--dev-cli`, `modules/nros/nros-sdk-index.toml`), so
+    `nros-sdk.lock` records the FreeRTOS kernel source too; that entry is
+    committed. The `[system.*]` rows a build appends are the host's ROS
+    package versions and stay uncommitted.
+  - nros11 already re-resolves the model when a `<param from>` file changes,
+    so P3's "delete the model after editing `config/`" note went.
+  - Checks: the posix lane passes on the release CLI (149 declared, 145
+    seeded, the 4 arrays on their C++ defaults, store 164). `zephyr-s32z`
+    links on it: text / data / bss 1954456 / 43972 / 4556655 (P3 at
+    5b9e8844a4: 2109592 / 43984 / 4556643). nros11's 34 commits past
+    5b9e8844a4 needed no island change beyond this step (the island creates
+    no rclc node, the one break they carry).
+- The nros12 work, on branch `nano-ros-next` (built with `--dev-cli`): the
+  main pin ea94566e87; the steer-rate arrays in `lateral/mpc.param.yaml`
+  (nano-ros PR 4034); dropping the `has_parameter("control_output")` boot
+  check (PRs 4030, 4044) and the ListParameters 64-name note (PR 4043); P4
+  on `RCLCPP_*_THROTTLE` (PR 4042). It lands when nros12 ships, with the pin
+  moved to that release.
 
 ## Findings to decide
 

@@ -36,11 +36,11 @@ resolve_ament_env
 #     ROS setup.bash, which sets it -- and a populated CMAKE_PREFIX_PATH lets
 #     the cross build find host ROS packages. build.sh clears it deliberately;
 #     a reconfigure here must not quietly reintroduce it.
-#   * the host `nros` CLI is on PATH, since the Zephyr module resolves the
-#     codegen tool from _NANO_ROS_CODEGEN_TOOL, then $NROS_CLI, then PATH.
+#   * the host `nros` CLI is on PATH (nros_cli_select, Phase 0), since the
+#     Zephyr module resolves the codegen tool from _NANO_ROS_CODEGEN_TOOL, then
+#     $NROS_CLI, then PATH.
 export CMAKE_PREFIX_PATH=""
 export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-export PATH="${ROOT_DIR}/modules/nros/packages/cli/target/release:${PATH}"
 
 mkdir -p "${LOG_DIR}"
 
@@ -308,22 +308,16 @@ run_fvp_variant()
 #
 # The FreeRTOS lanes have always built it in their own Phase 0; this lane
 # reached the same code only once its earlier failures were cleared.
-echo "Phase 0 - nano-ros launch resolver"
+echo "Phase 0 - nano-ros CLI and launch resolver"
 NROS="${ROOT_DIR}/modules/nros"
-cargo build --release \
-  --manifest-path "${NROS}/packages/cli/nros-launch-resolve/Cargo.toml"
-mkdir -p "${NROS}/packages/cli/target/release"
-ln -sf "${NROS}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
-       "${NROS}/packages/cli/target/release/nros-launch-resolve"
-# build.sh builds the CLI too (a no-op after this); it is needed here first
-# for the corrosion provisioning, which the `nros configure` metadata probe uses.
-cargo build --release --manifest-path "${NROS}/packages/cli/Cargo.toml" -p nros-cli
+# The CLI is needed here first for the corrosion provisioning, which the
+# `nros configure` metadata probe uses; build.sh selects the same one.
+nros_cli_select
 # Corrosion (the CMake road's Rust bridge) comes from the SDK store and a
 # configure no longer fetches it (nano-ros RFC-0104 D10). Provisioned from the
 # workspace root so actuation_module/nros-sdk.lock governs the version.
 ( cd "${ROOT_DIR}/actuation_module" && \
-    "${NROS}/packages/cli/target/release/nros" setup \
-      --index "${NROS}/nros-sdk-index.toml" --tool corrosion )
+    "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --tool corrosion )
 
 # nano-ros's Zephyr 3.7 patch set, applied to this west workspace (zephyr/ and
 # modules/lang/rust). Since nano-ros 0a4cfcc063 a Rust image refuses to

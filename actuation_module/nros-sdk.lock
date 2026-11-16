@@ -11,3 +11,7 @@ provenance = "source"
 version = "11.0.0-nros8"
 provenance = "prebuilt"
 sha256 = "340c22d567a833ab454dd435672548a385d5ba543f73a4bf980e86320c735a25"
+
+[source.freertos-kernel]
+commit = "0adc196d4bd52a2d91102b525b0aafc1e14a2386"
+origin = "store"

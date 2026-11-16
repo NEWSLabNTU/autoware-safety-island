@@ -53,6 +53,8 @@ function usage() {
   echo -e "${GREEN}                         documentation/design/rt_evaluation_zephyr.rst.${NC}"
   echo -e "${GREEN}    --run              ${NC}Zephyr only: start the model for an already-built -d"
   echo -e "${GREEN}                         directory, in the same environment the build had.${NC}"
+  echo -e "${GREEN}    --dev-cli          ${NC}Build the nros CLI from modules/nros (NROS_DEV_CLI=1)"
+  echo -e "${GREEN}                         instead of the release actuation_module/nros-toolchain.toml pins.${NC}"
   echo -e "${GREEN}    -c                 ${NC}Clean all builds and exit."
   echo -e "${GREEN}    -h                 ${NC}Display the usage and exit."
   echo ""
@@ -117,6 +119,12 @@ function parse_args() {
         require_arg "$1" "${2:-}"
         NETWORK_PROFILE="$2"
         shift 2
+        ;;
+      --dev-cli)
+        # Build the nros CLI from modules/nros instead of the pinned release
+        # (scripts/nros-cli.sh): for nano-ros changes no release has yet.
+        export NROS_DEV_CLI=1
+        shift
         ;;
       --run)
         # Start the model for an ALREADY-BUILT -d directory, in the same
@@ -294,37 +302,10 @@ function require_nros_checkout() {
 # /opt/autoware/<ver>, which is the devcontainer layout too), then verify the
 # packages the codegen needs actually resolve so the failure is one clear
 # message here instead of a cmake FATAL_ERROR four levels down.
-# Build the in-tree nros CLI, and decide honestly whether its staleness gate
-# applies to us.
-#
-# The gate compares a SOURCE STAMP embedded at build time against one recomputed
-# at use time, over `cli-source-dirs.txt` plus all of packages/cli. It exists to
-# stop a nano-ros DEVELOPER running a CLI older than sources they just edited.
-#
-# It misfires on a CONSUMER, because our own build mutates the stamped tree:
-# `nros configure` writes into it AFTER the CLI is built, so the stamp has already
-# moved by the time codegen checks it. Neither `cargo build` nor
-# `cargo clean -p nros-cli` fixes that — both were measured, and both still end
-# in "in-tree nros CLI is STALE" (it is what broke the FVP demo immediately
-# after the 2026-08-29 pin move, presenting as a build failure with no clue).
-#
-# So: skip the gate ONLY when modules/nros is CLEAN, which is exactly the case
-# the gate cannot be protecting — we are consuming a pinned upstream and have
-# edited nothing. If the submodule is dirty, someone IS developing nano-ros
-# here, the gate is doing its job, and we leave it alone. Nested submodule
-# pointers do not count: a nested checkout drifting from its gitlink (micro-cdr,
-# nuttx) is no nano-ros edit, and it used to keep the gate on.
-function build_nros_cli() {
-  local manifest="$1"
-  echo -e "${GREEN}Building host nros CLI...${NC}"
-  cargo build --release --manifest-path "${manifest}" -p nros-cli
-
-  if [ -z "$(git -C "${ROOT_DIR}/modules/nros" status --porcelain --ignore-submodules=all 2>/dev/null)" ]; then
-    export NROS_SKIP_STALE_CHECK=1
-  else
-    echo -e "${YELLOW}modules/nros has local changes — leaving the CLI staleness gate ON.${NC}"
-  fi
-}
+# The nros CLI: the released one actuation_module/nros-toolchain.toml pins,
+# or (NROS_DEV_CLI=1) one built from modules/nros. See scripts/nros-cli.sh.
+# shellcheck source=scripts/nros-cli.sh
+. "${ROOT_DIR}/scripts/nros-cli.sh"
 
 # Message-source resolution (AMENT_PREFIX_PATH). Sourced rather than inline so
 # the FVP CI script resolves the SAME prefixes before `west build --target run`
@@ -334,7 +315,7 @@ function build_nros_cli() {
 
 # --run: start the model for an ALREADY-BUILT -d directory. Needs only the
 # build dir and ARMFVP_BIN_PATH, so it runs BEFORE anything that touches
-# cargo. It used to run after build_nros_cli, and that "~0.1 s no-op" waits
+# cargo. It used to run after the CLI build, and that "~0.1 s no-op" waits
 # on the shared ~/.cargo package-cache lock whenever another session's build
 # or test holds it: a model launch that needs no compiler at all sat blocked
 # on one for as long as the other session kept it.
@@ -377,8 +358,8 @@ function run_zephyr_model() {
   ( eval "${run_cmd}" )
 }
 
-# The Zephyr environment every Zephyr build gets: the host nros CLI (built
-# here, on PATH), the message prefixes, nano-ros's checkout, and the FVP
+# The Zephyr environment every Zephyr build gets: the host nros CLI (on
+# PATH, scripts/nros-cli.sh), the message prefixes, nano-ros's checkout, and the FVP
 # model flags. Shared by the controller images and the test programs.
 function zephyr_env() {
   require_nros_checkout
@@ -386,23 +367,20 @@ function zephyr_env() {
   # provisioning run leaves them out, and a trace image does not link
   # without 0002. Idempotent; a conflicting patch stops the build.
   "${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
-  NROS_CLI_BIN="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
-  if [ ! -f "${nros_cli_manifest}" ]; then
-    echo -e "${RED}nano-ros CLI manifest missing (${nros_cli_manifest}) — bump the west.yml nano-ros revision.${NC}" 1>&2
-    exit 1
+  nros_cli_select || exit 1
+  NROS_CLI_BIN="${NROS_CLI}"
+  if [ "${NROS_CLI_MODE}" = "release" ]; then
+    # The Zephyr module's Cyclone DDS is a checkout source in the release's
+    # tree, provisioned on first use (with --dev-cli it is modules/nros's
+    # submodule). Idempotent.
+    ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" setup --source cyclonedds-src ) || exit 1
   fi
-  # Always run cargo: a fresh CLI is a ~0.1 s no-op, and any partial check
-  # misses part of the CLI's real input closure (its own source stamp hashes
-  # the cli-source-dirs.txt dirs OUTSIDE packages/cli too).
-  build_nros_cli "${nros_cli_manifest}"
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH resolves the messages.
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   # The Zephyr module resolves the codegen tool and the SDK store through the
   # CLI on PATH, and nano-ros's checkout through NROS_REPO_DIR.
-  export PATH="$(dirname "${NROS_CLI_BIN}"):${PATH}"
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
 
   # The FVP's SMSC 91C111 ethernet model defaults to disabled
@@ -472,6 +450,10 @@ function build_zephyr_controller() {
   # West's own options go before the CMake ones; nros build routes each.
   local native=(-d "${build_dir}" -p auto
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
+  # The CMake road's own lookup of the nros CLI, stated so a build directory
+  # configured with the other CLI (release vs --dev-cli) does not keep it
+  # from its cache.
+  native+=(-D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}")
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     # The board's revision: the descriptor names the board, the revision is a
     # build fact (the D-revision overlay routes the console to uart9).
@@ -602,14 +584,11 @@ function build_freertos_nros() {
   fi
 
   require_nros_checkout
-  local nros_cli_manifest="${ROOT_DIR}/modules/nros/packages/cli/Cargo.toml"
-  local nros_cli_bin="${ROOT_DIR}/modules/nros/packages/cli/target/release/nros"
-  # Always run cargo (no-op when fresh; see the zephyr lane note).
-  build_nros_cli "${nros_cli_manifest}"
+  nros_cli_select || exit 1
+  local nros_cli_bin="${NROS_CLI}"
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-  export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
 
   # The cross toolchain (the ARMv8-R boards) is the SDK store's pinned
   # arm-none-eabi-gcc, which nano-ros's toolchain file resolves itself
@@ -619,6 +598,10 @@ function build_freertos_nros() {
   # Native arguments to the CMake configure nros build drives. The build
   # type is the image's `profile` (system.toml).
   local native=()
+  # The CMake road's own lookup of the nros CLI: stated, so a build directory
+  # configured with the other CLI (release vs NROS_DEV_CLI=1) does not keep it
+  # from its cache.
+  native+=(-D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}")
   # The kernel and its port are provisioning facts, passed on only when the
   # machine states them: by default the board uses nano-ros's pinned kernel
   # and the upstream GCC/ARM_CRx_No_GIC port (link-complete). NXP hardware
