@@ -586,13 +586,24 @@ function build_freertos_nros() {
   require_nros_checkout
   nros_cli_select || exit 1
   local nros_cli_bin="${NROS_CLI}"
-  if [ "${NROS_CLI_MODE}" = "release" ]; then
-    # The FreeRTOS board's kernel and lwIP sources come from the SDK store on
-    # the release path (with --dev-cli they are modules/nros's submodules);
-    # the board's CMake finds them through `nros locate`. Idempotent.
+  if [ "${NROS_CLI_MODE}" = "release" ] && [ "${image#freertos-posix}" = "${image}" ]; then
+    # On the release path a cross board's sources (FreeRTOS kernel, lwIP, the
+    # Cyclone DDS tree) come from the SDK store, not modules/nros's
+    # submodules: provision the image's board the way the nano-ros book does
+    # (`nros setup <board> --rmw cyclonedds`). Idempotent. The posix images
+    # build against the host's Cyclone DDS and need none of it.
+    local board
+    board="$(awk -v img="[image.${image}]" '
+      $0 == img { in_img = 1; next }
+      /^\[/ { in_img = 0 }
+      in_img && $1 == "board" { gsub(/"/, "", $3); print $3; exit }
+    ' "${ROOT_DIR}/actuation_module/src/controller_bringup/system.toml")"
+    if [ -z "${board}" ]; then
+      echo -e "${RED}[image.${image}] states no board in controller_bringup/system.toml.${NC}" 1>&2
+      exit 1
+    fi
     ( cd "${ROOT_DIR}/actuation_module" && \
-        "${nros_cli_bin}" setup --source freertos-kernel && \
-        "${nros_cli_bin}" setup --source lwip ) || exit 1
+        "${nros_cli_bin}" setup "${board}" --rmw cyclonedds ) || exit 1
   fi
   export CMAKE_PREFIX_PATH=""
   resolve_ament_env
