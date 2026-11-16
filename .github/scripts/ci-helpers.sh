@@ -18,7 +18,8 @@ set -euo pipefail
 CI_KILL_AFTER_SECONDS="${CI_KILL_AFTER_SECONDS:-5}"
 
 # nros_cli_select: the release actuation_module/nros-toolchain.toml pins, or
-# modules/nros's CLI with NROS_DEV_CLI=1. Each lane calls it in its Phase 0.
+# modules/nros's CLI when modules/nros is not that release's tag (branch
+# nano-ros-next; the log says which). Each lane calls it in its Phase 0.
 # shellcheck source=../../scripts/nros-cli.sh
 source "${ROOT_DIR}/scripts/nros-cli.sh"
 

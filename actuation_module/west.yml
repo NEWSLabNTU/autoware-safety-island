@@ -45,7 +45,13 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-16: ea94566e87, past PRs 4030 (a declaration with no
+    # ON main, 2026-11-17: e845661f0b, past 4063 (phase-567 W4: an
+    # island-shaped workspace in the merge queue) and 7f2e306c13 (issue 2644:
+    # a C + Rust image with no C++ source configures and seeds its bounds).
+    # Branch nano-ros-next only; the CLI comes from source automatically
+    # (scripts/nros-cli.sh: modules/nros is not the release tag).
+    #
+    # Before that, ON main, 2026-11-16: ea94566e87, past PRs 4030 (a declaration with no
     # store slot stops the boot, issue 2634), 4034 (a launch list parameter
     # seeds as a typed array, 2638), 4042 (RCLCPP_*_THROTTLE / _ONCE /
     # _SKIPFIRST, 2636), 4043 (list_parameters past 64 names, 2639) and 4044
@@ -116,7 +122,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: ea94566e87c2b6e9bb70df151951c3070ebabbe2
+      revision: e845661f0b4ed96f1b75509722864d49cf11b4d9
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

@@ -17,17 +17,42 @@
 #   modules/nros (the Zephyr module and the CMake road read it) must be the
 #   release's tagged commit; actuation_module/west.yml says the same
 #   (LOCKSTEP).
-# source (opt-in, NROS_DEV_CLI=1): build the CLI and the launch resolver from
+# source (NROS_DEV_CLI=1): build the CLI and the launch resolver from
 #   modules/nros, for trying nano-ros changes no release has yet (branch
 #   nano-ros-next is built this way). Only this path skips the CLI's
 #   staleness gate, and only on a clean checkout.
+#
+# NROS_DEV_CLI unset picks one: release when modules/nros is the pinned
+# release's tagged commit, source (and says so) when it is another commit, as
+# on nano-ros-next. NROS_DEV_CLI=0 forces release and refuses such a checkout.
 
 nros_cli_select() {
   local root="${ROOT_DIR:?ROOT_DIR unset}"
   local nros_repo="${root}/modules/nros"
   local pin="${root}/actuation_module/nros-toolchain.toml"
 
-  if [ "${NROS_DEV_CLI:-0}" != "1" ]; then
+  local dev="${NROS_DEV_CLI:-auto}"
+  if [ "${dev}" = "auto" ]; then
+    dev=0
+    local v t h
+    v="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${pin}" 2>/dev/null | head -1)"
+    if [ -n "${v}" ] && [ -e "${nros_repo}/.git" ]; then
+      t="$(git -C "${nros_repo}" rev-parse -q --verify "refs/tags/nros-${v}^{commit}" 2>/dev/null || true)"
+      if [ -z "${t}" ]; then
+        # A narrow clone (west, CI) may lack the tag; fetch just that one.
+        git -C "${nros_repo}" fetch -q --no-tags origin \
+          "refs/tags/nros-${v}:refs/tags/nros-${v}" 2>/dev/null || true
+        t="$(git -C "${nros_repo}" rev-parse -q --verify "refs/tags/nros-${v}^{commit}" 2>/dev/null || true)"
+      fi
+      h="$(git -C "${nros_repo}" rev-parse HEAD 2>/dev/null || true)"
+      if [ -n "${t}" ] && [ -n "${h}" ] && [ "${t}" != "${h}" ]; then
+        echo "nros-cli: modules/nros is ${h}, not release nros-${v} (${t}): building the source CLI (NROS_DEV_CLI=0 refuses instead)."
+        dev=1
+      fi
+    fi
+  fi
+
+  if [ "${dev}" != "1" ]; then
     NROS_CLI_MODE=release
     local version
     version="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${pin}" 2>/dev/null | head -1)"
