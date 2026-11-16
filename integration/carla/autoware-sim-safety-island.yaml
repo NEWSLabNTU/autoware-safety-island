@@ -1,0 +1,13 @@
+# swb's CARLA diagnostic graph (autoware_sim_profile's autoware-sim.yaml) for an
+# ego with trajectory_follower_mode: none.
+#
+# With the follower off, controller_node_exe never publishes its control_state
+# diagnostic, /autoware/control/performance_monitoring/control_state stays
+# stale, and change_to_autonomous fails with "The target mode is not
+# available". Same edit as ../../demo/launch/autoware-safety-island.yaml.
+# project/swb.yaml passes it as the ego's diagnostic_graph_path.
+files:
+  - { path: $(find-pkg-share autoware_sim_profile)/config/system/diagnostics/autoware-sim.yaml }
+
+edits:
+  - { type: remove, path: /autoware/control/performance_monitoring/control_state }

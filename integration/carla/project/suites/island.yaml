@@ -1,0 +1,4 @@
+# The drive with the Safety Island as the ego's only trajectory follower.
+# swb's verdict (reach the goal within 5 m in 180 s) plus ../../island-check.sh.
+scenarios: [scenarios/drive_to_goal.xosc]
+retry: { on: error, times: 1 }

@@ -1,0 +1,28 @@
+# Compose override for the L4 integration runner (L4SafetyIsland_Implementation,
+# ci/runner/compose.yaml): runs this repository's Safety Island in the runner's
+# `local` service instead of the L4 island.
+#
+#   ASI_ROOT=<this checkout> docker compose -f <l4>/ci/runner/compose.yaml \
+#       -f <this checkout>/integration/carla/compose.island.yaml run --rm local
+#
+# run-carla.sh does this (and stages the island first). Nothing is privileged:
+# the runner's private network, SYS_NICE only, no restart policy.
+services:
+  local:
+    environment:
+      L4SI_WITH_ISLAND: "1"
+      L4SI_ISLAND_TARGET: external
+      L4SI_ISLAND_CMD: /asi/integration/carla/island-run.sh
+      L4SI_ISLAND_CHECK: /asi/integration/carla/island-check.sh
+      L4SI_PROJECT_SRC: /asi/integration/carla/project
+      # This run's work directory (project copy, state, artifacts) on the ASI
+      # side, so an L4 run's build/integration is left alone.
+      L4SI_WORK: /asi-work
+      # The island's own domain (the ego's is swb seat 0's first pilot domain, 2);
+      # outside seat 0's domains 1-8 and inside swb's 0-57.
+      ASI_ISLAND_DOMAIN: ${ASI_ISLAND_DOMAIN:-20}
+    volumes:
+      - ${ASI_ROOT:?set ASI_ROOT to the ASI checkout}:/asi:ro
+      - ${ASI_ROOT}/build/carla-work:/asi-work
+      # trajectory_follower_mode: none, as in demo/docker-compose.yaml.
+      - ${ASI_ROOT}/demo/launch/safety_island_preset.yaml:/opt/autoware/autoware_control_config/share/autoware_control_config/config/preset/safety_island_preset.yaml:ro
