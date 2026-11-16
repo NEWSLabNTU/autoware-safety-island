@@ -18,10 +18,16 @@ python3 gateway.py --bind 192.168.10.1 --port 5555 --interface vcan0
 Build and run FVP from the repository root:
 
 ```bash
-./build.sh --platform zephyr-fvp --network tap --control-output CAN_ONLY \
+./build.sh --platform zephyr-fvp --network tap --can-output-test \
   -d build/zephyr-fvp-tap-can
 west build -d build/zephyr-fvp-tap-can --target run
 ```
+
+On the tap network `--can-output-test` builds the CAN output test program
+with `CAN_ONLY` over this tunnel; the `fvp-tap` controller image publishes on
+DDS only (`build.sh` has no `--control-output`).
+`actuation_module/test/run-fvp-tap-tunnel.sh` runs this roundtrip end to
+end.
 
 Then the same CAN-CARLA bridge as POSIX:
 

@@ -60,7 +60,8 @@ function usage() {
   echo -e "${GREEN}    --unit-test        ${NC}Build unit test program."
   echo -e "${GREEN}    --dds-publisher    ${NC}Build DDS publisher test program."
   echo -e "${GREEN}    --dds-subscriber   ${NC}Build DDS subscriber test program."
-  echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program."
+  echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program (freertos-posix: the"
+  echo -e "${GREEN}                       ${NC}controller image plus the can_vcan_sender host program)."
   echo -e "${GREEN}    --dds-loopback-test${NC}Build Zephyr DDS loopback test program."
   echo ""
   echo -e "${GREEN}    Runtime target matrix:${NC}"
@@ -569,8 +570,15 @@ function build_freertos_nros() {
   local label="$2"
   local artifact_name="$3"
   echo -e "${GREEN}Building FreeRTOS ${label} runtime (nros build ${image})...${NC}"
-  if [ "${BUILD_TEST_FLAG}" != "0" ]; then
-    echo -e "${RED}test programs are Zephyr-lane only; this lane builds the controller image${NC}" 1>&2
+  # The test programs are the Zephyr lane's, with one exception: on the POSIX
+  # simulator --can-output-test also builds can_vcan_sender, the host SocketCAN
+  # sender actuation_module/test/run-vcan-roundtrip.sh drives (beside the
+  # controller image, which it does not replace).
+  local vcan_sender=0
+  if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${image}" = "freertos-posix" ]; then
+    vcan_sender=1
+  elif [ "${BUILD_TEST_FLAG}" != "0" ]; then
+    echo -e "${RED}test programs are Zephyr-lane only (freertos-posix takes --can-output-test); this lane builds the controller image${NC}" 1>&2
     exit 1
   fi
   # The domain is the image's ([image.<id>] domain_id), rendered into the
@@ -620,6 +628,15 @@ function build_freertos_nros() {
   if [ -n "${FREERTOS_PORT:-}" ]; then
     native+=(-DFREERTOS_PORT="${FREERTOS_PORT}")
   fi
+  # Stated either way: nros build reuses the image's CMake cache, where an
+  # earlier ON would otherwise stay.
+  if [ "${image}" = "freertos-posix" ]; then
+    if [ "${vcan_sender}" = "1" ]; then
+      native+=(-DASI_CAN_VCAN_SENDER=ON)
+    else
+      native+=(-DASI_CAN_VCAN_SENDER=OFF)
+    fi
+  fi
 
   local log
   log="$(mktemp)"
@@ -642,6 +659,16 @@ function build_freertos_nros() {
   mkdir -p "${BUILD_DIR}"
   ln -sfn "${artifact}" "${BUILD_DIR}/${artifact_name}"
   echo -e "${GREEN}${label} image: ${BUILD_DIR}/${artifact_name} -> ${artifact}${NC}"
+  if [ "${vcan_sender}" = "1" ]; then
+    local sender
+    sender="$(dirname "${artifact}")/can_vcan_sender"
+    if [ ! -x "${sender}" ]; then
+      echo -e "${RED}nros build ${image} built no can_vcan_sender (${sender}).${NC}" 1>&2
+      exit 1
+    fi
+    ln -sfn "${sender}" "${BUILD_DIR}/can_vcan_sender"
+    echo -e "${GREEN}vcan sender: ${BUILD_DIR}/can_vcan_sender -> ${sender}${NC}"
+  fi
 }
 
 # The FreeRTOS POSIX simulator: a host process, board-owned main() and

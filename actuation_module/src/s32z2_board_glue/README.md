@@ -186,40 +186,27 @@ git.
 
 ## Build
 
-The preferred build path is the repository-level runtime target selector:
+The build path is the repository-level runtime target selector, which runs
+`nros build s32z2` (`[image.s32z2]` in
+`actuation_module/src/controller_bringup/system.toml`):
 
 ```bash
 export S32_RTD_PATH=...
-export FREERTOS_PATH=...
-export LWIP_PATH=...
-export S32CT_GENERATED_DIR=~/workspaceS32DS.3.6.2/lwip_S32Z27X_FreeRTOS_R52
+# Stages the patched NXP kernel and prints the FREERTOS_DIR /
+# FREERTOS_PORT (GCC/ARM_CR52_GIC) exports; run them.
+FREERTOS_S32ZE_PATH=... scripts/provision-nxp-freertos.sh
+export FREERTOS_DIR=... FREERTOS_PORT=GCC/ARM_CR52_GIC
 
-./build.sh --platform freertos-s32z2 -d build/freertos-s32z2 \
-  --dds-interface 192.168.0.105 \
-  --control-output DDS_ONLY
+./build.sh --platform freertos-s32z2 -d build/freertos-s32z2
 ```
 
-Output (once PB configs are in place):
-`build/freertos-s32z2/actuation_freertos_s32z2.elf`.
+Output: `build/freertos-s32z2/actuation_s32z2_entry`, a link to the image
+`nros build` reports. Without the NXP inputs the image link-completes against
+the board bundle's GCC/ARM_CRx_No_GIC port and weak netif stubs.
 
-`build.sh` first builds the host `idlc`, then cross-builds the S32Z2
-CycloneDDS static library, then builds the FreeRTOS S32Z2 firmware.
-
-The CycloneDDS cross-build can still be run manually when debugging that phase:
-
-```bash
-./actuation_module/freertos_s32z2/scripts/build-cdds-target.sh
-```
-
-Set `FREERTOS_S32Z2_CDDS_HOST_BUILD_DIR`,
-`FREERTOS_S32Z2_CDDS_HOST_PREFIX`,
-`FREERTOS_S32Z2_CDDS_TARGET_BUILD_DIR`, or
-`FREERTOS_S32Z2_CDDS_TARGET_PREFIX` to override the default CycloneDDS paths
-under `build/freertos-s32z2/`.
-
-Set `FREERTOS_S32Z2_CDDS_NO_CLEAN=1` to skip the `rm -rf` of the target build
-directory and reuse the previous CMake configuration for incremental
-rebuilds during development.
+The build has no DDS-interface or output-mode option (`--dds-interface`,
+`--control-output` went with the CycloneDDS lane): the network comes from the
+board, the output mode from the image.
 
 ## DDS Configuration
 

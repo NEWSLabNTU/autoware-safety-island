@@ -24,12 +24,16 @@ Output modes
 
 Current defaults:
 
-- ``zephyr-fvp``: ``DDS_ONLY``. TAP plus the UDP tunnel selects
-  ``CAN_ONLY`` or ``DDS_AND_CAN`` explicitly.
+- ``zephyr-fvp``: ``DDS_ONLY``. The tap network's ``--can-output-test``
+  program selects ``CAN_ONLY`` over the UDP tunnel.
 - ``zephyr-s32z``: ``DDS_AND_CAN``.
-- ``freertos-posix``: ``DDS_ONLY``. SocketCAN is selected with
-  ``--control-output CAN_ONLY`` or ``DDS_AND_CAN`` and
-  ``SAFETY_ISLAND_CAN_IFACE``. The in-memory mock is test-only.
+- ``freertos-posix``: ``DDS_AND_CAN`` on the CAN stub (no SocketCAN in the
+  image). SocketCAN runs in the ``--can-output-test`` host program
+  ``can_vcan_sender`` with ``SAFETY_ISLAND_CAN_IFACE``. The in-memory mock
+  is test-only.
+
+The output mode is fixed per bringup image; ``build.sh`` has no
+``--control-output`` option.
 - ``freertos-s32z2`` / ``freertos-x5h``: ``DDS_ONLY``; CAN is not part of
   this stack on those targets.
 

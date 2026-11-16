@@ -11,8 +11,10 @@ source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 cd "${ROOT_DIR}"
 
 echo "FreeRTOS POSIX SocketCAN vcan roundtrip (classic + CAN-FD)"
+# --can-output-test on this lane builds the controller image and, beside it,
+# the can_vcan_sender host program (SocketCAN backend).
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}" \
-  --can-output-test --control-output DDS_AND_CAN
+  --can-output-test
 
 set +e
 "${ROOT_DIR}/actuation_module/test/run-vcan-roundtrip.sh" \

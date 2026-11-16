@@ -15,10 +15,15 @@ pip install -r requirements.txt
 Build and run the Safety Island (repository root):
 
 ```bash
-./build.sh --platform freertos-posix -d build/freertos-posix \
-  --control-output CAN_ONLY --dds-interface lo
-SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_freertos
+./build.sh --platform freertos-posix -d build/freertos-posix
+SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 ```
+
+`CAN_ONLY` is not built on the nano-ros branch: `build.sh` has no
+`--control-output`, and the `freertos-posix` image is fixed at `DDS_AND_CAN`
+on the CAN stub (no SocketCAN), so nothing reaches `vcan0` yet. The CAN path
+is tested by `./build.sh --platform freertos-posix --can-output-test`
+(`actuation_module/test/run-vcan-roundtrip.sh`).
 
 Feed canned DDS inputs on domain 2 (rosbag or `--dds-publisher`). Then:
 

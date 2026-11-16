@@ -78,6 +78,10 @@ These still require CycloneDDS, which this branch retired:
 - FVP CAN UDP tunnel (`--network tap` + CAN output), `run-zephyr-fvp-tap-ci.sh`,
   `run-freertos-vcan-ci.sh`; build.sh `--dds-interface`, `--control-output`,
   `--param-profile`, `--cmake-define`.
+  (Since phase 14 the tunnel and the vcan sender are wired again as test
+  programs: `--network tap --can-output-test` and
+  `--platform freertos-posix --can-output-test`; see the phase-14 roadmap.
+  The build.sh flags stay dropped.)
 - Upstream's raw-DDS late-join operation-mode test in `unit_test.cpp`.
 
 ### Not yet verified

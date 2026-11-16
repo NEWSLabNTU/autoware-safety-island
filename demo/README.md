@@ -35,16 +35,15 @@ SAFETY_ISLAND_DDS_INTERFACE=wlp2s0 docker compose -f docker-compose.yaml -f dock
 Build and run the FreeRTOS POSIX runtime from the repository root with the same interface:
 
 ```bash
-./build.sh --platform freertos-posix -d build/freertos-posix \
-  --dds-interface wlp2s0 \
-  --control-output DDS_ONLY
+./build.sh --platform freertos-posix -d build/freertos-posix
 
-./build/freertos-posix/actuation_freertos
+SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
 ```
 
 Replace `wlp2s0` with the multicast-capable interface on your host, for example `eth0`.
-A prebuilt or released binary can switch interface at runtime instead:
-`SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_freertos`.
+The interface is a runtime choice (`SI_DDS_INTERFACE`); the build has no
+interface option. A released binary takes the same variable:
+`SI_DDS_INTERFACE=wlp2s0 ./actuation_freertos`.
 
 ## Autoware image, controller preset and bridge
 
@@ -86,12 +85,17 @@ Bring up virtual CAN, build with CAN output, and run the host bridge. Details:
 sudo ip link add vcan0 type vcan
 sudo ip link set up vcan0
 
-./build.sh --platform freertos-posix -d build/freertos-posix \
-  --control-output CAN_ONLY --dds-interface lo
+./build.sh --platform freertos-posix -d build/freertos-posix
 
-SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_freertos
+SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --dry-run
 ```
+
+`CAN_ONLY` is not built on the nano-ros branch: `build.sh` has no
+`--control-output`, and the `freertos-posix` image is fixed at `DDS_AND_CAN`
+on the CAN stub (no SocketCAN), so nothing reaches `vcan0` yet. The CAN path
+is tested by `./build.sh --platform freertos-posix --can-output-test`
+(`actuation_module/test/run-vcan-roundtrip.sh`).
 
 From this `demo/` directory, verify the bridge output:
 
@@ -118,11 +122,12 @@ From the repository root:
 sudo ip link add vcan0 type vcan
 sudo ip link set up vcan0
 
-./build.sh --platform freertos-posix -d build/freertos-posix \
-  --control-output CAN_ONLY --dds-interface lo
-SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_freertos
+./build.sh --platform freertos-posix -d build/freertos-posix
+SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
 ```
+
+The same `CAN_ONLY` gap applies (see the section above).
 
 ## Zephyr FVP Safety Island
 
@@ -169,9 +174,13 @@ sudo ip link set dev tap0 up
 sudo ip link add vcan0 type vcan
 sudo ip link set up vcan0
 
-./build.sh --platform zephyr-fvp --network tap --control-output CAN_ONLY \
-  -d build/zephyr-fvp-tap-can
+./build.sh --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap
 python3 demo/can_tunnel_bridge/gateway.py --bind 192.168.10.1 --port 5555
-west build -d build/zephyr-fvp-tap-can --target run
+west build -d build/zephyr-fvp-tap --target run
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --timeout 5 --ego-role ego_vehicle
 ```
+
+The `fvp-tap` controller image publishes on DDS only (`build.sh` has no
+`--control-output`), so nothing reaches the gateway yet. The tunnel runs in
+the tap network's `--can-output-test` program:
+`.github/scripts/run-zephyr-fvp-tap-ci.sh`.

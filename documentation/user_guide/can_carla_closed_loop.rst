@@ -12,6 +12,17 @@ plans against the simulator. Design: :doc:`../design/can_carla_integration`.
 
 This is a **host demo**. GitHub Actions never starts CARLA or Open AD Kit.
 
+.. note::
+
+   Not runnable on the nano-ros branch yet. The demo needs a controller image
+   that sends control on CAN only (``CAN_ONLY``). ``build.sh`` lost its
+   ``--control-output`` option with the CycloneDDS lanes, and no bringup
+   image (``actuation_module/src/controller_bringup/system.toml``) selects
+   that mode: ``freertos-posix`` is fixed at ``DDS_AND_CAN`` on the CAN stub
+   (no SocketCAN), and ``fvp-tap`` at ``DDS_ONLY``. The CAN path itself is
+   tested by the ``--can-output-test`` programs (:doc:`testing`). The steps
+   below show where a ``CAN_ONLY`` image goes once one exists.
+
 **********************
 Two repositories
 **********************
@@ -51,9 +62,11 @@ also needs large UDP buffers; see that project's CARLA simulation docs.
 
      $ sudo ip link add vcan0 type vcan
      $ sudo ip link set up vcan0
-     $ ./build.sh --platform freertos-posix -d build/freertos-posix \
-         --control-output CAN_ONLY --dds-interface lo
-     $ SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_freertos
+     $ ./build.sh --platform freertos-posix -d build/freertos-posix
+     $ SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 \
+         ./build/freertos-posix/actuation_posix_entry
+
+   This build sends no CAN on vcan0 (see the note above).
      $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
 
 3. In RViz: set a goal, engage. ``candump vcan0`` should show ``0x100`` /
@@ -73,7 +86,7 @@ three. Everything else is unchanged:
 
 .. code-block:: console
 
-  $ SAFETY_ISLAND_CAN_FORMAT=fd SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_freertos
+  $ SAFETY_ISLAND_CAN_FORMAT=fd SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
   $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --can-format fd --ego-role ego_vehicle
 
 See :doc:`../design/can_fd`.
@@ -84,7 +97,7 @@ DDS
 
 Open AD Kit pins domain 1 to loopback. Its closed-loop deployment's
 ``cyclonedds.xml`` pins domains 1 and 2 to ``lo``.
-Build the Safety Island with ``--dds-interface lo``. The domain-bridge
+Run the Safety Island with ``SI_DDS_INTERFACE=lo``. The domain-bridge
 forwards the five controller inputs 1 → 2 and does not forward
 ``control_cmd`` (``CAN_ONLY``). The SI subscribes to ``/planning/trajectory``,
 the trajectory Autoware 2.0's own follower reads, so Autoware 2.0 needs no
@@ -136,11 +149,15 @@ land on ``vcan0``. Native FVP CAN stays loopback-only.
   $ sudo ip link add vcan0 type vcan
   $ sudo ip link set up vcan0
   $ python3 demo/can_tunnel_bridge/gateway.py --bind 192.168.10.1 --port 5555
-  $ ./build.sh --platform zephyr-fvp --network tap --control-output CAN_ONLY \
-      -d build/zephyr-fvp-tap-can
-  $ west build -d build/zephyr-fvp-tap-can --target run
+  $ ./build.sh --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap
+  $ west build -d build/zephyr-fvp-tap --target run
   $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --timeout 5 \
       --ego-role ego_vehicle
+
+The ``fvp-tap`` controller image publishes on DDS only, so nothing reaches
+the gateway yet (see the note at the top). The UDP tunnel runs in the
+``--can-output-test`` program on the tap network
+(``actuation_module/test/run-fvp-tap-tunnel.sh``, :doc:`testing`).
 
 FVP is not real-time; use a larger ``--timeout`` than the 0.5 s POSIX default.
 Closed-loop still starts Open AD Kit ``safety-island-carla-simulation`` first.
