@@ -32,7 +32,7 @@ NETWORK_PROFILE="default"
 TRACE_ENABLED=0
 TRACE_STATS_ENABLED=0
 TRACE_RING_ENABLED=0
-RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-s32z2" "freertos-an536")
+RUNTIME_TARGET_LIST=("zephyr-fvp" "zephyr-s32z" "freertos-posix" "freertos-posix-carla" "freertos-s32z2" "freertos-an536")
 ZEPHYR_TARGET_LIST=("fvp_baser_aemv8r_smp" "s32z270dc2_rtu0_r52@D")
 ZEPHYR_TARGET=${ZEPHYR_TARGET_LIST[0]} # Default target is fvp_baser_aemv8r_smp
 ZEPHYR_TARGET_SET=0
@@ -68,6 +68,7 @@ function usage() {
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
   echo -e "    zephyr-s32z      Zephyr on S32Z hardware."
   echo -e "    freertos-posix   FreeRTOS POSIX runtime for local validation."
+  echo -e "    freertos-posix-carla  The POSIX runtime bound to the CARLA ego (integration/carla)."
   echo -e "    freertos-s32z2   FreeRTOS on S32Z2 hardware (nano-ros lane, phase-4 W5.b)."
   echo -e "    freertos-an536   FreeRTOS on QEMU mps3-an536 (emulated Cortex-R52; phase-6)."
   echo ""
@@ -222,6 +223,15 @@ function normalize_platform() {
       fi
       if [ "${BUILD_DIR_SET}" = "0" ]; then
         BUILD_DIR="build/freertos-posix"
+      fi
+      ;;
+    freertos-posix-carla)
+      if [ "${ZEPHYR_TARGET_SET}" = "1" ]; then
+        echo -e "${RED}-t is only valid for Zephyr platforms${NC}" 1>&2
+        exit 1
+      fi
+      if [ "${BUILD_DIR_SET}" = "0" ]; then
+        BUILD_DIR="build/freertos-posix-carla"
       fi
       ;;
     freertos-s32z2)
@@ -677,6 +687,11 @@ function build_freertos_posix() {
   build_freertos_nros freertos-posix "POSIX" actuation_posix_entry
 }
 
+# The same simulator bound to the CARLA ego (system.toml [image.freertos-posix-carla]).
+function build_freertos_posix_carla() {
+  build_freertos_nros freertos-posix-carla "POSIX (CARLA)" actuation_posix_entry
+}
+
 # The NXP S32Z270 image. Without the NXP SDK it LINK-COMPLETES against the
 # board bundle's in-tree GCC/ARM_CRx_No_GIC port and weak netif stubs;
 # hardware provisioning (scripts/provision-nxp-freertos.sh) points
@@ -709,6 +724,9 @@ case "${BUILD_PLATFORM}" in
     ;;
   freertos-posix)
     build_freertos_posix
+    ;;
+  freertos-posix-carla)
+    build_freertos_posix_carla
     ;;
   freertos-s32z2)
     build_freertos_s32z2_nros
