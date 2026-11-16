@@ -8,24 +8,10 @@
 #define CONFIG_LOG_LEVEL @CONFIG_LOG_LEVEL@
 #define CONFIG_LOG_THROTTLE_RATE @CONFIG_LOG_THROTTLE_RATE@
 
-// DDS
-#define CONFIG_DDS_DOMAIN_ID @CONFIG_DDS_DOMAIN_ID@
-#define CONFIG_DDS_NETWORK_INTERFACE "@CONFIG_DDS_NETWORK_INTERFACE@"
-#define CONFIG_DDS_LOG_LEVEL @CONFIG_DDS_LOG_LEVEL@
-
-// Control command output mode
-#define CONFIG_CONTROL_CMD_OUTPUT_DDS_ONLY @CONFIG_CONTROL_CMD_OUTPUT_DDS_ONLY@
-#define CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY @CONFIG_CONTROL_CMD_OUTPUT_CAN_ONLY@
-#define CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN @CONFIG_CONTROL_CMD_OUTPUT_DDS_AND_CAN@
+// The CAN control-command output is built in (the mock / stub / SocketCAN
+// backend platform_can.h selects); the launch arg control_output selects
+// whether it is used.
 #define CONFIG_CONTROL_CMD_CAN_OUTPUT @CONFIG_CONTROL_CMD_CAN_OUTPUT@
-#define CONFIG_CONTROL_CMD_DDS_OUTPUT @CONFIG_CONTROL_CMD_DDS_OUTPUT@
-
-// Supervision mode: "si" (follower follows the selected trajectory source)
-// or "vp" (VisionPilot command supervised and passed through, never
-// recomputed). See vp_si_control_contract / SI issues #63/#64/#65.
-
-// Threading
-#define CONFIG_THREAD_STACK_SIZE @CONFIG_THREAD_STACK_SIZE@
 
 // Network
 #define CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX @CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX@

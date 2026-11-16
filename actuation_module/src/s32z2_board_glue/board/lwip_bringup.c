@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Brings up lwIP on the NXP S32Z2 NETC Ethernet controller using a static IP.
-// Called from configure_network() in
-// include/platform/freertos/s32z2/freertos_network.h.
+// Called from src/s32z2_netif_glue.c.
 
 #include <stdio.h>
 #include <stdint.h>
@@ -18,7 +17,7 @@
 #include "lwip/ip4_addr.h"
 #include "lwip/etharp.h"
 
-#include "platform/freertos/s32z2/lwip_init.h"
+#include "lwip_init.h"
 
 // NETC controller bring-up. The NXP RTD lwIP port (eth_port.c::
 // ethif_low_level_init) only calls Eth_ProvideRxBuffer + Eth_SetControllerMode
@@ -36,8 +35,8 @@
 // Static IP (DHCP disabled). Overridable at build time via -D. Board is
 // .105/24; the gateway points at the bench host (.101), which is the DDS peer on
 // the same /24 — same-subnet traffic to it needs no router, this just gives a
-// sane default route. Must match CONFIG_DDS_NETWORK_INTERFACE so the DDS layer
-// can bind its interface by this IP.
+// sane default route. The DDS layer binds its interface
+// by this IP.
 #ifndef LWIP_STATIC_IP
 #define LWIP_STATIC_IP       "192.168.0.105"
 #endif

@@ -1,8 +1,8 @@
 // Copyright (c) 2026, Arm Limited and contributors.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef PLATFORM__FREERTOS__S32Z2__LWIP_INIT_H_
-#define PLATFORM__FREERTOS__S32Z2__LWIP_INIT_H_
+#ifndef S32Z2_BOARD_GLUE__LWIP_INIT_H_
+#define S32Z2_BOARD_GLUE__LWIP_INIT_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,4 +17,4 @@ int lwip_bring_up_blocking(void);
 }
 #endif
 
-#endif  // PLATFORM__FREERTOS__S32Z2__LWIP_INIT_H_
+#endif  // S32Z2_BOARD_GLUE__LWIP_INIT_H_

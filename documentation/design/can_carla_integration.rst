@@ -78,7 +78,7 @@ Components
 ==========
 
 1. **SocketCAN backend** for ``freertos-posix``. Isolated with
-   ``PLATFORM_FREERTOS_POSIX`` so Linux ``PF_CAN`` never enters S32Z2/X5H
+   ``PLATFORM_FREERTOS_POSIX`` so Linux ``PF_CAN`` never enters S32Z2
    builds. ``SAFETY_ISLAND_CAN_IFACE`` (for example ``vcan0``) is required
    at runtime; missing or unopenable interface fails ``can_init()``. The
    in-memory mock is compiled only into ``--can-output-test``.
@@ -250,7 +250,7 @@ Same Open AD Kit rules as PR 2 (``CAN_ONLY``, sensors-only
 Kconfig
 =======
 
-``CONTROL_CMD_OUTPUT_CAN_ONLY`` / ``DDS_AND_CAN`` must not ``select CAN``.
+``CONTROL_CMD_CAN_OUTPUT`` must not ``select CAN``.
 Only ``CONFIG_CONTROL_CMD_CAN_TRANSPORT_NATIVE`` selects ``CAN``.
 ``CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL`` selects ``NET_UDP`` /
 ``NET_IPV4`` and does not require ``zephyr,canbus``.

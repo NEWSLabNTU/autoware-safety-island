@@ -50,16 +50,13 @@ namespace autoware::motion::control::trajectory_follower_node
 /// duty, not a complete state history.
 ///
 /// Clock discipline: this class never reads a clock. The caller samples
-/// one clock for both noteInput() and update() readings. On the
-/// freertos-x5h target that is Clock::now(), which since the Task-20
-/// _gettimeofday() fix is backed by xTaskGetTickCount() — monotonic
-/// time-since-boot — and is the single time convention this codebase uses.
-/// Both readings come from the same clock in the same process, so only
-/// monotonicity matters, not the epoch.
+/// one clock for both noteInput() and update() readings (the controller
+/// passes Clock::now()). Both readings come from the same clock in the same
+/// process, so only monotonicity matters, not the epoch.
 ///
-/// Threading: noteInput() runs on CycloneDDS callback threads (FreeRTOS
-/// priority 2 on the x5h target) while update()/ageSec() run on the
-/// controller pthread (priority 1), so last_input_sec_ crosses threads. A
+/// Threading: noteInput() may run on a different thread than
+/// update()/ageSec() (the subscriptions and the control timer sit in
+/// different callback groups), so last_input_sec_ crosses threads. A
 /// plain 64-bit double store is not single-copy-atomic on ARMv8-R AArch32
 /// (the compiler may emit it as two 32-bit stores, and the reader can be
 /// preempted between the halves), so a torn read could fabricate a wild
@@ -72,7 +69,7 @@ namespace autoware::motion::control::trajectory_follower_node
 /// only by update() on the single controller thread.
 ///
 /// Pure logic, no OS/DDS/logger dependencies, so it is host-testable
-/// (test/test_input_staleness_gate.cpp) the same way rpmsg_netif_core is.
+/// (test/test_input_staleness_gate.cpp).
 class InputStalenessGate
 {
 public:

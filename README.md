@@ -11,23 +11,20 @@
 A standalone application that runs Autoware's trajectory follower (MPC
 lateral, PID longitudinal) on an Arm safety-class processor and exchanges
 control commands with Autoware over DDS. The application supports Zephyr and
-FreeRTOS runtime targets for local validation and for S32Z and R-Car X5H
-hardware. No changes to the Autoware codebase are required.
+FreeRTOS runtime targets for local validation and for S32Z hardware. No changes to the Autoware codebase are required.
 
 ## Runtime Targets
 
 | Runtime | Local validation | Hardware |
 |---|---|---|
 | Zephyr | `zephyr-fvp` | `zephyr-s32z` (S32Z) |
-| FreeRTOS | `freertos-posix` | `freertos-s32z2` (S32Z2), `freertos-x5h` (R-Car X5H) |
+| FreeRTOS | `freertos-posix` | `freertos-s32z2` (S32Z2) |
 
 `zephyr-fvp` and `freertos-posix` are the local development and validation
 targets. `zephyr-fvp` also covers AVH workflows. `zephyr-s32z` is the existing
 S32Z Zephyr hardware target.
 `freertos-s32z2` is the hardware-specific FreeRTOS S32Z2 target and requires
 NXP-licensed SDK inputs.
-`freertos-x5h` is the FreeRTOS target for the R-Car X5H CR52 (Core1); see
-[`actuation_module/freertos_x5h/README.md`](actuation_module/freertos_x5h/README.md).
 
 ### Workflow
 
@@ -72,8 +69,6 @@ graph TD
 
 | Component | Description |
 |-----------|---------|
-| autoware_msgs | Autoware Messages |
-| autoware_osqp_interface | OSQP Interface |
 | autoware_universe_utils | Universe Utils |
 | autoware_motion_utils | Motion Utils |
 | autoware_interpolation | Interpolation Utils |

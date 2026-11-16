@@ -18,8 +18,8 @@
 //     allocate in pthread_create. The wrapped FreeRTOS task is stored
 //     there along with a binary semaphore used by pthread_join.
 
-#ifndef PLATFORM_FREERTOS_S32Z2_PTHREAD_H_
-#define PLATFORM_FREERTOS_S32Z2_PTHREAD_H_
+#ifndef ASI_NEWLIB_PTHREAD_SHIM_H_
+#define ASI_NEWLIB_PTHREAD_SHIM_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -292,4 +292,4 @@ static inline int usleep(useconds_t useconds)
 }
 #endif
 
-#endif  // PLATFORM_FREERTOS_S32Z2_PTHREAD_H_
+#endif  // ASI_NEWLIB_PTHREAD_SHIM_H_

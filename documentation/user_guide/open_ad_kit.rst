@@ -61,8 +61,8 @@ base image ships. CycloneDDS is linked statically.
 Selecting the DDS interface
 *********************************
 
-``SI_DDS_INTERFACE`` overrides the compile-time
-``CONFIG_DDS_NETWORK_INTERFACE`` at runtime (POSIX build only), so one binary
+``SI_DDS_INTERFACE`` selects the Cyclone DDS interface at runtime (POSIX
+build only), so one binary
 serves loopback CI and a LAN:
 
 .. list-table::
