@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Loopback-only DDS profile for the FreeRTOS POSIX demo.
+
+  Same as cyclonedds.posix.xml, but every domain (1 = Autoware, 2 = Safety
+  Island) is pinned to lo with multicast enabled on it, so no DDS traffic
+  leaves the machine. Selected by run-posix-demo.sh when
+  SAFETY_ISLAND_DDS_INTERFACE=lo (docker-compose.lo.yaml mounts it into the
+  containers; the island process reads it directly).
+-->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="1">
+    <General>
+      <AllowMulticast>spdp</AllowMulticast>
+      <MaxMessageSize>1400B</MaxMessageSize>
+      <Interfaces>
+        <NetworkInterface autodetermine="false" name="lo" multicast="true" />
+      </Interfaces>
+    </General>
+    <Sizing>
+      <ReceiveBufferSize>16384B</ReceiveBufferSize>
+      <ReceiveBufferChunkSize>2048B</ReceiveBufferChunkSize>
+    </Sizing>
+    <Discovery>
+      <ParticipantIndex>none</ParticipantIndex>
+    </Discovery>
+  </Domain>
+  <Domain id="2">
+    <General>
+      <AllowMulticast>spdp</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface autodetermine="false" name="lo" multicast="true" />
+      </Interfaces>
+    </General>
+    <Sizing>
+      <ReceiveBufferSize>16384B</ReceiveBufferSize>
+      <ReceiveBufferChunkSize>2048B</ReceiveBufferChunkSize>
+    </Sizing>
+    <Discovery>
+      <ParticipantIndex>none</ParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

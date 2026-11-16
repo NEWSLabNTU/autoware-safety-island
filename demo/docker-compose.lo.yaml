@@ -1,0 +1,22 @@
+# Loopback-only override, layered after docker-compose.posix.yaml: every
+# container's DDS (domains 1 and 2) is pinned to lo, so the host-network demo
+# sends nothing off the machine. run-posix-demo.sh adds this file when
+# SAFETY_ISLAND_DDS_INTERFACE=lo.
+services:
+  safety-island-autoware:
+    volumes:
+      - ./cyclonedds.lo.xml:/autoware/cyclonedds.xml
+    environment:
+      SAFETY_ISLAND_DDS_INTERFACE: lo
+
+  safety-island-bridge:
+    volumes:
+      - ./cyclonedds.lo.xml:/autoware/cyclonedds.xml
+    environment:
+      SAFETY_ISLAND_DDS_INTERFACE: lo
+
+  safety-island-visualizer:
+    volumes:
+      - ./cyclonedds.lo.xml:/autoware/cyclonedds.xml
+    environment:
+      SAFETY_ISLAND_DDS_INTERFACE: lo
