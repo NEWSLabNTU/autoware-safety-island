@@ -1,6 +1,6 @@
 # Phase 15 - a platform-agnostic island on nano-ros
 
-Status: in progress (2026-11-16). P1 done. nano-ros gaps filed as issues
+Status: in progress (2026-11-16). P1, P2 done. nano-ros gaps filed as issues
 4005-4018.
 
 Goal: leave the island with application code only. What still ties it to
@@ -128,6 +128,38 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 - Done when: every knob value is stated once (the two
   `subscription_buffer_size` values stay per image on purpose), build.sh
   has none of the three lines, all lanes green.
+- Status: done (2026-11-16), two items waiting on nano-ros.
+  - `[image_defaults]` states `knobs.params.max_parameters = 164` and
+    `knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }`;
+    an536 and s32z2 restate only `subscription_buffer_size = 65536`.
+    `knobs.zephyr.heap_size = 8388608` stays on the eight FVP blocks:
+    `[image_defaults]` reaches every image, and on s32z it would override the
+    board package's 2 MiB. `os_config` stays per image for the same reason
+    (the FreeRTOS images take none). A per-board-family default would fold
+    both; nano-ros has none.
+  - The nine `launch = "system.launch.xml"` rows went (`default_launch`
+    names it). `[system] default_images = ["fvp", "freertos-posix", "an536"]`.
+  - `profile = "RelWithDebInfo"` on the four FreeRTOS images replaces
+    build.sh's `-DCMAKE_BUILD_TYPE` (3899 fixed): the configure now gets
+    `-DCMAKE_BUILD_TYPE=RelWithDebInfo -DNROS_CARGO_PROFILE=nros-relwithdebinfo`
+    from `nros build` itself (the configuration hash, and so the build
+    directory, changes once).
+  - The build.sh gcc PATH `find` went (1117 fixed): the configure prints
+    `arm-none-eabi-gcc 13.2.1 via SDK store ... (pin 13.2.rel1, store
+    package 13.2-nros5)`.
+  - `prj-fvp.conf` dropped `CONFIG_MDIO`, the eth/mdio/phy init priorities
+    (80/81/82) and `CONFIG_CHECK_INIT_PRIORITIES=n`: the nano-ros fvp board
+    conf (`fvp_baser_aemv8r_fvp_aemv8r_aarch64_smp.conf`) states the same
+    values. A configure-only build of `[image.fvp]` still resolves all five.
+  - Waiting on nano-ros: `-DBOARD_REVISION=D` stays (the descriptor cannot
+    carry `@D`: the Kconfig symbol nano-ros derives from `west_board` keeps
+    the revision, and the board-file names flatten `@`; folded into the 4014
+    fix). `NROS_EXTRA_BOARD_PATH` stays (see "To confirm", below).
+  - Checks: `nros dev image leaf-system` renders (Kconfig fragment, knob
+    defaults, image env) are byte-identical before and after for all 13
+    images. CI run 43815518694 on 421f96e. Sizes (text / data / bss) are
+    unchanged from P1: s32z 2104024 / 43984 / 4556643, s32z2 1710752 /
+    15880 / 2355580.
 
 ### P3. Parameters to YAML - S-M
 
@@ -274,6 +306,34 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
   it reproduces.
 - Done when: one pin, no carried Zephyr patch, no consumer-owned board
   package, `build.sh` exports no `NROS_*` or `ARMFVP_*` variable.
+
+## To confirm: results (2026-11-16, nano-ros 5b9e8844a4)
+
+- `NROS_EXTRA_BOARD_PATH` after nano-ros PR 3709: still needed. Without it
+  `build.sh --platform zephyr-s32z` stops in the west configure at
+  `cmake/NanoRosBoardFacts.cmake:227`: `nros dev image board-facts` "no board
+  descriptor claims `s32z270-rtu0-zephyr` (deploy `s32z`)". `nros build s32z
+  --dry-run` resolves the same board from the workspace; only the
+  configure-time board-facts verb misses it (reproduced without a build:
+  `nros dev image board-facts src/controller_bringup --deploy s32z`).
+  Reported; waiting on nano-ros.
+- controller_pkg CMake fallbacks after phase-478 I10: the
+  `add_subdirectory` fallbacks (:18-23) are still needed. Without them the
+  metadata probe, which configures controller_pkg alone, fails
+  (`autoware/trajectory_follower_base/control_horizon.hpp: No such file`)
+  and the FVP configure then refuses ("entity inventory was composed after
+  this configure's readers ran"). The `if(TARGET app)` re-link (:65-70) is
+  not needed: the FVP image builds and links without it (the entry inherits
+  the include dirs through the component). It goes with P9.
+- FVP board conf: the SMSC MDIO bus and the eth/mdio/phy 80/81/82 order with
+  `CHECK_INIT_PRIORITIES=n` are already the nano-ros board's, with the same
+  values (dropped from `prj-fvp.conf` in P2). The rest of `prj-fvp.conf`
+  still differs from the board and stays: `HEAP_MEM_POOL_SIZE` 4194304 (board
+  196608), `MAIN_STACK_SIZE` 524288 (board: per image), `MAX_PTHREAD_MUTEX_COUNT`
+  1024 (board 64), `MAX_PTHREAD_COND_COUNT` 512 (16),
+  `SYSTEM_WORKQUEUE_STACK_SIZE` 8192 (4096), `NET_BUF_RX/TX_COUNT` 128 (64),
+  `NET_PKT_RX/TX_COUNT` 64 (32). Those are the measured island needs to file
+  with P6.
 
 ## What stays in the island
 
