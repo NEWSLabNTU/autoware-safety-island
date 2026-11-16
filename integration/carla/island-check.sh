@@ -7,12 +7,14 @@
 # still runs). Exit 0 only when every check holds:
 #   1. the island drove: its log has "STOPPED -> DRIVE";
 #   2. it latched no fault while driving: no "SI_STOP latched" between the
-#      first AUTONOMOUS second and the last second the ego moved. Latches
+#      first AUTONOMOUS second and the last second the ego moved (on fresh
+#      odometry). Latches
 #      before that (the paused world before the scenario, see
 #      island-monitor.py) were cleared by the operator re-enable, and are
 #      listed; so are latches after the ego stopped (the world pauses again);
 #   3. its control_cmd arrived on the ego's domain at >= ASI_MIN_RATE_HZ (25)
-#      on average over the seconds the ego drove autonomously (> 0.5 m/s);
+#      on average over the seconds the ego drove autonomously (> 0.5 m/s on
+#      fresh odometry);
 #   4. Autoware's own follower never ran: no controller_node_exe on the graph;
 #   5. the gate output /control/command/control_cmd was non-zero while driving.
 set -uo pipefail
@@ -33,7 +35,8 @@ python3 - "$mon" "$min_rate" <<'PY' || fail=1
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 min_rate = float(sys.argv[2])
-drive = [r for r in rows if r.get("mode") == 2 and (r.get("speed") or 0) > 0.5]
+drive = [r for i, r in enumerate(rows) if r.get("mode") == 2 and (r.get("speed") or 0) > 0.5
+         and i > 0 and r.get("speed") != rows[i - 1].get("speed")]
 rc = 0
 def say(ok, msg):
     global rc
@@ -49,8 +52,16 @@ if drive:
         f"max |steer| {max(r['gate_steer_max'] for r in drive)})")
 # Latches against the drive window.
 eng = next((i for i, r in enumerate(rows) if r.get("mode") == 2), None)
-moving = [i for i, r in enumerate(rows) if (r.get("speed") or 0) > 0.1]
-end = moving[-1] if moving else None
+# The drive ends at the last second the ego moved on FRESH odometry: when swb
+# ends the scenario it pauses the world, and the last speed then stays
+# frozen (no new samples) while the island's watchdog sees odometry stop.
+end = None
+if eng is not None:
+    end = eng
+    for i in range(eng + 1, len(rows)):
+        if rows[i].get("mode") != 2 or rows[i].get("speed") == rows[i - 1].get("speed") != 0.0:
+            break
+        end = i
 phase = lambda i: ("before the drive" if eng is None or i < eng
                    else "while driving" if end is not None and i <= end else "after the drive")
 latches = [(phase(i), e) for i, r in enumerate(rows) for e in r.get("island", [])

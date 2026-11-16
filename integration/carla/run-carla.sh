@@ -55,5 +55,6 @@ code=$?
 set -e
 rm -rf "$ROOT/log/carla" && mkdir -p "$ROOT/log/carla"
 cp -r "$ROOT/build/carla-work/artifacts/." "$ROOT/log/carla/" 2>/dev/null || true
+cp "$ROOT/build/carla-work/state/"*.jsonl "$ROOT/build/carla-work/state/"*.yaml "$ROOT/log/carla/" 2>/dev/null || true
 say "verdict exit $code; artifacts in $ROOT/log/carla"
 exit "$code"
