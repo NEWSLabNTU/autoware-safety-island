@@ -450,10 +450,6 @@ function build_zephyr_controller() {
   # West's own options go before the CMake ones; nros build routes each.
   local native=(-d "${build_dir}" -p auto
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
-  # The CMake road's own lookup of the nros CLI, stated so a build directory
-  # configured with the other CLI (release vs --dev-cli) does not keep it
-  # from its cache.
-  native+=(-D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}")
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     # The board's revision: the descriptor names the board, the revision is a
     # build fact (the D-revision overlay routes the console to uart9).
@@ -617,10 +613,6 @@ function build_freertos_nros() {
   # Native arguments to the CMake configure nros build drives. The build
   # type is the image's `profile` (system.toml).
   local native=()
-  # The CMake road's own lookup of the nros CLI: stated, so a build directory
-  # configured with the other CLI (release vs NROS_DEV_CLI=1) does not keep it
-  # from its cache.
-  native+=(-D_NANO_ROS_CODEGEN_TOOL="${nros_cli_bin}")
   # The kernel and its port are provisioning facts, passed on only when the
   # machine states them: by default the board uses nano-ros's pinned kernel
   # and the upstream GCC/ARM_CRx_No_GIC port (link-complete). NXP hardware
