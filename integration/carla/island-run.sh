@@ -13,6 +13,8 @@
 #     domain-2 writer capped at 1400 B (demo/bridge/cyclonedds-domain2.xml);
 #   - island-monitor.py on the ego's domain (what island-check.sh judges),
 #     also the operator re-enable before the drive (see its docstring);
+#   - a rosbag2 recording of both control_cmd topics on the ego's domain
+#     (island-bag/), the rate check's cross-check;
 #   - the island (build/carla-island, staged by run-carla.sh), in the
 #     foreground; its output is island-up.sh's island.log.
 set -euo pipefail
@@ -46,6 +48,12 @@ echo "[island-run] domain_bridge pid $!"
 CYCLONEDDS_URI="$uri" python3 "$here/island-monitor.py" "$state/island-monitor.jsonl" "$state/island.log" "$island_domain" \
     >"$state/island-monitor.log" 2>&1 </dev/null &
 echo "[island-run] monitor pid $!"
+# A second, independent count of the island's control_cmd on the ego's domain:
+# rosbag2's C++ recorder (receive timestamps), next to the Python monitor.
+ros2 bag record -s mcap -o "$state/island-bag" \
+    /control/trajectory_follower/control_cmd /control/command/control_cmd \
+    /api/operation_mode/state >"$state/island-bag.log" 2>&1 </dev/null &
+echo "[island-run] bag recorder pid $!"
 
 # The island: a host process reading its domain and DDS profile from the
 # environment (nano-ros hosted env-rung), libddsc staged beside it.

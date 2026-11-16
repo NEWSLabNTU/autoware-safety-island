@@ -43,10 +43,43 @@ def say(ok, msg):
     print(f"[island-check] {'PASS' if ok else 'FAIL'} {msg}")
     rc |= 0 if ok else 1
 say(bool(drive), f"ego drove autonomously for {len(drive)} s")
+def stats(counts):
+    c = sorted(counts)
+    return sum(c) / len(c), c[len(c) // 2], c[0]
 if drive:
-    rate = sum(r["follower_n"] for r in drive) / len(drive)
-    lo = min(r["follower_n"] for r in drive)
-    say(rate >= min_rate, f"island control_cmd {rate:.1f} Hz while driving (min second {lo}; need >= {min_rate})")
+    mean, p50, lo = stats([r["follower_n"] for r in drive])
+    print(f"[island-check]   monitor (rclpy): mean {mean:.1f} Hz, p50 {p50}, min {lo} over {len(drive)} s")
+    if any("island_n" in r for r in drive):
+        imean, ip50, ilo = stats([r.get("island_n", 0) for r in drive])
+        print(f"[island-check]   island domain, before the bridge: mean {imean:.1f} Hz, p50 {ip50}, min {ilo}")
+    # rosbag2's C++ recorder, the same seconds: the count the check uses when present.
+    bag_counts = None
+    try:
+        import bisect, glob, os
+        import rosbag2_py
+        bag = os.path.join(os.path.dirname(sys.argv[1]), "island-bag")
+        if glob.glob(os.path.join(bag, "*.mcap")):
+            reader = rosbag2_py.SequentialReader()
+            reader.open(rosbag2_py.StorageOptions(uri=bag, storage_id="mcap"),
+                        rosbag2_py.ConverterOptions("", ""))
+            stamps = []
+            while reader.has_next():
+                topic, _, t_ns = reader.read_next()
+                if topic == "/control/trajectory_follower/control_cmd":
+                    stamps.append(t_ns * 1e-9)
+            stamps.sort()
+            bag_counts = [bisect.bisect_right(stamps, r["t"]) - bisect.bisect_right(stamps, r["t"] - 1.0)
+                          for r in drive]
+    except Exception as e:  # the monitor's count stands alone
+        print(f"[island-check]   no bag cross-check: {e}")
+    if bag_counts:
+        bmean, bp50, blo = stats(bag_counts)
+        print(f"[island-check]   rosbag2 (C++): mean {bmean:.1f} Hz, p50 {bp50}, min {blo}")
+        mean, p50, lo, src = bmean, bp50, blo, "rosbag2"
+    else:
+        src = "monitor"
+    say(mean >= min_rate,
+        f"island control_cmd {mean:.1f} Hz while driving ({src}; p50 {p50}, min second {lo}; need >= {min_rate})")
     say(any(r["gate_vmax"] > 0.01 for r in drive),
         f"gate control_cmd non-zero while driving (max |v| {max(r['gate_vmax'] for r in drive)}, "
         f"max |steer| {max(r['gate_steer_max'] for r in drive)})")

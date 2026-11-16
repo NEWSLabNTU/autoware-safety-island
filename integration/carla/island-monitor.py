@@ -25,6 +25,7 @@ into the record with the mode at that moment ("island" field).
 
 import json
 import sys
+import threading
 import time
 
 import rclpy
@@ -47,7 +48,7 @@ def main():
     rclpy.init(context=island_ctx, domain_id=int(sys.argv[3]))
     operator = rclpy.create_node("asi_island_operator", context=island_ctx)
     reenable = operator.create_publisher(Bool, "/control/safety_island/reenable", 10)
-    tick = {"follower": [], "gate": []}
+    tick = {"follower": [], "gate": [], "island": []}
     state = {"mode": None, "autoware_control": None, "speed": None, "follower_node": None,
              "engaged": False}
 
@@ -67,6 +68,10 @@ def main():
                              on_cmd("follower"), qos_profile_sensor_data)
     node.create_subscription(Control, "/control/command/control_cmd",
                              on_cmd("gate"), qos_profile_sensor_data)
+    # The island's own output, before the bridge (island_n): tells an island
+    # that publishes slowly from a bridge that forwards slowly.
+    operator.create_subscription(Control, "/control/trajectory_follower/control_cmd",
+                                 on_cmd("island"), qos_profile_sensor_data)
     latched = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                          durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
     node.create_subscription(OperationModeState, "/api/operation_mode/state", on_mode, latched)
@@ -96,6 +101,9 @@ def main():
     node.create_timer(5.0, graph)
     executor = rclpy.executors.SingleThreadedExecutor()
     executor.add_node(node)
+    island_executor = rclpy.executors.SingleThreadedExecutor(context=island_ctx)
+    island_executor.add_node(operator)
+    threading.Thread(target=island_executor.spin, daemon=True).start()
     try:
         executor.spin()
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):

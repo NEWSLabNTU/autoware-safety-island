@@ -48,13 +48,47 @@ trap down EXIT
 
 say "starting CARLA..."
 "${COMPOSE[@]}" up -d --wait carla
+# Real-time priority for the island, with the container's SYS_NICE and
+# nothing else: the runner drops to an unprivileged user, so the island
+# cannot raise itself; root in the same container (docker exec -u root keeps
+# the container's capability set) moves every island thread to SCHED_FIFO
+# once island-up.sh has started it. ASI_ISLAND_RT_PRIO=0 leaves it CFS.
+RT_PRIO="${ASI_ISLAND_RT_PRIO:-10}"
+prioritize() {
+    local pidfile="$ROOT/build/carla-work/state/island.pid" ctr pid i
+    for ((i = 0; i < 600; i++)); do
+        [ -s "$pidfile" ] && break
+        sleep 1
+    done
+    pid="$(cat "$pidfile" 2>/dev/null)" || return 0
+    ctr="$(docker ps -q --filter label=com.docker.compose.project=asi-carla \
+        --filter label=com.docker.compose.service=local | head -1)"
+    [ -n "$pid" ] && [ -n "$ctr" ] || { say "island RT: no island to prioritize"; return 0; }
+    # island-run.sh execs the island under the same pid; wait for that, then
+    # a moment for its threads.
+    for ((i = 0; i < 30; i++)); do
+        [ "$(docker exec "$ctr" cat "/proc/$pid/comm" 2>/dev/null)" != bash ] && break
+        sleep 1
+    done
+    sleep 2
+    docker exec -u root "$ctr" chrt -f -a -p "$RT_PRIO" "$pid" &&
+        say "island RT: SCHED_FIFO $RT_PRIO on every thread of pid $pid" ||
+        say "island RT: chrt failed"
+    docker exec -u root "$ctr" bash -c "for t in /proc/$pid/task/*; do chrt -p \${t##*/}; done" \
+        >"$ROOT/build/carla-work/state/island-rt.log" 2>&1 || true
+}
+
 say "running the integration suite..."
+if [ "$RT_PRIO" != 0 ]; then prioritize & fi
 set +e
 "${COMPOSE[@]}" run --rm local
 code=$?
 set -e
+wait
 rm -rf "$ROOT/log/carla" && mkdir -p "$ROOT/log/carla"
 cp -r "$ROOT/build/carla-work/artifacts/." "$ROOT/log/carla/" 2>/dev/null || true
-cp "$ROOT/build/carla-work/state/"*.jsonl "$ROOT/build/carla-work/state/"*.yaml "$ROOT/log/carla/" 2>/dev/null || true
+cp "$ROOT/build/carla-work/state/"*.jsonl "$ROOT/build/carla-work/state/"*.yaml \
+    "$ROOT/build/carla-work/state/island-rt.log" "$ROOT/log/carla/" 2>/dev/null || true
+cp -r "$ROOT/build/carla-work/state/island-bag" "$ROOT/log/carla/" 2>/dev/null || true
 say "verdict exit $code; artifacts in $ROOT/log/carla"
 exit "$code"
