@@ -639,8 +639,9 @@ function build_freertos_nros() {
     native+=(-DFREERTOS_PORT="${FREERTOS_PORT}")
   fi
   # Stated either way: nros build reuses the image's CMake cache, where an
-  # earlier ON would otherwise stay.
-  if [ "${image}" = "freertos-posix" ]; then
+  # earlier ON would otherwise stay. freertos-posix-carla shares that cache
+  # (same board and configuration hash), so it states the flag too.
+  if [ "${image}" = "freertos-posix" ] || [ "${image}" = "freertos-posix-carla" ]; then
     if [ "${vcan_sender}" = "1" ]; then
       native+=(-DASI_CAN_VCAN_SENDER=ON)
     else

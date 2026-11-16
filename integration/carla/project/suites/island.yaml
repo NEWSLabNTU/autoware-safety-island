@@ -1,0 +1,6 @@
+# The drive with the Safety Island as the ego's only trajectory follower.
+# swb's verdict (reach the goal within 5 m in 180 s) plus ../../island-check.sh.
+scenarios: [scenarios/drive_to_goal.xosc]
+# Autoware 2.0.0 on a loaded host sometimes never leaves INITIALIZING (the
+# L4 smoke suite shows it too), so an errored run is retried up to 3 times.
+retry: { on: error, times: 3 }

@@ -1,0 +1,25 @@
+# ASI on CARLA: the scenario-world-bridge project of the integration run.
+#
+# One Autoware 2.0.0 ego (swb's tesla_model3) on CARLA's Town01, with its
+# trajectory follower switched off: the Safety Island (the freertos-posix-carla
+# image, started by ../island-run.sh) is the only follower, and its
+# /control/trajectory_follower/control_cmd reaches the ego's domain through
+# domain_bridge. Run it with ../run-carla.sh.
+simulator: carla
+assets:
+  - dataset: carla-town-autoware-maps
+    take: [Town01]
+pilots:
+  ego:
+    kind: autoware
+    vehicle: tesla_model3
+    args:
+      autoware_release: 2.0.0
+      # trajectory_follower_mode: none (demo/launch/safety_island_preset.yaml, mounted into
+      # autoware_control_config's preset directory by ../compose.island.yaml).
+      control_module_preset: safety_island
+      # swb's diagnostic graph without controller_node_exe's control_state.
+      diagnostic_graph_path: /asi/integration/carla/autoware-sim-safety-island.yaml
+logging:
+  capture: full
+  keep: { passed: standard, failed: full, error: full }
