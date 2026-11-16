@@ -358,6 +358,19 @@ and `--network tap` layering the same fragments the controller images use).
   (`output_can_only.conf`, `can_udp_tunnel.conf`) in place of the CAN
   loopback, as before the drop, and `.github/scripts/run-zephyr-fvp-tap-ci.sh`
   (not in CI) no longer passes `--control-output`.
+- The two privileged CAN scripts run unprivileged now (not in CI).
+  `--platform freertos-posix --can-output-test` builds the controller image
+  and, beside it, the host `can_vcan_sender` (option `ASI_CAN_VCAN_SENDER` in
+  controller_pkg: the controller's compile context, the SocketCAN backend, no
+  nros runtime linked); `run-freertos-vcan-ci.sh` drives it. Without
+  CAP_NET_ADMIN, `run-vcan-roundtrip.sh` and `run-fvp-tap-tunnel.sh` re-run
+  in a private user + network namespace (`unshare -rn`) with their own
+  `vcan0` / `tap0`; the tunnel script also takes a `tap0` already configured
+  on the host. Both pass locally that way (vcan classic + FD + low-MTU
+  fail-closed + UDP gateway; FVP tap tunnel, 1 command accepted).
+- Open: no bringup image sends control on CAN only, so the CARLA CAN demos
+  (`can_carla_closed_loop.rst`, `demo/`) have no controller build; the docs
+  say so.
 
 ## Step 14. CI checks - done
 

@@ -70,17 +70,22 @@ control-command encoder and on ``freertos-posix`` the in-memory mock backend
 not used in this test; set ``SAFETY_ISLAND_CAN_IFACE`` on the main binary
 instead. See ``demo/can_carla_bridge/README.md``.
 
-SocketCAN ``vcan`` roundtrip (needs ``CAP_NET_ADMIN``):
+SocketCAN ``vcan`` roundtrip (``CAP_NET_ADMIN``, or unprivileged user
+namespaces):
 
 .. code-block:: console
 
-  $ ./build.sh --platform freertos-posix --can-output-test --control-output DDS_AND_CAN
+  $ ./build.sh --platform freertos-posix --can-output-test -d build/freertos-posix-can
   $ ./actuation_module/test/run-vcan-roundtrip.sh
 
-The C++ sender emits one classic batch and one CAN-FD frame; the Python
-decoder receives and checks both. The script exits 77 locally if ``vcan0`` cannot be created. GitHub
-Actions runs this in a separate ``FreeRTOS POSIX vcan`` job with
-``--cap-add=NET_ADMIN`` and fails if the module is absent.
+On ``freertos-posix``, ``--can-output-test`` builds the controller image and,
+beside it, ``can_vcan_sender`` (the SocketCAN backend). The C++ sender emits
+one classic batch and one CAN-FD frame; the Python decoder receives and
+checks both. Without ``CAP_NET_ADMIN`` over ``vcan0`` the script re-runs in a
+private network namespace (``unshare -rn``) with a ``vcan0`` of its own; it
+exits 77 if neither is available.
+``.github/scripts/run-freertos-vcan-ci.sh`` runs the build and both vcan
+roundtrips; no GitHub Actions job runs it on this branch.
 
 Python decoder golden vectors and UDP tunnel pack/unpack (no ``vcan``,
 no ``python-can``, no CARLA):
@@ -103,13 +108,21 @@ UDP gateway → ``vcan0`` (needs ``CAP_NET_ADMIN``):
 
   $ ./actuation_module/test/run-udp-tunnel-roundtrip.sh
 
-Zephyr FVP TAP UDP tunnel (needs ``tun``, ``CAP_NET_ADMIN``, and FVP):
+Zephyr FVP TAP UDP tunnel (needs ``tun`` and FVP):
 
 .. code-block:: console
 
   $ ./build.sh --platform zephyr-fvp --network tap --can-output-test \
-      --control-output CAN_ONLY -d build/zephyr-fvp-tap-can
+      -d build/zephyr-fvp-tap-can
   $ ./actuation_module/test/run-fvp-tap-tunnel.sh build/zephyr-fvp-tap-can
+
+On the tap network ``--can-output-test`` builds the test program with
+``CAN_ONLY`` over the UDP tunnel. The script uses a ``tap0`` already
+configured on the host (owned by the user, ``192.168.10.1/24``, up), creates
+one with ``CAP_NET_ADMIN``, or otherwise runs in a private network namespace
+(``unshare -rn``) with its own ``tap0`` and ``vcan0``. The namespace needs no
+host setup and is the safe choice on a host whose LAN is already
+``192.168.10.0/24``.
 
 Native FVP ``--can-output-test`` without ``--network tap`` stays on
 ``zephyr,can-loopback``.
@@ -137,14 +150,14 @@ way as the main application:
 - S32Z: flash via ``west flash`` — see :doc:`s32z_board`.
 - Local FVP: boot the ELF with a locally installed Arm FVP simulator.
 
-``freertos-posix`` test binaries are produced as
-``build/freertos-posix/actuation_freertos`` unless ``-d`` selects another build
-directory. Run them directly on the host, for example:
+The test programs above are Zephyr programs. ``freertos-posix`` takes only
+``--can-output-test``, which adds the host ``can_vcan_sender`` beside the
+controller image:
 
 .. code-block:: console
 
-  $ ./build.sh --platform freertos-posix --can-output-test
-  $ ./build/freertos-posix/actuation_freertos
+  $ ./build.sh --platform freertos-posix --can-output-test -d build/freertos-posix-can
+  $ ./actuation_module/test/run-vcan-roundtrip.sh build/freertos-posix-can/can_vcan_sender
 
 Clean between builds if switching flags:
 
