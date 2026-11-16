@@ -404,13 +404,6 @@ function zephyr_env() {
     export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.pl011_uart1.out_file=${trace_out}"
     echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
   fi
-  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
-    # The S32Z270 board is this workspace's package
-    # (src/s32z270_zephyr_board). `nros build` finds it, but the configure it
-    # spawns asks `nros dev image board-facts`, which looks only in nano-ros's
-    # catalog and this path (re-checked at nano-ros 5b9e8844a4, after PR 3709).
-    export NROS_EXTRA_BOARD_PATH="${ROOT_DIR}/actuation_module/src/s32z270_zephyr_board${NROS_EXTRA_BOARD_PATH:+:${NROS_EXTRA_BOARD_PATH}}"
-  fi
 }
 
 # The bringup image a controller build is: [image.<id>] in
@@ -450,11 +443,6 @@ function build_zephyr_controller() {
   # West's own options go before the CMake ones; nros build routes each.
   local native=(-d "${build_dir}" -p auto
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
-  if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
-    # The board's revision: the descriptor names the board, the revision is a
-    # build fact (the D-revision overlay routes the console to uart9).
-    native+=(-DBOARD_REVISION=D)
-  fi
   ( cd "${ROOT_DIR}/actuation_module" && \
       "${NROS_CLI_BIN}" build "${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
 }

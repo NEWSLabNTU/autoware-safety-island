@@ -76,9 +76,9 @@ is opt-in and documented in :doc:`can_fd`; every other runtime stays classic.
 Backends
 **********************
 
-Zephyr uses the selected ``zephyr,canbus`` device. The S32Z board package's
-overlay sets this to ``&can0`` in
-``actuation_module/src/s32z270_zephyr_board/boards/s32z2xxdc2_s32z270_rtu0.overlay``.
+Zephyr uses the selected ``zephyr,canbus`` device. On the S32Z270 RTU0 that is
+``&can0``, which Zephyr's own board devicetree
+(``s32z2xxdc2_s32z270_rtu0.dts``) chooses.
 Real bus validation requires the board CAN pins to be connected to an external
 CAN transceiver and bus.
 

@@ -120,7 +120,7 @@ jobs:
 
       # Both Zephyr targets cross-compile the nano-ros runtime: AArch64 for the
       # FVP; for the S32Z270 RTU's Cortex-R52, the triple zephyr-lang-rust maps
-      # it to (armv7r-none-eabihf, see src/s32z270_zephyr_board).
+      # it to (armv7r-none-eabihf, nano-ros board s32z270-rtu0-zephyr).
       - name: Add the Rust cross targets
         shell: bash
         run: |

@@ -36,7 +36,6 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
     controller_bringup/      system.toml (images, sched tasks, knob rows) + launch
                              file + contract; zephyr/ = the Zephyr images'
                              os_config fragments (prj-*.conf, overlays)
-    s32z270_zephyr_board/    Workspace board package (S32Z270 on Zephyr)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
     autoware/                autoware_controller_libs: vendored Autoware controllers
                              (MPC, PID) and utility libraries

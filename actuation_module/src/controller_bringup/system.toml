@@ -230,9 +230,12 @@ os_config = [
 knobs.zephyr.heap_size = 8388608
 
 # The S32Z270 RTU0 R52 on Zephyr (build.sh --platform zephyr-s32z, release
-# only; no emulator models this SoC). nano-ros has no Zephyr board for it, so
-# the board is this workspace's own package, src/s32z270_zephyr_board, which
-# also states the image's heap (2 MiB).
+# only; no emulator models this SoC). The board is nano-ros's
+# s32z270-rtu0-zephyr (west_board s32z2xxdc2@D/s32z270/rtu0, revision D in the
+# board string; nano-ros PR 4086), which also states the image's heap (2 MiB).
+# What the board leaves to the image is stated here: CONFIG_MAIN_STACK_SIZE
+# and the C++ runtime (zephyr/prj-actuation.conf; the S32ZE SoC default of
+# 1024 would win otherwise), and hal_nxp in actuation_module/west.yml.
 [image.s32z]
 board     = "s32z270-rtu0-zephyr"
 os_config = ["zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
