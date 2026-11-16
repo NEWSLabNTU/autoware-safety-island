@@ -1,0 +1,22 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Actuation profile "before" (launch arg actuation_param_profile:=before):
+# the CES 2026 untuned baseline, weak deceleration limits, so the follower
+# cannot track the MRM's decelerating trajectory closely and the vehicle
+# stops long.
+#
+# Loaded by launch/system.launch.xml (<param from>) and baked into every
+# image at build time; these values are what the island runs with. The C++
+# declare_parameter() defaults state the same values only because nano-ros's
+# metadata probe constructs the node with no launch values (phase 15 P3).
+# .github/scripts/check-param-seeds.py checks that every declared parameter
+# is seeded here or in the launch file, with a value of its declared type:
+# every double is a float literal (1.0, not 1).
+/**:
+  ros__parameters:
+    stopped_acc: -0.4
+    emergency_acc: -0.75
+    emergency_jerk: -1.0
+    min_acc: -0.75
+    min_jerk: -1.0

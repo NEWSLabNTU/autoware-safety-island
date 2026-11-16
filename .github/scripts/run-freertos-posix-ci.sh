@@ -51,6 +51,16 @@ echo "Phase 1c - nros check: bringup, workspace layout, S32Z270 Zephyr board pac
     "${NROS}/packages/cli/target/release/nros" check --workspace && \
     "${NROS}/packages/cli/target/release/nros" check s32z270-rtu0-zephyr )
 
+# The controller's parameters have no C++ defaults: every declared one must be
+# seeded by controller_bringup/config/*.param.yaml or the launch file, with a
+# value of its declared type, and fit every image's parameter store.
+echo "Phase 1d - parameter seeds"
+# The image's resolved plan: the census metadata and the launch record, in
+# the configuration-hashed build directory `nros build` used.
+plan_dir="$(ls -td "${ROOT_DIR}"/actuation_module/build/freertos-cyclonedds-freertos-posix-cfg*-controller_bringup/cmake/nros-plan | head -1)"
+python3 "${ROOT_DIR}/.github/scripts/check-param-seeds.py" "${plan_dir}" \
+  "${ROOT_DIR}/actuation_module/src/controller_bringup" "${NROS}/packages/cli/target/release/nros"
+
 echo "Phase 2 - runtime smoke (bounded spin)"
 entry="${BUILD_ROOT}/actuation_posix_entry"
 test -x "${entry}"
@@ -101,6 +111,9 @@ require_marker "${log}" "Control is skipped since input data is not ready."
 # binary serves loopback (CI) and a LAN. The CI container sets no
 # CYCLONEDDS_URI, so the default line is the auto one.
 require_marker "${log}" "Network interface: auto [default]"
+# The parameter store held every declared parameter, so the param files'
+# values reached the node (controller_node.cpp's boot check).
+forbid_marker "${log}" "Safety Island parameters incomplete"
 echo "Controller smoke OK: boot markers + control-loop spin observed"
 
 echo "Phase 2b - SI_DDS_INTERFACE runtime override"

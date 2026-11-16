@@ -1,6 +1,7 @@
 # Phase 15 - a platform-agnostic island on nano-ros
 
-Status: in progress (2026-11-16). P1, P2 done. nano-ros gaps filed as issues
+Status: in progress (2026-11-16). P1, P2 done; P3 done with interim
+workarounds waiting on nano-ros. nano-ros gaps filed as issues
 4005-4018.
 
 Goal: leave the island with application code only. What still ties it to
@@ -180,6 +181,57 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 - Done when: `actuation_param_profile.h` is gone, the YAML values reach
   the node on every lane (checked by `ros2 param get` on posix), all lanes
   green.
+- Status: done (2026-11-16); three sub-items wait on nano-ros.
+  - The values are `controller_bringup/config/`:
+    `trajectory_follower_node.param.yaml` (16: control period, supervision
+    timeouts and bounds, controller modes, the shared `ego_nearest_*`),
+    `vehicle/vehicle_info.param.yaml` (9), `lateral/mpc.param.yaml` (54),
+    `longitudinal/pid.param.yaml` (53) and
+    `longitudinal/pid_profile_{after,before}.param.yaml` (5 each), loaded by
+    `<param from="$(dirname)/../config/...">` in `system.launch.xml`; the
+    launch arg `actuation_param_profile` (default `after`) picks the profile
+    file. `actuation_param_profile.h` is gone; the inline `ctrl_period` and
+    `mpc_prediction_horizon` moved into the files. The eight arg-bound
+    parameters (`control_output`, the four supervision selections,
+    `wheel_base`, `max_pitch_rad`, `min_pitch_rad`) stay inline. Every double
+    is a float literal.
+  - `.github/scripts/check-param-seeds.py` (posix CI phase 1d) refuses a
+    declared parameter no file seeds, a seeded one nobody declares, a param
+    file value of another type than the declaration (so the coming 4018 fix,
+    which refuses a mistyped launch value, is safe to pin), and an image whose
+    `max_parameters` is below the declared count (164 >= 149 on all 13).
+  - Boot check: `has_parameter("control_output")` (the last declared) must
+    hold, else "Safety Island parameters incomplete"; the posix, an536 and
+    FVP CI lanes forbid that line. It logs, not exits: the metadata probe runs
+    the constructor with a store smaller than 149 and must finish.
+  - Waiting on nano-ros, interim in place:
+    - the C++ `declare_parameter()` defaults stay (same values as the files):
+      the per-component metadata probe constructs the node with no launch
+      values and a small store, so a node declaring without defaults cannot
+      be probed. Goes with P8's census or a probe that seeds the image.
+    - the four steer-rate-limit arrays stay C++ defaults: a YAML list reaches
+      the store as one comma-joined string (type string, not double_array).
+      The checker exempts arrays and refuses one that is seeded.
+    - `ros2 param list` shows 64 of the 149 (the ListParameters reply caps at
+      64 names), so the readback below reads by name.
+    - a param-file edit alone does not re-resolve the model (its
+      `meta.inputs` omit `<param from>` files): locally, delete
+      `build/nros/models/controller_bringup/system_model*.yaml` after editing
+      `config/`. CI builds fresh.
+  - Checks: on the posix image, all 149 parameters read back by name
+    (`~/get_parameters`) have the same type and value as on the pre-P3 image
+    (`ros2 param list` would show 64). The resolved models give the
+    `before` profile exactly the old `ACTUATION_PARAM_PROFILE_BEFORE` values
+    (stopped_acc -0.4, emergency_acc -0.75, emergency_jerk -1.0, min_acc
+    -0.75, min_jerk -1.0), and the CARLA image its three args, with every
+    other value unchanged. Kept as found, for a later decision:
+    `ego_nearest_dist_threshold` and `ego_nearest_yaw_threshold` are 0.0 (no
+    TU ever gave them a default; upstream's common.param.yaml has 3.0 and
+    1.046). Both S32Z270 entries seed the 145 values
+    (`nros_cpp_declare_node_param`). Sizes (text / data / bss), P2 -> P3:
+    s32z 2104024 / 43984 / 4556643 -> 2109592 / 43984 / 4556643 (+5568
+    text, the seed table); s32z2 1710752 / 15880 / 2355580 -> 1716432 /
+    15880 / 2355580 (+5680).
 
 ### P4. Logging - M
 
@@ -306,6 +358,15 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
   it reproduces.
 - Done when: one pin, no carried Zephyr patch, no consumer-owned board
   package, `build.sh` exports no `NROS_*` or `ARMFVP_*` variable.
+
+## Findings to decide
+
+- `ego_nearest_dist_threshold` and `ego_nearest_yaw_threshold` are 0.0 on
+  every image: no translation unit ever gave them a default, and no launch
+  value seeded them, so the MPC and PID nearest-index search runs with 0 m /
+  0 rad soft limits. Upstream's `common.param.yaml` has 3.0 and 1.046. P3
+  kept 0.0 (`config/trajectory_follower_node.param.yaml`) so as not to change
+  behaviour; changing them is a controller decision to measure on CARLA.
 
 ## To confirm: results (2026-11-16, nano-ros 5b9e8844a4)
 

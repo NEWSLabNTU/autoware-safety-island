@@ -228,6 +228,19 @@ Controller::Controller(rclcpp::NodeHandle handle)
   }
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
 
+  // control_output is the last parameter declared. Past the parameter store's
+  // capacity (knobs.params.max_parameters) declare_parameter() returns its C++
+  // default silently (nano-ros issue 4018), so a store that did not hold it
+  // did not hold the param-file values either. Logged, not fatal: nano-ros's
+  // metadata probe runs this constructor with a small store and no launch
+  // values, and must finish. The CI lanes refuse the line, and
+  // check-param-seeds.py refuses an image whose store is too small.
+  if (!has_parameter("control_output")) {
+    log_error(
+      "Safety Island parameters incomplete: %s",
+      "the parameter store is smaller than the declared parameters (knobs.params.max_parameters)");
+  }
+
   // Supervision I/O: the VP command candidate (used in VP_CONTROL and for
   // cross-checking in either mode), the explicit operator re-enable topic,
   // and the single actuator-facing supervised output (ApprovedRequest carrying
