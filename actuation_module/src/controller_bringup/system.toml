@@ -23,8 +23,11 @@ rmw            = "cyclonedds"
 # Default ROS_DOMAIN_ID. Embedded targets (FVP/Zephyr) BAKE this at build
 # time (compile-time domain — see nano-ros CLAUDE.md "Domain ID").
 domain_id      = 0
-# Picked when the caller does not pass --launch / a `:<file>` suffix.
+# Picked when the caller does not pass --launch / a `:<file>` suffix, and the
+# launch file of every image below (none states its own).
 default_launch = "system.launch.xml"
+# What a bare `nros build` builds: the three emulated run lanes' images.
+default_images = ["fvp", "freertos-posix", "an536"]
 
 # The single ROS node ASI runs today. The 8 autoware component libraries
 # are deps the Node pkg links, NOT nodes (roadmap gap I4), so they do not
@@ -107,51 +110,49 @@ priority = 9
 # evaluation layers. The fragments assign asi_common's Kconfig symbols, which
 # asi_common defines as a Zephyr module.
 #
-# Sizing knobs, the same on every Zephyr image:
-#   params.max_parameters = 164: the controller declares 149 parameters
-#     (trajectory follower + MPC lateral + PID longitudinal + vehicle info),
-#     plus a 10 % margin. Too few is SILENT: declare_parameter<T>() returns the
-#     compiled default when the store is full. Each slot costs ~8.9 KB of the
-#     executor backing.
-#   executor.max_cbs = 16: 7 subscriptions, a timer and the parameter
-#     services; the default 4 fails at boot.
-#   executor.subscription_buffer_size = 16384: /planning trajectories run
-#     9-14 KiB; an undersized buffer drops the sample after Cyclone ACKed it
-#     (nano-ros issue 0749).
-#   zephyr.heap_size (FVP) = 8 MiB: the nros allocator funnel (z_malloc and
-#     __rust_alloc) holds Cyclone and the controller; the S32Z270's is its
-#     board package's [knobs.zephyr] heap_size.
+# The sizing knobs every image shares ([image_defaults] below); an image
+# block states only what differs from them. The FVP images also state
+# zephyr.heap_size = 8 MiB (the nros allocator funnel, z_malloc and
+# __rust_alloc, holds Cyclone and the controller). It cannot be a default:
+# [image_defaults] reaches every image, and on the S32Z270 it would override
+# its board package's [knobs.zephyr] heap_size (2 MiB).
+
+[image_defaults]
+# The controller declares 149 parameters (trajectory follower + MPC lateral +
+# PID longitudinal + vehicle info), plus a 10 % margin. Too few is SILENT:
+# declare_parameter<T>() returns the compiled default when the store is full
+# (nano-ros issue 4018). Each slot costs ~8.9 KB of the executor backing.
+knobs.params.max_parameters = 164
+# max_cbs = 16: 7 subscriptions, a timer and the parameter services; the
+# default 4 fails at boot. subscription_buffer_size = 16384: /planning
+# trajectories run 9-14 KiB, and an undersized buffer drops the sample after
+# Cyclone ACKed it (nano-ros issue 0749). The two ARMv8-R FreeRTOS images
+# take 64 KiB.
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # Layer 1 of the real-time evaluation (documentation/design/rt_evaluation_zephyr.rst):
 # thread runtime statistics, no CTF (build.sh --trace-stats).
 [image.fvp-stats]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-trace-stats.conf",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # CTF tracing streamed to uart1, plus the Layer 1 statistics (build.sh --trace).
 [image.fvp-trace]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
@@ -159,15 +160,12 @@ os_config = [
   "zephyr/prj-trace.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
 # fragment comes after prj-trace.conf: it switches the UART backend off.
 [image.fvp-trace-ring]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
@@ -176,29 +174,23 @@ os_config = [
   "zephyr/prj-trace-ring.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # The FVP image on the TAP network (build.sh --network tap), for the demo
 # stack: Autoware on domain 1, the island on 2, `domain_bridge` between them.
 [image.fvp-tap]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 domain_id = 2
 os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # [image.fvp-stats] on the TAP network.
 [image.fvp-tap-stats]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 domain_id = 2
 os_config = [
   "zephyr/prj-actuation.conf",
@@ -206,14 +198,11 @@ os_config = [
   "zephyr/prj-fvp-tap.conf",
   "zephyr/prj-trace-stats.conf",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # [image.fvp-trace] on the TAP network.
 [image.fvp-tap-trace]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 domain_id = 2
 os_config = [
   "zephyr/prj-actuation.conf",
@@ -223,14 +212,11 @@ os_config = [
   "zephyr/prj-trace.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # [image.fvp-trace-ring] on the TAP network.
 [image.fvp-tap-trace-ring]
 board     = "fvp-aemv8r-smp"
-launch    = "system.launch.xml"
 domain_id = 2
 os_config = [
   "zephyr/prj-actuation.conf",
@@ -241,8 +227,6 @@ os_config = [
   "zephyr/prj-trace-ring.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 knobs.zephyr.heap_size = 8388608
 
 # The S32Z270 RTU0 R52 on Zephyr (build.sh --platform zephyr-s32z, release
@@ -251,10 +235,7 @@ knobs.zephyr.heap_size = 8388608
 # also states the image's heap (2 MiB).
 [image.s32z]
 board     = "s32z270-rtu0-zephyr"
-launch    = "system.launch.xml"
 os_config = ["zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
-knobs.params.max_parameters = 164
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 
 # Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
 # controller runs as a FreeRTOS TASK under the scheduler the board's main()
@@ -263,15 +244,9 @@ knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 # FREERTOS_DIR flows via env at configure time.
 [image.freertos-posix]
 board = "freertos-posix"
-
-[image.freertos-posix.knobs.params]
-# The controller declares 149 parameters; below 149 declare_parameter()
-# fails at boot.
-max_parameters = 164
-[image.freertos-posix.knobs.executor]
-max_cbs = 16
-# The controller receives 8.8 KiB trajectory samples.
-subscription_buffer_size = 16384
+# RelWithDebInfo (-O2 -g), the profile the FreeRTOS images were always built
+# with; the CMake road defaults to Release (-O3, ~130 KB more text on an536).
+profile = "RelWithDebInfo"
 
 # The binding variant the CARLA image resolves (nano-ros: a launch resolved
 # with arguments must be declared here).
@@ -284,34 +259,21 @@ args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
 # (integration/carla/): the same image, bound to the CARLA ego's vehicle
 # (swb's tesla_model3) and swb's CARLA PID pitch limits.
 [image.freertos-posix-carla]
-board  = "freertos-posix"
-launch = "system.launch.xml"
-args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
-
-[image.freertos-posix-carla.knobs.params]
-max_parameters = 164
-[image.freertos-posix-carla.knobs.executor]
-max_cbs = 16
-subscription_buffer_size = 16384
+board   = "freertos-posix"
+profile = "RelWithDebInfo"
+args    = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
 
 # Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree
 # GCC/ARM_CRx_No_GIC port; hardware runs the NXP-provisioned GCC/ARM_CR52_GIC
 # port + the RTD NETC glue (src/s32z2_board_glue, env-gated on the NXP SDK).
 [image.s32z2]
-board = "s32z270-freertos"
-
-[image.s32z2.knobs.params]
-# The controller declares 149 parameters (MPC lateral + PID longitudinal);
-# the parameter store is a static pool, and below 149 declare_parameter()
-# fails at boot.
-max_parameters = 164
-[image.s32z2.knobs.executor]
-max_cbs = 16
+board   = "s32z270-freertos"
+profile = "RelWithDebInfo"
 # 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
-subscription_buffer_size = 65536
+knobs.executor.subscription_buffer_size = 65536
 
 # phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
 # phase-385). Same CPU and kernel port as [image.s32z2] above, but nothing
@@ -326,15 +288,8 @@ board = "mps3-an536-freertos"
 # entry with it (nano-ros issue 3856 was about a hand-written entry dropping
 # it).
 domain_id = 2
-
-[image.an536.knobs.params]
-# The controller declares 149 parameters (MPC lateral + PID longitudinal);
-# the parameter store is a static pool, and below 149 declare_parameter()
-# fails at boot.
-max_parameters = 164
-[image.an536.knobs.executor]
-max_cbs = 16
+profile   = "RelWithDebInfo"
 # 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
-subscription_buffer_size = 65536
+knobs.executor.subscription_buffer_size = 65536

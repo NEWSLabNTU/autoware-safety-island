@@ -426,8 +426,9 @@ function zephyr_env() {
   fi
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
     # The S32Z270 board is this workspace's package
-    # (src/s32z270_zephyr_board); the nros CLI calls the configure makes
-    # outside this workspace find it through this path.
+    # (src/s32z270_zephyr_board). `nros build` finds it, but the configure it
+    # spawns asks `nros dev image board-facts`, which looks only in nano-ros's
+    # catalog and this path (re-checked at nano-ros 5b9e8844a4, after PR 3709).
     export NROS_EXTRA_BOARD_PATH="${ROOT_DIR}/actuation_module/src/s32z270_zephyr_board${NROS_EXTRA_BOARD_PATH:+:${NROS_EXTRA_BOARD_PATH}}"
   fi
 }
@@ -608,24 +609,14 @@ function build_freertos_nros() {
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
   export PATH="$(dirname "${nros_cli_bin}"):${PATH}"
 
-  # Cross toolchain (the ARMv8-R boards): prefer the SDK-provisioned
-  # arm-none-eabi-gcc (13.2 -- what nano-ros builds and tests these boards with). The system 10.3
-  # rejects the entry codegen's C++ designated initializers. Provision with:
-  #   (cd modules/nros && nros setup --tool arm-none-eabi-gcc)
-  local sdk_gcc_bin
-  sdk_gcc_bin=$(find "${NROS_HOME:-$HOME/.nros}/sdk/arm-none-eabi-gcc" \
-      -maxdepth 2 -type d -name bin 2>/dev/null | sort -Vr | head -1)
-  if [ -n "${sdk_gcc_bin}" ] && [ -x "${sdk_gcc_bin}/arm-none-eabi-gcc" ]; then
-    export PATH="${sdk_gcc_bin}:${PATH}"
-  fi
+  # The cross toolchain (the ARMv8-R boards) is the SDK store's pinned
+  # arm-none-eabi-gcc, which nano-ros's toolchain file resolves itself
+  # (nano-ros issue 1117); the configure prints which one it took. Provision
+  # with: (cd modules/nros && nros setup --tool arm-none-eabi-gcc)
 
-  # Native arguments to the CMake configure nros build drives.
-  #
-  # RelWithDebInfo (-O2 -g), the profile these images were always built with;
-  # nros build's CMake road defaults to Release (-O3, ~130 KB more text on
-  # an536), and `[image.<id>] profile` reaches only the cargo road (nano-ros
-  # issue 3899).
-  local native=(-DCMAKE_BUILD_TYPE=RelWithDebInfo)
+  # Native arguments to the CMake configure nros build drives. The build
+  # type is the image's `profile` (system.toml).
+  local native=()
   # The kernel and its port are provisioning facts, passed on only when the
   # machine states them: by default the board uses nano-ros's pinned kernel
   # and the upstream GCC/ARM_CRx_No_GIC port (link-complete). NXP hardware
