@@ -193,7 +193,7 @@ refusal: every double is a float literal, every integer an integer.
 - Done when: `actuation_param_profile.h` is gone, the YAML values reach
   the node on every lane (checked by `ros2 param get` on posix), all lanes
   green.
-- Status: done (2026-11-16); three sub-items wait on nano-ros.
+- Status: done (2026-11-16); two sub-items wait on nano-ros.
   - The values are `controller_bringup/config/`:
     `trajectory_follower_node.param.yaml` (16: control period, supervision
     timeouts and bounds, controller modes, the shared `ego_nearest_*`),
@@ -208,31 +208,33 @@ refusal: every double is a float literal, every integer an integer.
     `wheel_base`, `max_pitch_rad`, `min_pitch_rad`) stay inline. Every double
     is a float literal.
   - `.github/scripts/check-param-seeds.py` (posix CI phase 1d) refuses a
-    declared parameter no file seeds, a seeded one nobody declares, a param
-    file value of another type than the declaration (so the coming 4018 fix,
-    which refuses a mistyped launch value, is safe to pin), and an image whose
-    `max_parameters` is below the declared count (164 >= 149 on all 13).
-  - Boot check: `has_parameter("control_output")` (the last declared) must
-    hold, else "Safety Island parameters incomplete"; the posix, an536 and
-    FVP CI lanes forbid that line. It logs, not exits: the metadata probe runs
-    the constructor with a store smaller than 149 and must finish.
+    declared parameter no file seeds (the four arrays included), a seeded
+    one nobody declares, a param file value of another type than the
+    declaration (so the coming nano-ros refusal of a mistyped launch value is
+    safe to pin), and an image whose `max_parameters` is below the declared
+    count (164 >= 149 on all 13).
+  - The four steer-rate-limit arrays (`steer_rate_lim_dps_list_by_*`,
+    `*_list_for_steer_rate_lim`) are in `lateral/mpc.param.yaml`: a launch
+    list seeds as a typed array since nano-ros PR 4034.
+  - No island boot check: a declaration past the store's capacity stops the
+    boot in nano-ros (PR 4030) and the metadata probe's store holds 1024
+    (PR 4044), so the `has_parameter("control_output")` check and the CI
+    lanes' "Safety Island parameters incomplete" refusal went at the pin
+    move to ea94566e87.
   - Waiting on nano-ros, interim in place:
     - the C++ `declare_parameter()` defaults stay (same values as the files):
       the per-component metadata probe constructs the node with no launch
-      values and a small store, so a node declaring without defaults cannot
-      be probed. Goes with P8's census or a probe that seeds the image.
-    - the four steer-rate-limit arrays stay C++ defaults: a YAML list reaches
-      the store as one comma-joined string (type string, not double_array).
-      The checker exempts arrays and refuses one that is seeded.
-    - `ros2 param list` shows 64 of the 149 (the ListParameters reply caps at
-      64 names), so the readback below reads by name.
+      values, so a node declaring without defaults cannot be probed. Goes
+      with P8's census or a probe that seeds the image.
     - a param-file edit alone does not re-resolve the model (its
       `meta.inputs` omit `<param from>` files): locally, delete
       `build/nros/models/controller_bringup/system_model*.yaml` after editing
       `config/`. CI builds fresh.
   - Checks: on the posix image, all 149 parameters read back by name
-    (`~/get_parameters`) have the same type and value as on the pre-P3 image
-    (`ros2 param list` would show 64). The resolved models give the
+    (`~/get_parameters`) have the same type and value as on the pre-P3 image.
+    At ea94566e87 `ros2 param list /controller` on the posix image lists all
+    149, and `ros2 param get` reads the four steer-rate-limit lists back as
+    double arrays with the file's values. The resolved models give the
     `before` profile exactly the old `ACTUATION_PARAM_PROFILE_BEFORE` values
     (stopped_acc -0.4, emergency_acc -0.75, emergency_jerk -1.0, min_acc
     -0.75, min_jerk -1.0), and the CARLA image its three args, with every
