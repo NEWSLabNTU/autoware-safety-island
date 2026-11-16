@@ -273,6 +273,27 @@ max_cbs = 16
 # The controller receives 8.8 KiB trajectory samples.
 subscription_buffer_size = 16384
 
+# The binding variant the CARLA image resolves (nano-ros: a launch resolved
+# with arguments must be declared here).
+[[model]]
+launch = "system.launch.xml"
+out    = "system_carla_model.yaml"
+args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
+
+# The FreeRTOS POSIX simulator for the CARLA integration run
+# (integration/carla/): the same image, bound to the CARLA ego's vehicle
+# (swb's tesla_model3) and swb's CARLA PID pitch limits.
+[image.freertos-posix-carla]
+board  = "freertos-posix"
+launch = "system.launch.xml"
+args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
+
+[image.freertos-posix-carla.knobs.params]
+max_parameters = 164
+[image.freertos-posix-carla.knobs.executor]
+max_cbs = 16
+subscription_buffer_size = 16384
+
 # Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree
 # GCC/ARM_CRx_No_GIC port; hardware runs the NXP-provisioned GCC/ARM_CR52_GIC

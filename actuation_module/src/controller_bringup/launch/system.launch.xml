@@ -44,6 +44,15 @@
   <arg name="trajectory_source" default=""/>
   <arg name="legacy_control_cmd" default=""/>
   <arg name="operation_mode_durability" default=""/>
+  <!-- Vehicle and controller tuning a deployment changes. The defaults are the
+       controller's compiled ones (Autoware's sample_vehicle, upstream PID
+       pitch limits), so an image that binds none of them runs as before. An
+       [image.<id>] args table in system.toml binds them per image, e.g. the
+       CARLA image (tesla_model3: wheel_base 3.005 m; swb's CARLA profile's
+       PID pitch limits +-0.2 rad). -->
+  <arg name="wheel_base" default="2.74"/>
+  <arg name="max_pitch_rad" default="0.1"/>
+  <arg name="min_pitch_rad" default="-0.1"/>
 
   <node pkg="controller_pkg" exec="controller" name="controller">
     <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
@@ -65,6 +74,9 @@
          without editing vendored Autoware, and so the value is owned by the
          deployment rather than a C++ literal. -->
     <param name="mpc_prediction_horizon" value="50"/>
+    <param name="wheel_base" value="$(var wheel_base)"/>
+    <param name="max_pitch_rad" value="$(var max_pitch_rad)"/>
+    <param name="min_pitch_rad" value="$(var min_pitch_rad)"/>
 
     <!-- I3 subscriptions (5) — from= MUST match node_identity.hpp exactly. -->
     <remap from="/vehicle/status/steering_status" to="/vehicle/status/steering_status"/>
