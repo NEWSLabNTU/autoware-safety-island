@@ -311,13 +311,15 @@ function require_nros_checkout() {
 # So: skip the gate ONLY when modules/nros is CLEAN, which is exactly the case
 # the gate cannot be protecting — we are consuming a pinned upstream and have
 # edited nothing. If the submodule is dirty, someone IS developing nano-ros
-# here, the gate is doing its job, and we leave it alone.
+# here, the gate is doing its job, and we leave it alone. Nested submodule
+# pointers do not count: a nested checkout drifting from its gitlink (micro-cdr,
+# nuttx) is no nano-ros edit, and it used to keep the gate on.
 function build_nros_cli() {
   local manifest="$1"
   echo -e "${GREEN}Building host nros CLI...${NC}"
   cargo build --release --manifest-path "${manifest}" -p nros-cli
 
-  if [ -z "$(git -C "${ROOT_DIR}/modules/nros" status --porcelain 2>/dev/null)" ]; then
+  if [ -z "$(git -C "${ROOT_DIR}/modules/nros" status --porcelain --ignore-submodules=all 2>/dev/null)" ]; then
     export NROS_SKIP_STALE_CHECK=1
   else
     echo -e "${YELLOW}modules/nros has local changes — leaving the CLI staleness gate ON.${NC}"
