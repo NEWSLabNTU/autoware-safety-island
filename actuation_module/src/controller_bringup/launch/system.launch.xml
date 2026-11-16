@@ -41,36 +41,32 @@
   <arg name="trajectory_source" default=""/>
   <arg name="legacy_control_cmd" default=""/>
   <arg name="operation_mode_durability" default=""/>
-  <!-- Vehicle and controller tuning a deployment changes. The defaults are the
-       controller's compiled ones (Autoware's sample_vehicle, upstream PID
-       pitch limits), so an image that binds none of them runs as before. An
-       [image.<id>] args table in system.toml binds them per image, e.g. the
-       CARLA image (tesla_model3: wheel_base 3.005 m; swb's CARLA profile's
-       PID pitch limits +-0.2 rad). -->
+  <!-- Vehicle and controller tuning a deployment changes (Autoware's
+       sample_vehicle, upstream PID pitch limits). An [image.<id>] args table
+       in system.toml binds them per image, e.g. the CARLA image
+       (tesla_model3: wheel_base 3.005 m; swb's CARLA profile's PID pitch
+       limits +-0.2 rad). -->
   <arg name="wheel_base" default="2.74"/>
   <arg name="max_pitch_rad" default="0.1"/>
   <arg name="min_pitch_rad" default="-0.1"/>
+  <!-- Actuation profile: after (tuned, the default) | before (the CES 2026
+       untuned baseline). Selects config/longitudinal/pid_profile_<p>.param.yaml. -->
+  <arg name="actuation_param_profile" default="after"/>
 
   <node pkg="controller_pkg" exec="controller" name="controller">
+    <!-- Every other parameter's value, as upstream Autoware's param files
+         state them (config/). An inline <param> below wins over a file. -->
+    <param from="$(dirname)/../config/trajectory_follower_node.param.yaml"/>
+    <param from="$(dirname)/../config/vehicle/vehicle_info.param.yaml"/>
+    <param from="$(dirname)/../config/lateral/mpc.param.yaml"/>
+    <param from="$(dirname)/../config/longitudinal/pid.param.yaml"/>
+    <param from="$(dirname)/../config/longitudinal/pid_profile_$(var actuation_param_profile).param.yaml"/>
     <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
     <param name="control_output" value="$(var control_output)"/>
     <param name="supervision_mode" value="$(var supervision_mode)"/>
     <param name="trajectory_source" value="$(var trajectory_source)"/>
     <param name="legacy_control_cmd" value="$(var legacy_control_cmd)"/>
     <param name="operation_mode_durability" value="$(var operation_mode_durability)"/>
-    <!-- Phase 4 profiling — explicit control period (s). The code default is
-         0.15 (a TODO from the port; stock Autoware runs 0.03). Declared here
-         so the deployment, not a C++ literal, owns the control rate. -->
-    <param name="ctrl_period" value="0.03"/>
-    <!-- phase-7 W12 — MPC prediction horizon (steps; lookahead is
-         N * mpc_prediction_dt, so 50 * 0.1 = 5.0 s). Compiled default is 50.
-         Seeded here because W11 identified it as the dominant cost lever:
-         the QP builds Cex (dim_y*N x dim_x*N) and Qex (dim_y*N square), and
-         H = B'C'QCB + R costs ~1.5M double MACs at N=50, which is where the
-         227.5 ms mpc_lateral phase goes. Declared so the sweep can vary it
-         without editing vendored Autoware, and so the value is owned by the
-         deployment rather than a C++ literal. -->
-    <param name="mpc_prediction_horizon" value="50"/>
     <param name="wheel_base" value="$(var wheel_base)"/>
     <param name="max_pitch_rad" value="$(var max_pitch_rad)"/>
     <param name="min_pitch_rad" value="$(var min_pitch_rad)"/>

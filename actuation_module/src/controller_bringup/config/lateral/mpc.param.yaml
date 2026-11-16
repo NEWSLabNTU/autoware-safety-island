@@ -1,0 +1,79 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# MPC lateral controller (autoware_launch's
+# config/control/trajectory_follower/lateral/mpc.param.yaml shape).
+#
+# Loaded by launch/system.launch.xml (<param from>) and baked into every
+# image at build time; these values are what the island runs with. The C++
+# declare_parameter() defaults state the same values only because nano-ros's
+# metadata probe constructs the node with no launch values (phase 15 P3).
+# .github/scripts/check-param-seeds.py checks that every declared parameter
+# is seeded here or in the launch file, with a value of its declared type:
+# every double is a float literal (1.0, not 1).
+#
+# Not here: the four steer-rate-limit lists (steer_rate_lim_dps_list_by_*,
+# *_list_for_steer_rate_lim). At nano-ros 5b9e8844a4 a YAML list reaches the
+# store as one comma-joined STRING, not a double array, so they keep their
+# C++ defaults until nano-ros seeds arrays as arrays.
+/**:
+  ros__parameters:
+    enable_path_smoothing: false
+    path_filter_moving_ave_num: 25
+    curvature_smoothing_num_traj: 15
+    curvature_smoothing_num_ref_steer: 15
+    traj_resample_dist: 0.1
+    extend_trajectory_for_end_yaw_control: false
+    admissible_position_error: 5.0
+    admissible_yaw_error_rad: 1.57
+    use_steer_prediction: false
+    vehicle_model_steer_tau: 0.27
+    stop_state_entry_ego_speed: 0.001
+    stop_state_entry_target_speed: 0.001
+    converged_steer_rad: 0.1
+    keep_steer_control_until_converged: true
+    new_traj_duration_time: 1.0
+    new_traj_end_dist: 0.3
+    mpc_converged_threshold_rps: 0.01
+    input_delay: 0.0
+    steering_offset:
+      enable_auto_steering_offset_removal: false
+      update_vel_threshold: 5.56
+      update_steer_threshold: 0.035
+      steering_offset_limit: 0.02
+      average_num: 1000
+    steering_lpf_cutoff_hz: 10.0
+    error_deriv_lpf_cutoff_hz: 10.0
+    use_delayed_initial_state: true
+    publish_debug_trajectories: false
+    vehicle_model_type: kinematics
+    qp_solver_type: unconstraint_fast
+    # Prediction horizon (steps; lookahead is N * mpc_prediction_dt = 5.0 s).
+    # The dominant cost lever (phase-7 W11): the QP builds Cex (dim_y*N x
+    # dim_x*N) and Qex (dim_y*N square), and H = B'C'QCB + R costs ~1.5M
+    # double MACs at N=50.
+    mpc_prediction_horizon: 50
+    mpc_prediction_dt: 0.1
+    mpc_weight_lat_error: 1.0
+    mpc_weight_heading_error: 0.0
+    mpc_weight_heading_error_squared_vel: 0.3
+    mpc_weight_steering_input: 1.0
+    mpc_weight_steering_input_squared_vel: 0.25
+    mpc_weight_lat_jerk: 0.1
+    mpc_weight_steer_rate: 0.0
+    mpc_weight_steer_acc: 0.000001
+    mpc_weight_terminal_lat_error: 1.0
+    mpc_weight_terminal_heading_error: 0.1
+    mpc_low_curvature_weight_lat_error: 0.1
+    mpc_low_curvature_weight_heading_error: 0.0
+    mpc_low_curvature_weight_heading_error_squared_vel: 0.3
+    mpc_low_curvature_weight_steering_input: 1.0
+    mpc_low_curvature_weight_steering_input_squared_vel: 0.25
+    mpc_low_curvature_weight_lat_jerk: 0.0
+    mpc_low_curvature_weight_steer_rate: 0.0
+    mpc_low_curvature_weight_steer_acc: 0.000001
+    mpc_low_curvature_thresh_curvature: 0.0
+    mpc_zero_ff_steer_deg: 0.5
+    mpc_acceleration_limit: 2.0
+    mpc_velocity_time_constant: 0.3
+    mpc_min_prediction_length: 5.0

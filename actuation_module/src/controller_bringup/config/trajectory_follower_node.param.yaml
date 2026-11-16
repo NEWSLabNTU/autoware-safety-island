@@ -1,0 +1,56 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The trajectory follower node's own parameters (autoware_launch's
+# config/control/trajectory_follower/trajectory_follower_node.param.yaml plus
+# the Safety Island supervision settings). ego_nearest_* are shared by the
+# lateral and longitudinal controllers, as upstream's common.param.yaml.
+# The output mode and the supervision selection are launch args, not here.
+#
+# Loaded by launch/system.launch.xml (<param from>) and baked into every
+# image at build time; these values are what the island runs with. The C++
+# declare_parameter() defaults state the same values only because nano-ros's
+# metadata probe constructs the node with no launch values (phase 15 P3).
+# .github/scripts/check-param-seeds.py checks that every declared parameter
+# is seeded here or in the launch file, with a value of its declared type:
+# every double is a float literal (1.0, not 1).
+/**:
+  ros__parameters:
+    # Control period (s); stock Autoware runs 0.03. nano-ros derives the
+    # control tier's spin period from it (launch/system.contract.yaml).
+    ctrl_period: 0.03
+    timeout_thr_sec: 0.5
+    # Per-source arrival-age timeouts (s), the measured proposal in SI #62:
+    #  - candidate (trajectory in SI_CONTROL, DrivingCommand in VP_CONTROL):
+    #    the VP output maximum gap is 627-682 ms measured on the CARLA rig,
+    #    so 0.5 would false-trip;
+    #  - ego feedback (odometry + acceleration at 20 Hz): within the agreed
+    #    0.3-0.5 band (measured max gap 116 ms);
+    #  - steering report at 10 Hz;
+    #  - operation mode: no age limit. It is published only when the mode
+    #    changes and the deployment retains it (transient_local), so its age
+    #    says nothing about liveness. Only "seen at least once" applies; a dead
+    #    Autoware is caught by the trajectory watchdog;
+    #  - VisionPilot heartbeat (one sample per VP command). Not stale before
+    #    its first sample, so a board that boots without VisionPilot never
+    #    stops a car nobody drives.
+    source_timeout_candidate_s: 1.0
+    source_timeout_ego_s: 0.4
+    source_timeout_steering_s: 0.5
+    source_timeout_opmode_s: .inf
+    source_timeout_heartbeat_s: 0.5
+    # Actuation sanity bounds on the VP command in VP_CONTROL: the supervisor
+    # never recomputes VP's decision, but rejects a request it could not
+    # actuate.
+    max_steering_rad: 0.6
+    max_abs_accel_mps2: 6.0
+    max_abs_velocity_mps: 60.0
+    # SI_STOP deceleration demand (m/s^2).
+    stop_decel_mps2: 1.5
+    # How long an operator re-enable request stays pending while a source is
+    # stale (s).
+    reenable_window_s: 5.0
+    lateral_controller_mode: mpc
+    longitudinal_controller_mode: pid
+    ego_nearest_dist_threshold: 0.0
+    ego_nearest_yaw_threshold: 0.0
