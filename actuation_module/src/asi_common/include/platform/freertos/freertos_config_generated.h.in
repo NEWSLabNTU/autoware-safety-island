@@ -6,7 +6,6 @@
 
 // Logging
 #define CONFIG_LOG_LEVEL @CONFIG_LOG_LEVEL@
-#define CONFIG_LOG_THROTTLE_RATE @CONFIG_LOG_THROTTLE_RATE@
 
 // The CAN control-command output is built in (the mock / stub / SocketCAN
 // backend platform_can.h selects); the launch arg control_output selects

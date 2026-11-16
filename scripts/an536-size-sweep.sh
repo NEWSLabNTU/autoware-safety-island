@@ -126,7 +126,7 @@ SMALL=$!
 
 # ---- health gate ----
 # The island must stop reporting the small topics missing. Each wait line is
-# throttled to CONFIG_LOG_THROTTLE_RATE (3 s), so 8 s of quiet on a topic that
+# throttled to 3 s (RCLCPP_INFO_THROTTLE), so 8 s of quiet on a topic that
 # is being published at 40 Hz means it is genuinely arriving.
 say "health gate: waiting for the small topics to land…"
 sleep 12

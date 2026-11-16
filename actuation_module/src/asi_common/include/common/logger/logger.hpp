@@ -8,28 +8,26 @@
 // old ASI-local implementation (colors, HH:MM:SS.mmm prefix, stderr) is
 // gone — timestamps/format now come from the platform sink.
 //
+// Throttled lines are nano-ros's `RCLCPP_*_THROTTLE(logger, clock, ms, ...)`
+// at the call site (upstream's macro, measured on the clock argument), not
+// a helper here.
+//
 // Kept ASI-side (upstream has no equivalents yet):
-//   * `log_*_throttle` — nros_log has no throttle macros (noted in
-//     documentation/roadmap/phase-5-legacy-cleanup.md W5).
-//   * CONFIG_LOG_LEVEL compile-time gating — zero-cost below level; the
-//     nros per-logger runtime threshold defaults to INFO and the C API
-//     exposes no setter, so `log_debug`/PROFILE emit at INFO severity and
-//     ASI's compile-time gate stays the debug on/off switch.
+//   * CONFIG_LOG_LEVEL compile-time gating -- zero-cost below level; the
+//     nros per-logger runtime threshold defaults to INFO, so `log_debug`/
+//     PROFILE emit at INFO severity and ASI's compile-time gate stays the
+//     debug on/off switch.
+//   * the Zephyr printk bypass in vemit_ (nano-ros issue 2165, below).
 
 #include <chrono>
-#include <map>
 #include <cstdio>
 #include <cstdarg>
-#include <pthread.h>
 #include "platform/platform_config.h"
 
 #include <rclc/log.h>
 #if defined(PLATFORM_ZEPHYR)
 #include <zephyr/sys/printk.h>
 #endif
-
-#define log_info_throttle(msg, ...) common::logger::log_info_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
-#define log_warn_throttle(msg, ...) common::logger::log_warn_throttle_(__FILE__, __LINE__, msg, ##__VA_ARGS__)
 
 namespace common::logger {
 
@@ -112,79 +110,6 @@ inline void log_debug(const char * format, ...) {
     vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
     va_end(args);
     #endif
-}
-
-inline void log_info_throttle_(const char * file, int line, const char * format, ...)
-{
-    using clock = std::chrono::steady_clock;
-    using time_point = clock::time_point;
-    using duration = std::chrono::duration<double>;
-
-    static pthread_mutex_t mutex_info = PTHREAD_MUTEX_INITIALIZER;
-    static std::map<std::pair<const char*, int>, time_point> last_print_times;
-
-    const double interval_seconds = CONFIG_LOG_THROTTLE_RATE;
-    const auto location_key = std::make_pair(file, line);
-    const auto now = clock::now();
-    bool should_print = false;
-
-    pthread_mutex_lock(&mutex_info);
-    auto it = last_print_times.find(location_key);
-    if (it == last_print_times.end()) {
-        should_print = true;
-        last_print_times.emplace(location_key, now);
-    } else {
-        const duration time_since_last_print = now - it->second;
-        if (time_since_last_print.count() >= interval_seconds) {
-            should_print = true;
-            it->second = now;
-        }
-    }
-    pthread_mutex_unlock(&mutex_info);
-
-    if (should_print) {
-        va_list args;
-        va_start(args, format);
-        vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
-        va_end(args);
-    }
-}
-
-inline void log_warn_throttle_(const char * file, int line, const char * format, ...)
-{
-    using clock = std::chrono::steady_clock;
-    using time_point = clock::time_point;
-    using duration = std::chrono::duration<double>;
-
-    static std::map<std::pair<const char*, int>, time_point> last_print_times_warn;
-    static pthread_mutex_t mutex_warn = PTHREAD_MUTEX_INITIALIZER;
-
-    const double interval_seconds = CONFIG_LOG_THROTTLE_RATE;
-    const auto location_key = std::make_pair(file, line);
-    const auto now = clock::now();
-    bool should_print = false;
-
-    pthread_mutex_lock(&mutex_warn);
-    auto it = last_print_times_warn.find(location_key);
-
-    if (it == last_print_times_warn.end()) {
-        should_print = true;
-        last_print_times_warn.emplace(location_key, now);
-    } else {
-        const duration time_since_last_print = now - it->second;
-        if (time_since_last_print.count() >= interval_seconds) {
-            should_print = true;
-            it->second = now;
-        }
-    }
-    pthread_mutex_unlock(&mutex_warn);
-
-    if (should_print) {
-        va_list args;
-        va_start(args, format);
-        vemit_(RCLC_LOG_SEVERITY_WARN, format, args);
-        va_end(args);
-    }
 }
 
 } // namespace common::logger

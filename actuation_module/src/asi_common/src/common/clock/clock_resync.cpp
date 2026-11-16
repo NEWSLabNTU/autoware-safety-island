@@ -84,9 +84,11 @@ static void resync_thread(void *, void *, void *)
         double correction_s = 0.0;
         const int res = platform_sync_clock_via_sntp(&correction_s);
         if (res < 0) {
-            // Throttled: an unreachable server must not turn into a log flood,
-            // and the clock simply keeps its previous epoch.
-            log_warn_throttle("SNTP re-sync failed (%d); keeping the current epoch", res);
+            // One line per failed attempt: the loop above already paces at
+            // CONFIG_ASI_SNTP_RESYNC_INTERVAL_S (>= 1 s of real time), so an
+            // unreachable server is no log flood, and the clock simply keeps
+            // its previous epoch.
+            log_warn("SNTP re-sync failed (%d); keeping the current epoch", res);
             continue;
         }
 
