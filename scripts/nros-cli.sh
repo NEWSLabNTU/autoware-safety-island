@@ -93,15 +93,29 @@ nros_cli_select() {
       echo "nros-cli: nano-ros checkout missing at modules/nros (git submodule update --init modules/nros)." >&2
       return 1
     fi
-    # Always run cargo: a fresh CLI is a no-op, and any partial check misses
-    # part of the CLI's real input closure.
-    cargo build --release --manifest-path "${nros_repo}/packages/cli/Cargo.toml" -p nros-cli
-    cargo build --release \
-      --manifest-path "${nros_repo}/packages/cli/nros-launch-resolve/Cargo.toml"
-    mkdir -p "${nros_repo}/packages/cli/target/release"
-    ln -sf "${nros_repo}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
-           "${nros_repo}/packages/cli/target/release/nros-launch-resolve"
     NROS_CLI="${nros_repo}/packages/cli/target/release/nros"
+    # Run cargo: a partial check misses part of the CLI's real input closure.
+    # But cargo is not a no-op on a second call: this function puts the CLI on
+    # PATH and pyo3 rebuilds on a PATH change, and cargo-nano-ros watches all
+    # of packages/ (its own target/ included), so a CI lane that selects, then
+    # runs build.sh (which selects again), rebuilt both for ~2 min. A parent
+    # that built this same clean commit already exports NROS_CLI_SOURCE_BUILT.
+    local built_for=""
+    if [ -z "$(git -C "${nros_repo}" status --porcelain --ignore-submodules=all 2>/dev/null)" ]; then
+      built_for="$(git -C "${nros_repo}" rev-parse HEAD 2>/dev/null || true)"
+    fi
+    if [ -n "${built_for}" ] && [ "${NROS_CLI_SOURCE_BUILT:-}" = "${built_for}" ] \
+       && [ -x "${NROS_CLI}" ] && [ -x "$(dirname "${NROS_CLI}")/nros-launch-resolve" ]; then
+      echo "nros-cli: source CLI already built for ${built_for} by this run"
+    else
+      cargo build --release --manifest-path "${nros_repo}/packages/cli/Cargo.toml" -p nros-cli
+      cargo build --release \
+        --manifest-path "${nros_repo}/packages/cli/nros-launch-resolve/Cargo.toml"
+      mkdir -p "${nros_repo}/packages/cli/target/release"
+      ln -sf "${nros_repo}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
+             "${nros_repo}/packages/cli/target/release/nros-launch-resolve"
+      export NROS_CLI_SOURCE_BUILT="${built_for}"
+    fi
     # The CLI's staleness gate guards a nano-ros developer against a CLI older
     # than sources they just edited. Our own build writes into the stamped tree
     # after the CLI is built (`nros configure`), so on a CLEAN checkout it would
