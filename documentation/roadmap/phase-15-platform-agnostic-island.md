@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main ea94566e87 and built
-with `--dev-cli`; there P4 is done too.
+On branch `nano-ros-next` nano-ros is pinned at main e845661f0b and the
+CLI is built from source; there P4 is done too.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -66,17 +66,44 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main ea94566e87 (2026-11-16), 31 commits past the nros11 tag
-(09219edc75), built with `./build.sh --dev-cli` / `NROS_DEV_CLI=1`: a
+nano-ros main e845661f0b (2026-11-17), past the nros11 tag (09219edc75).
+Over ea94566e87 it adds PR 4063 (phase-567 W4, an island-shaped workspace in
+nano-ros's merge queue) and 7f2e306c13 (issue 2644, a C + Rust image with no
+C++ source configures and seeds its bounds); the island needed no change for
+either.
+
+Earlier on this branch, ea94566e87 (2026-11-16): a
 declaration with no store slot stops the boot (PR 4030, issue 2634), a launch
 list parameter seeds as a typed array (PR 4034, 2638), `RCLCPP_*_THROTTLE` on
 the clock argument plus `_ONCE` / `_SKIPFIRST` (PR 4042, 2636),
 `list_parameters` past 64 names with rclcpp's prefix and depth filtering
-(PR 4043, 2639), and a metadata probe store of 1024 (PR 4044, 2640). The
-launch resolver is rebuilt with it (`just setup-launch-resolve`, or the
-dev CLI path's own build). Every
+(PR 4043, 2639), and a metadata probe store of 1024 (PR 4044, 2640). Every
 param file and launch value was re-checked for the coming type-mismatch
 refusal: every double is a float literal, every integer an integer.
+
+### How nano-ros-next is built and tested
+
+- `nros_cli_select` (scripts/nros-cli.sh) with `NROS_DEV_CLI` unset compares
+  `modules/nros` with the tag of the release `nros-toolchain.toml` pins
+  (fetching that one tag when a narrow clone lacks it). Here the two differ,
+  so it builds the CLI and the launch resolver from `modules/nros` and logs
+  `nros-cli: modules/nros is <sha>, not release nros-<v> (<tag sha>):
+  building the source CLI`. No flag is needed: `./build.sh` and every CI lane
+  take the source path on this branch, and the release path on `nano-ros`,
+  where the submodule is the tag. `NROS_DEV_CLI=1` forces source,
+  `NROS_DEV_CLI=0` forces release (and refuses this checkout).
+- `nros-toolchain.toml` keeps `0.6.0-nros11`: it is only the comparison point
+  until nros12; the submodule and `west.yml` move together (LOCKSTEP).
+- After a pin bump: `git -C modules/nros submodule update --init
+  packages/cli/third-party/play_launch`, then `just setup-launch-resolve` in
+  `modules/nros` (or let the source path's own cargo build do it).
+- CI: `build-ci.yml` runs on push to `main` only, so a `nano-ros-next` run is
+  dispatched: `gh workflow run build-ci.yml -R
+  NEWSLabNTU/autoware-safety-island --ref nano-ros-next`. At e845661f0b run
+  43906450811 is green on all three lanes (Zephyr FVP, FreeRTOS POSIX,
+  FreeRTOS AN536), each on the source CLI.
+- `build.sh` still states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on every
+  configure, until nano-ros stops caching it.
 
 ## Steps
 
@@ -459,8 +486,8 @@ refusal: every double is a float literal, every integer an integer.
     5b9e8844a4: 2109592 / 43984 / 4556643). nros11's 34 commits past
     5b9e8844a4 needed no island change beyond this step (the island creates
     no rclc node, the one break they carry).
-- The nros12 work, on branch `nano-ros-next` (built with `--dev-cli`): the
-  main pin ea94566e87; the steer-rate arrays in `lateral/mpc.param.yaml`
+- The nros12 work, on branch `nano-ros-next` (source CLI, chosen
+  automatically): the main pin e845661f0b; the steer-rate arrays in `lateral/mpc.param.yaml`
   (nano-ros PR 4034); dropping the `has_parameter("control_output")` boot
   check (PRs 4030, 4044) and the ListParameters 64-name note (PR 4043); P4
   on `RCLCPP_*_THROTTLE` (PR 4042). It lands when nros12 ships, with the pin
