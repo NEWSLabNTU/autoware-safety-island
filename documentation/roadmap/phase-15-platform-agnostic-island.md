@@ -100,8 +100,19 @@ refusal: every double is a float literal, every integer an integer.
 - CI: `build-ci.yml` runs on push to `main` only, so a `nano-ros-next` run is
   dispatched: `gh workflow run build-ci.yml -R
   NEWSLabNTU/autoware-safety-island --ref nano-ros-next`. At e845661f0b run
-  43906450811 is green on all three lanes (Zephyr FVP, FreeRTOS POSIX,
-  FreeRTOS AN536), each on the source CLI.
+  43919140736 is green on all three lanes (Zephyr FVP 22 min, FreeRTOS
+  POSIX 11, FreeRTOS AN536 11), each on the source CLI.
+- The source CLI is built once per run: a select exports
+  `NROS_CLI_SOURCE_BUILT=<commit>` on a clean checkout, and a child select
+  (build.sh under a lane) of the same commit skips cargo. Without it every
+  select rebuilt the CLI and resolver for about 2 min (pyo3 reruns on the
+  PATH the select changes; cargo-nano-ros's build script watches all of
+  `packages/`, target/ included); the Zephyr lane selects seven times and
+  took 35 min.
+- The one contract (`controller_bringup/launch/system.contract.yaml`) is
+  already in rlm v0.3.27's spellings: it parses, and `migrate` finds 0
+  edits (a node's own `paths:` keep the word), so nano-ros PR 4081 needs no
+  island change.
 - `build.sh` still states `-D_NANO_ROS_CODEGEN_TOOL=<cli>` on every
   configure, until nano-ros stops caching it.
 
