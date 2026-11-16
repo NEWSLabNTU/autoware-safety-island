@@ -52,7 +52,7 @@ scripts/                     Provisioning, demo runners, trace tools
 demo/                        Docker Compose demo (Autoware 2.0.0 + bridge)
 documentation/
   design/                    Design notes
-  roadmap/                   Phase records (phase-14 = current conventions work)
+  roadmap/                   Phase records (phase-15 = current platform-agnostic work)
   user_guide/                Sphinx user docs
 modules/nros/                nano-ros (submodule; move with west.yml)
 zephyr/                      Zephyr v3.7.0 - do NOT edit
@@ -99,7 +99,7 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
   autowarefoundation/autoware-safety-island `main`.
 - Moving the nano-ros pin: update modules/nros and the nano-ros `revision`
   in actuation_module/west.yml together (the FVP lane asserts the lockstep).
-- Current work: documentation/roadmap/phase-14-nano-ros-conventions.md.
+- Current work: documentation/roadmap/phase-15-platform-agnostic-island.md.
 - Keep MPC / PID / CAN application logic in C++. Keep CAN tests
   middleware-independent.
 
