@@ -45,7 +45,14 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-17: e845661f0b, past 4063 (phase-567 W4: an
+    # ON main, 2026-11-17: 5871cd6e45, past 4080 (89d696e5d7: nros build
+    # passes its own -D_NANO_ROS_CODEGEN_TOOL), 4039 (f29f50aa0d: fabsl and
+    # copysignl on newlib aarch64), 4086 (board s32z270-rtu0-zephyr, the
+    # revision in west_board), 4066 (board-facts finds workspace board
+    # packages), 4096 (board s32z270-freertos-rtd), 4090, 4095 and 4081
+    # (play_launch 0.36.0, rlm v0.3.27). Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-17: e845661f0b, past 4063 (phase-567 W4: an
     # island-shaped workspace in the merge queue) and 7f2e306c13 (issue 2644:
     # a C + Rust image with no C++ source configures and seeds its bounds).
     # Branch nano-ros-next only; the CLI comes from source automatically
@@ -122,7 +129,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: e845661f0b4ed96f1b75509722864d49cf11b4d9
+      revision: 5871cd6e450473eb0b9d7783f4c74051b48c1321
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
