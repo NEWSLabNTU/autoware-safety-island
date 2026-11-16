@@ -408,6 +408,9 @@ public:
   //!< Constructor.
   explicit MPC(AsiNode & node);
 
+  rclcpp::Logger m_logger;          // Logger for the throttled warnings.
+  rclcpp::Clock::SharedPtr m_clock;  // The node's clock, for their throttle.
+
   /**
    * @brief Calculate control command using the MPC algorithm.
    * @param current_steer Current steering report.

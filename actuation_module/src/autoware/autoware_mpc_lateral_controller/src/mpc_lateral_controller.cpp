@@ -38,6 +38,7 @@ namespace autoware::motion::control::mpc_lateral_controller
 {
 
 MpcLateralController::MpcLateralController(AsiNode & node)
+: logger_(node.get_logger()), clock_(node.get_clock())
 {
   const auto dp_int = [&](const std::string & s) { return node.declare_parameter<int>(s); };
   const auto dp_bool = [&](const std::string & s) { return node.declare_parameter<bool>(s); };
@@ -356,19 +357,19 @@ bool MpcLateralController::isSteerConverged(const LateralMsg & cmd) const
 bool MpcLateralController::isReady(const trajectory_follower::InputData & input_data)
 {
   if (!m_mpc->hasVehicleModel()) {
-    log_info_throttle("MPC does not have a vehicle model");
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 3000, "MPC does not have a vehicle model");
     return false;
   }
   if (!m_mpc->hasQPSolver()) {
-    log_info_throttle("MPC does not have a QP solver");
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 3000, "MPC does not have a QP solver");
     return false;
   }
   if (input_data.current_trajectory.points.size() < 3) {
-    log_info_throttle("trajectory size is zero.");
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 3000, "trajectory size is zero.");
     return false;
   }
   if (!isValidTrajectory(input_data.current_trajectory)) {
-    log_info_throttle("trajectory is invalid.");
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 3000, "trajectory is invalid.");
     return false;
   }
 

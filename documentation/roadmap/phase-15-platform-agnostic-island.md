@@ -6,7 +6,7 @@ released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main ea94566e87 and built
-with `--dev-cli`.
+with `--dev-cli`; there P4 is done too.
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -262,6 +262,35 @@ refusal: every double is a float literal, every integer an integer.
 - Done when: no `std::map` / pthread mutex in the logger, CI greps still
   see "Actuation Safety Island is Live" through nros_log (printk only while
   2165 is open), all lanes green.
+- Status: done (2026-11-16) at nano-ros ea94566e87 (4010 fixed by PR 4042);
+  two sub-items wait on nano-ros.
+  - Every throttled line is upstream's `RCLCPP_{INFO,WARN}_THROTTLE(logger,
+    clock, 3000, ...)`, measured on the clock argument: the node's
+    `get_logger()` / `*get_clock()` in `controller_node.cpp` (17 sites);
+    `logger_` / `clock_` members taken from the node in
+    `PidLongitudinalController` (3) and `MpcLateralController` (4), and
+    `m_logger` / `m_clock` in `MPC` (1), as upstream Autoware holds them;
+    `rclcpp::get_logger("mpc_utils")` and a steady `rclcpp::Clock` in the
+    free function `calcNearestPoseInterp` (2). The window stays 3 s. The
+    SNTP re-sync failure (`clock_resync.cpp`) is a plain `log_warn`: its loop
+    already paces at `CONFIG_ASI_SNTP_RESYNC_INTERVAL_S` (>= 1 s).
+  - `logger.hpp` lost `log_{info,warn}_throttle`, the `std::map` and the two
+    pthread mutexes; `CONFIG_LOG_THROTTLE_RATE` went from the Kconfig, the
+    FreeRTOS config header and asi_common's CMake. No site needed `_ONCE` or
+    `_SKIPFIRST`: the island had no hand-rolled once or skip-first logging.
+  - Waiting on nano-ros:
+    - 2165 is open, so the `log_*` mapping keeps its Zephyr printk bypass and
+      the controller's own unthrottled lines stay `log_*`: on the SMP FVP an
+      nros_log record past the first four never reaches the console, and the
+      FVP lane greps "Actuation Safety Island is Live". The throttled lines go
+      through nros_log on every target, so on the FVP they are lost with the
+      rest until 2165 is fixed; no FVP check greps one (posix and an536 grep
+      "Control is skipped since input data is not ready.").
+    - the level stays `CONFIG_LOG_LEVEL` (compile time: `log_debug` and
+      `PROFILE_*` compile out below 2). `knobs.log.max_level` is a ceiling
+      nros_log checks at run time, after the call site has evaluated its
+      arguments, so it would not keep the per-cycle debug work out of the
+      control loop.
 
 ### P5. Clock - M
 

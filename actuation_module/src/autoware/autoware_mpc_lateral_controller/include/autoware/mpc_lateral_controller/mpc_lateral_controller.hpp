@@ -45,6 +45,9 @@ public:
   virtual ~MpcLateralController();
 
 private:
+  rclcpp::Logger logger_;
+  rclcpp::Clock::SharedPtr clock_;
+
   std::shared_ptr<Publisher<TrajectoryMsg_Raw>> m_pub_predicted_traj;
   std::shared_ptr<Publisher<Float32MultiArrayStampedMsg>> m_pub_debug_values;
   std::shared_ptr<Publisher<Float32StampedMsg>> m_pub_steer_offset;

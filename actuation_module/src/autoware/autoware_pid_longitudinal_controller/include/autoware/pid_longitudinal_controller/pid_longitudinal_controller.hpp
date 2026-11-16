@@ -50,6 +50,9 @@ public:
   explicit PidLongitudinalController(AsiNode & node);
 
 private:
+  rclcpp::Logger logger_;
+  rclcpp::Clock::SharedPtr clock_;
+
   struct Motion
   {
     double vel{0.0};

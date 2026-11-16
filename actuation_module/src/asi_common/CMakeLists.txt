@@ -60,7 +60,6 @@ else()
   # controller's FreeRTOS logger, network and CAN defaults (the CAN output is
   # built in, so the mock CAN path stays exercised).
   set(CONFIG_LOG_LEVEL 1)
-  set(CONFIG_LOG_THROTTLE_RATE 3)
   set(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX 0)
   set(CONFIG_ENABLE_SNTP OFF)
   set(CONFIG_CONTROL_CMD_CAN_OUTPUT 1)

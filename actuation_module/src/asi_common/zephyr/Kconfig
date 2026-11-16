@@ -72,13 +72,6 @@ config LOG_LEVEL
 	  2: Debug
 	  It is used to limit the rate of messages being published to the console.
 
-config LOG_THROTTLE_RATE
-	int "Throttle rate for rclcpp info"
-	default 3
-	help
-	  This config sets the throttle rate in seconds for rclcpp-like messages.
-	  It is used to limit the rate of messages being published to the console.
-
 config CONTROL_CMD_CAN_OUTPUT
 	bool "Build the CAN control-command output"
 	help

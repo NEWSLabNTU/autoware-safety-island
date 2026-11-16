@@ -27,12 +27,22 @@
 #include "autoware/universe_utils/math/normalization.hpp"
 
 #include "common/logger/logger.hpp"
+
+#include <rclcpp/rclcpp.hpp>
 using namespace common::logger;
 
 namespace autoware::motion::control::mpc_lateral_controller
 {
 namespace
 {
+// calcNearestPoseInterp is a free function, with no node to take a logger or
+// a clock from: its throttled warnings use a named logger and a steady clock.
+rclcpp::Clock & throttleClock()
+{
+  static rclcpp::Clock clock(RCL_STEADY_TIME);
+  return clock;
+}
+
 double calcLongitudinalOffset(
   const PointMsg & p_front, const PointMsg & p_back,
   const PointMsg & p_target)
@@ -339,14 +349,18 @@ bool calcNearestPoseInterp(
   double * nearest_time, const double max_dist, const double max_yaw)
 {
   if (traj.empty() || !nearest_pose || !nearest_index || !nearest_time) {
-    log_warn_throttle("[calcNearestPoseInterp] input trajectory is empty - 1");
+    RCLCPP_WARN_THROTTLE(
+      rclcpp::get_logger("mpc_utils"), throttleClock(), 3000,
+      "[calcNearestPoseInterp] input trajectory is empty - 1");
     return false;
   }
 
   const auto autoware_traj = convertToAutowareTrajectory(traj);
 
   if (autoware_traj.points.empty()) {
-    log_warn_throttle("[calcNearestPoseInterp] input trajectory is empty - 2");
+    RCLCPP_WARN_THROTTLE(
+      rclcpp::get_logger("mpc_utils"), throttleClock(), 3000,
+      "[calcNearestPoseInterp] input trajectory is empty - 2");
     return false;
   }
 
