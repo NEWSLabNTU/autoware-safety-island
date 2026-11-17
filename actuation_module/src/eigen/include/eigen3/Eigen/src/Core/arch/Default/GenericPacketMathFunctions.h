@@ -625,6 +625,7 @@ __attribute__((optimize("-fno-unsafe-math-optimizations")))
 Packet psincos_float(const Packet& _x)
 {
   typedef typename unpacket_traits<Packet>::integer_packet PacketI;
+  typedef typename unpacket_traits<PacketI>::type ScalarI;  // PATCHED: arm-none-eabi int32_t==long
 
   const Packet  cst_2oPI            = pset1<Packet>(0.636619746685028076171875f); // 2/PI
   const Packet  cst_rounding_magic  = pset1<Packet>(12582912); // 2^23 for rounding
@@ -685,7 +686,7 @@ Packet psincos_float(const Packet& _x)
     const int PacketSize = unpacket_traits<Packet>::size;
     EIGEN_ALIGN_TO_BOUNDARY(sizeof(Packet)) float vals[PacketSize];
     EIGEN_ALIGN_TO_BOUNDARY(sizeof(Packet)) float x_cpy[PacketSize];
-    EIGEN_ALIGN_TO_BOUNDARY(sizeof(Packet)) int y_int2[PacketSize];
+    EIGEN_ALIGN_TO_BOUNDARY(sizeof(Packet)) ScalarI y_int2[PacketSize];  // PATCHED: was int; packet scalar is int32_t(==long)
     pstoreu(vals, pabs(_x));
     pstoreu(x_cpy, x);
     pstoreu(y_int2, y_int);
@@ -693,7 +694,11 @@ Packet psincos_float(const Packet& _x)
     {
       float val = vals[k];
       if(val>=huge_th && (numext::isfinite)(val))
-        x_cpy[k] = trig_reduce_huge(val,&y_int2[k]);
+      {  // PATCHED: trig_reduce_huge wants int*; use an int temporary instead of
+        int y_tmp;  // aliasing a ScalarI(==long) through int* (strict-aliasing UB)
+        x_cpy[k] = trig_reduce_huge(val, &y_tmp);
+        y_int2[k] = y_tmp;  // defined int -> ScalarI conversion
+      }
     }
     x = ploadu<Packet>(x_cpy);
     y_int = ploadu<PacketI>(y_int2);
