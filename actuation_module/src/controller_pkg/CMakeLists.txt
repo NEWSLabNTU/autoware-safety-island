@@ -114,11 +114,10 @@ if(ASI_CAN_VCAN_SENDER AND NOT TARGET app AND NROS_PLATFORM STREQUAL "freertos"
     VERBATIM)
   # A plain host program with its own main(). On a board platform nano-ros
   # turns every add_executable into an image (the board's entry calls the
-  # program's renamed main, NanoRosAmentSurface.cmake, phase-518); the
-  # variable it sets around its own executables keeps the builtin here.
-  set(_NROS_IN_IMAGE_ADD_EXECUTABLE TRUE)
-  add_executable(can_vcan_sender $<TARGET_OBJECTS:can_vcan_sender_obj> "${_variant_c}")
-  unset(_NROS_IN_IMAGE_ADD_EXECUTABLE)
+  # program's renamed main, phase-518); nano_ros_add_plain_executable is its
+  # stated way out (nano-ros issue 2678, PR 4016).
+  nano_ros_add_plain_executable(can_vcan_sender
+    $<TARGET_OBJECTS:can_vcan_sender_obj> "${_variant_c}")
   target_link_libraries(can_vcan_sender PRIVATE pthread)
   set_target_properties(can_vcan_sender PROPERTIES
     LINKER_LANGUAGE CXX
