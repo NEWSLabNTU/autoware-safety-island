@@ -6,8 +6,9 @@ released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main 5871cd6e45 and the
-CLI is built from source; there P4 is done too, and the P9 `fabsl` item and
-the P11 S32Z Zephyr board item (see "Dropped on nano-ros-next", below).
+CLI is built from source; there P4 is done too, and the P9 `fabsl` and
+Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
+nano-ros-next", below).
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -56,7 +57,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
 | 4011 | board network file for Zephyr images (`NET_CONFIG_*`) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
-| 4013 | SDK Eigen 3.4 for arm-none-eabi | P9 |
+| 4013 | SDK Eigen 3.4 for arm-none-eabi; closed won't fix: nano-ros ships no general-purpose C++ library, so the island brings its own (`src/eigen`, a workspace package) | P9 |
 | 4014 | Zephyr board descriptor for S32Z270 RTU0 (`s32z2xxdc2@D`); fixed on main (PR 4086), used on nano-ros-next | P11 |
 | 4015 | s32z270-freertos RTD variant (GIC port, NETC netif); the variant is on main (PR 4096), without the NETC netif | P11 |
 | 4016 | public opt-out for a host helper executable in a board build | P9 |
@@ -141,6 +142,33 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
 - 6d3d71e, `asi_common/CMakeLists.txt`: the `fvp_baser_aemv8r`
   `-Dfabsl(x)=...` define (P9, issue 4017, PR 4039). zephyr-fvp rebuilds
   its 34 C++ units and links.
+- 940e06f, 57d3fb1, b8ef477, `src/eigen/` (new), `asi_common/CMakeLists.txt`
+  (the `asi_eigen` target, the host Eigen lookup and the configure-time
+  copy-and-patch, removed), `src/autoware/` (P9, issue 4013). nano-ros
+  closed 4013 won't fix: it ships no general-purpose C++ library, and a
+  package finds and links its own as it would without nano-ros. So
+  `src/eigen` is a workspace package: upstream Eigen 3.4.0's headers
+  (tarball sha256 b4c19846...6e626) with the psincos patch applied in the
+  tree (`patches/` keeps it as the record), a `cmake/Eigen3Config.cmake`
+  defining `Eigen3::Eigen`, and a `CMakeLists.txt` that sets `Eigen3_DIR`
+  there and calls `ament_package()`. `autoware_controller_libs`
+  `<depend>`s on `eigen` (so the image closure configures it first) and
+  writes upstream's `find_package(Eigen3 3.4 REQUIRED)`. It does not need
+  the pin: the same change works on `nano-ros`. Built: freertos-an536,
+  zephyr-fvp, freertos-posix, and zephyr-s32z on a fresh directory; each
+  configure caches `Eigen3_DIR=src/eigen/cmake`, none reads
+  `/usr/include/eigen3`. zephyr-s32z text / data / bss 1948912 / 43964 /
+  4595678 (was 1947888 / 43964 / 4595678): `.text` unchanged, rodata +1024
+  (Eigen's assert `__FILE__` strings carry the longer path). CI run
+  44083208345 green (an536, posix, fvp).
+- Checked, kept: the controller_pkg `add_subdirectory` fallbacks
+  (`:18-23`). Without them the metadata probe fails: its generated
+  `CMakeLists.txt` adds `src/controller_pkg` alone, not the package's
+  `<depend>` closure, so `controller_node.hpp` cannot find
+  `autoware/trajectory_follower_base/control_horizon.hpp` and `nros build
+  freertos-posix` stops ("1 metadata probe(s) failed"). The `TARGET app`
+  block (`:65-70`) is not a fallback but the Zephyr entry's include
+  context; not touched. `src/autoware` gets the same fallback for `src/eigen`.
 - a3e3df1, `src/s32z270_zephyr_board/` (removed), `build.sh`
   (`-DBOARD_REVISION=D`, the `NROS_EXTRA_BOARD_PATH` export),
   `system.toml` and the S32Z docs (P11, issue 4014, PRs 4086 and 4066):
@@ -170,9 +198,12 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
 
 What remains of P9 and P11 after this:
 
-- P9: Eigen 3.4 for arm-none-eabi (4013) and the `asi_common` Eigen patch;
-  the host helper opt-out (4016) for `can_vcan_sender`; the controller_pkg
-  `add_subdirectory` fallbacks; the package split and the rclcpp spellings.
+- P9: the host helper opt-out (4016) for `can_vcan_sender` (nano-ros has
+  no public spelling yet: `_NROS_IN_IMAGE_ADD_EXECUTABLE` is the only
+  bypass of its `add_executable` wrapper); the controller_pkg
+  `add_subdirectory` fallbacks, until the metadata probe configures a node
+  package's workspace `<depend>`s (a nano-ros change, not filed); the
+  package split and the rclcpp spellings (not measured on the R52 lanes).
 - P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
@@ -471,7 +502,11 @@ What remains of P9 and P11 after this:
 - Done when: no private nano-ros variable and no board-keyed define in
   ASI CMake, all lanes green.
 - Status on nano-ros-next (pending nros12 for `nano-ros`): the `fabsl`
-  define is gone (6d3d71e). The rest waits; see "Dropped on nano-ros-next".
+  define is gone (6d3d71e); Eigen is the `eigen` workspace package
+  (b8ef477). The controller_pkg fallbacks stay (nano-ros's metadata probe
+  adds only the node package); `can_vcan_sender` waits on 4016; the package
+  split and the rclcpp spellings are not started. See "Dropped on
+  nano-ros-next".
 
 ### P10. Tests and CI on nros run - M
 
