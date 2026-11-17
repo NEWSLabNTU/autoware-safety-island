@@ -13,12 +13,17 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(autoware_controller_libs LANGUAGES C CXX)
 
-# The platform layer (logger, clock, platform defines, Eigen). Configured
-# before this package in a workspace build; added here when this package is
-# configured on its own (nano-ros's metadata probe).
+# The platform layer (logger, clock, platform defines) and the island's
+# Eigen. Configured before this package in a workspace build; added here when
+# this package is configured on its own (nano-ros's metadata probe).
 if(NOT TARGET asi_common)
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../asi_common" asi_common)
 endif()
+if(NOT TARGET Eigen3::Eigen)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../eigen" eigen)
+endif()
+# Upstream's spelling; src/eigen points it at the island's Eigen 3.4.0.
+find_package(Eigen3 3.4 REQUIRED)
 
 # A library, not a node: nano_ros_auto_add_library() generates the message
 # packages package.xml <depend>s on, links them and the nros-cpp runtime the
@@ -63,7 +68,7 @@ target_include_directories(autoware_controller_libs PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/autoware_mpc_lateral_controller/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/autoware_pid_longitudinal_controller/include"
 )
-target_link_libraries(autoware_controller_libs PUBLIC asi_common asi_eigen)
+target_link_libraries(autoware_controller_libs PUBLIC asi_common Eigen3::Eigen)
 # The parameter API with std::string / std::vector<T> overloads the MPC and
 # PID controllers declare their parameters through.
 target_compile_definitions(autoware_controller_libs PUBLIC NROS_CPP_STD=1)

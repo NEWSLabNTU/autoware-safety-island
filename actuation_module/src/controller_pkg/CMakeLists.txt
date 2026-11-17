@@ -46,7 +46,7 @@ nros_components_register_node(controller_lib
 # component.
 target_include_directories(controller_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
-target_link_libraries(controller_lib PUBLIC autoware_controller_libs asi_common asi_eigen)
+target_link_libraries(controller_lib PUBLIC autoware_controller_libs asi_common)
 
 # Per-topic delivery counters in the controller callbacks, for answering "at
 # what RATE is this topic reaching the app?" -- a question the controller's own
@@ -66,7 +66,7 @@ if(TARGET app)
   target_include_directories(app PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
-  target_link_libraries(app PRIVATE autoware_controller_libs asi_common asi_eigen)
+  target_link_libraries(app PRIVATE autoware_controller_libs asi_common)
 endif()
 
 # --- FreeRTOS POSIX: the SocketCAN vcan sender (build.sh --can-output-test) --

@@ -13,8 +13,9 @@ into a plain `int` temporary and then assigns it back into y_int2[k] (a defined
 int -> ScalarI conversion), avoiding a strict-aliasing violation from casting a
 ScalarI* to int*.
 
-Applied at configure time over the host Eigen tree (see freertos_s32z2/
-CMakeLists.txt); not an upstreamed change.
+Already applied to this package's include/eigen3 (Eigen 3.4.0). Kept as the
+record of the one change from upstream, to re-apply on an Eigen upgrade; not an
+upstreamed change.
 
 --- a/Eigen/src/Core/arch/Default/GenericPacketMathFunctions.h
 +++ b/Eigen/src/Core/arch/Default/GenericPacketMathFunctions.h

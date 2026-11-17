@@ -39,8 +39,10 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
     autoware/                autoware_controller_libs: vendored Autoware controllers
                              (MPC, PID) and utility libraries
+    eigen/                   The island's Eigen 3.4.0 headers (psincos patch for
+                             arm-none-eabi applied); find_package(Eigen3) finds it
     asi_common/              Platform layer: include/{common,platform}, message
-                             umbrella, support sources, pthread shim, Eigen patch;
+                             umbrella, support sources, pthread shim;
                              a Zephyr module for the application's Kconfig
                              symbols (zephyr/module.yml, zephyr/Kconfig)
   test/                      Test programs; test/zephyr_app = their west

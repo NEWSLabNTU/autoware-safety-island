@@ -13,7 +13,8 @@
 #                hook, the Kconfig-gated diagnostics; FreeRTOS POSIX: the
 #                SI_DDS_INTERFACE network hook; bare-metal FreeRTOS: the wall
 #                clock).
-#   asi_eigen    Eigen 3, patched for arm-none-eabi where it has to be.
+#
+# Eigen is the `eigen` package's (src/eigen), not this one's.
 #
 # Everything is keyed off what the build already knows: a Zephyr build has
 # `zephyr_interface`, a FreeRTOS build has NROS_PLATFORM=freertos, and the
@@ -137,40 +138,4 @@ elseif(_asi_newlib_cross)
   target_compile_features(asi_common_freertos PUBLIC cxx_std_17)
   target_link_libraries(asi_common INTERFACE asi_common_freertos)
   target_compile_definitions(asi_common INTERFACE ASI_FREERTOS_WALL_CLOCK=1)
-endif()
-
-# --- asi_eigen ---------------------------------------------------------------
-# Eigen 3.4 psincos on arm-none-eabi ILP32: newlib types int32_t as `long`, so
-# Eigen's NEON integer-packet specialisations never match psincos_float's
-# plain-`int` scratch buffer and the generic fallback fails to compile. Patch
-# a COPY of the host Eigen at configure time and put it before the system
-# tree.
-add_library(asi_eigen INTERFACE)
-if(NOT EIGEN3_INCLUDE_DIR)
-  find_package(Eigen3 QUIET)
-  if(NOT EIGEN3_INCLUDE_DIR AND TARGET Eigen3::Eigen)
-    get_target_property(EIGEN3_INCLUDE_DIR Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
-  endif()
-endif()
-if(EIGEN3_INCLUDE_DIR)
-  if(_asi_newlib_cross)
-    find_package(Patch REQUIRED)
-    set(_eigen_patched_dir "${CMAKE_CURRENT_BINARY_DIR}/eigen-patched")
-    set(_eigen_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/eigen-psincos-int32.patch")
-    if(NOT EXISTS "${_eigen_patched_dir}/.patched")
-      file(REMOVE_RECURSE "${_eigen_patched_dir}")
-      file(COPY "${EIGEN3_INCLUDE_DIR}/Eigen" DESTINATION "${_eigen_patched_dir}")
-      execute_process(
-        COMMAND ${Patch_EXECUTABLE} -p1 -d "${_eigen_patched_dir}"
-        INPUT_FILE "${_eigen_patch}"
-        RESULT_VARIABLE _eigen_patch_rc)
-      if(NOT _eigen_patch_rc EQUAL 0)
-        message(FATAL_ERROR
-          "asi_common: failed to apply ${_eigen_patch} to Eigen at ${_eigen_patched_dir}")
-      endif()
-      file(WRITE "${_eigen_patched_dir}/.patched" "")
-    endif()
-    target_include_directories(asi_eigen INTERFACE "${_eigen_patched_dir}")
-  endif()
-  target_include_directories(asi_eigen INTERFACE "${EIGEN3_INCLUDE_DIR}")
 endif()

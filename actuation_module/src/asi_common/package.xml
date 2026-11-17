@@ -10,7 +10,7 @@
   <description>
     The Safety Island's platform layer: logger, clock, CAN, network and
     threading interfaces with their Zephyr and FreeRTOS implementations, the
-    newlib pthread shim and the Eigen patch for arm-none-eabi. No node.
+    newlib pthread shim for arm-none-eabi. No node.
   </description>
   <maintainer email="cshih@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
   <license>Apache-2.0</license>

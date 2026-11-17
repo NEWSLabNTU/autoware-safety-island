@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  The island's own Eigen. Upstream Eigen 3.4.0's header tree (include/eigen3,
+  from eigen-3.4.0.tar.bz2, sha256 b4c19846...6e626) with one change,
+  patches/eigen-psincos-int32.patch, applied in place. nano-ros ships no
+  general-purpose C++ library (nano-ros #4013), so a workspace package
+  brings it. Named after the rosdep key Autoware's package.xml files use.
+-->
+<package format="3">
+  <name>eigen</name>
+  <version>3.4.0</version>
+  <description>
+    Eigen 3.4.0 headers for the Safety Island, patched for arm-none-eabi
+    (psincos_float's scratch buffer on ILP32 newlib). find_package(Eigen3)
+    resolves to it and Eigen3::Eigen names it, as upstream.
+  </description>
+  <maintainer email="cshih@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>MPL-2.0</license>
+  <url type="website">https://eigen.tuxfamily.org</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

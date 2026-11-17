@@ -57,7 +57,7 @@ set(NROS_INTERFACE_SEARCH_PATH "${_asi_ws}/src")
 # The platform layer, without the network hook a generated entry calls.
 set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
 add_subdirectory("${_asi_ws}/src/asi_common" asi_common)
-target_link_libraries(app PRIVATE asi_common asi_eigen)
+target_link_libraries(app PRIVATE asi_common)
 
 # The message set of asi_common's umbrella header. The tests use the
 # idlc-style C headers (<pkg>/msg/<Name>.h) too, which the Zephyr module emits
