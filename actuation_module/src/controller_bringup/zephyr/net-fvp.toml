@@ -1,0 +1,16 @@
+# Copyright (c) 2026, Arm Limited / NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Board network file of the user-mode FVP images: the FVP's one interface on
+# the model's own user-mode network, which leases its address. nros build
+# renders it into Zephyr's NET_CONFIG_* and NET_DHCPV4=y; Zephyr's net_config
+# then holds the application until the lease (up to
+# CONFIG_NET_CONFIG_INIT_TIMEOUT), so the island has no wait of its own.
+
+[eth0]
+network = "fvp"
+address = "dhcp"
+
+[network.fvp]
+subnet = "172.20.51.0/24"
+dhcp   = true

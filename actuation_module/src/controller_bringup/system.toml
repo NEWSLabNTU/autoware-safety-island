@@ -134,6 +134,7 @@ knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
 [image.fvp]
 board     = "fvp-aemv8r-smp"
 os_config = [
+  "zephyr/net-fvp.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
 ]
@@ -144,6 +145,7 @@ knobs.zephyr.heap_size = 8388608
 [image.fvp-stats]
 board     = "fvp-aemv8r-smp"
 os_config = [
+  "zephyr/net-fvp.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-trace-stats.conf",
@@ -154,6 +156,7 @@ knobs.zephyr.heap_size = 8388608
 [image.fvp-trace]
 board     = "fvp-aemv8r-smp"
 os_config = [
+  "zephyr/net-fvp.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-trace-stats.conf",
@@ -167,6 +170,7 @@ knobs.zephyr.heap_size = 8388608
 [image.fvp-trace-ring]
 board     = "fvp-aemv8r-smp"
 os_config = [
+  "zephyr/net-fvp.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-trace-stats.conf",

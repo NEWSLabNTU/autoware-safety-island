@@ -18,6 +18,20 @@
 #include "common/logger/logger.hpp"
 using namespace common::logger;
 
+// Interface 1 belongs to Zephyr's net_config when the image states its
+// network in a board network file: nros build then renders
+// CONFIG_NET_CONFIG_NEED_IPV4 with the address (or DHCPv4), and Zephyr adds
+// it and waits for a lease before the application starts (nano-ros issue
+// 2679). The FVP images do; the S32Z (its board declares no interface) and
+// the test programs keep this file's interface-1 path below. The DHCP wait
+// further down is already off wherever NET_CONFIG_AUTO_INIT is on, which
+// NEED_IPV4 implies.
+#if defined(CONFIG_NET_CONFIG_NEED_IPV4)
+#  define ASI_NET_IFACE1_OWNED_BY_NET_CONFIG 1
+#else
+#  define ASI_NET_IFACE1_OWNED_BY_NET_CONFIG 0
+#endif
+
 #if defined(CONFIG_NET_DHCPV4)
 /* Semaphore to indicate a lease has been acquired. */
 static K_SEM_DEFINE(got_address, 0, 1);
@@ -121,6 +135,7 @@ int configure_network(void)
   net_if_foreach(net_if_cb, &ifs);
   log_info("Network interfaces found: %zu\n", ifs.size());
 
+#if !ASI_NET_IFACE1_OWNED_BY_NET_CONFIG
   if (ifs.size() >= 1 && sizeof(CONFIG_NET_IFACE1_ADDR) > 1) {
     log_info("Configuring network interface 1\n");
     int ret = setup_iface(
@@ -135,6 +150,7 @@ int configure_network(void)
     }
     log_info("Network interface 1 configured\n");
   }
+#endif  // !ASI_NET_IFACE1_OWNED_BY_NET_CONFIG
 
   if (ifs.size() >= 2 && sizeof(CONFIG_NET_IFACE2_ADDR) > 1) {
     log_info("Configuring network interface 2\n");

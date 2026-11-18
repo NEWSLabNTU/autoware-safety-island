@@ -55,7 +55,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
 | 4009 | public trace marker through the installed trace sink | P11 |
 | 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
-| 4011 | board network file for Zephyr images (`NET_CONFIG_*`); fixed at the pin (issue 2679, 41ffa35b7f); the island's adoption is not landed (P6) | P6 |
+| 4011 | board network file for Zephyr images (`NET_CONFIG_*`); fixed at the pin (issue 2679, 41ffa35b7f); the FVP images state their address in a board network file (P6) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
 | 4013 | SDK Eigen 3.4 for arm-none-eabi; closed won't fix: nano-ros ships no general-purpose C++ library, so the island brings its own (`src/eigen`, a workspace package) | P9 |
 | 4014 | Zephyr board descriptor for S32Z270 RTU0 (`s32z2xxdc2@D`); fixed on main (PR 4086), used on nano-ros-next | P11 |
@@ -68,7 +68,14 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main a49a8dacaf (2026-11-18). Over 5871cd6e45 it adds PR 4016
+nano-ros main 9afb5c8a19 (2026-11-18). Over a49a8dacaf it adds PR 4190
+(575f694215, issue 2689: `SourceMetadata` reads the schema v6 probe
+sidecar and a stamp failure is loud), which fixes the configure break
+below; the Zephyr FVP controller image configures, links and boots on it
+(P6). play_launch and rlm are unchanged; `nros build --dry-run` resolves
+fvp, fvp-tap and s32z.
+
+Before that, a49a8dacaf (2026-11-18). Over 5871cd6e45 it adds PR 4016
 (67ba69c7ef, issue 2678: `nano_ros_add_plain_executable`), 4011
 (e7827f2195 / 41ffa35b7f, issue 2679: a Zephyr board network file renders
 into `NET_CONFIG_*`), 4018 (f3d185fd44: a launch value of another type
@@ -78,7 +85,7 @@ probe records the longest parameter description). play_launch and rlm are
 unchanged, so the contract needs no migrate; `nros build --dry-run`
 resolves fvp, fvp-tap and s32z.
 
-Broken at this pin (nano-ros, not filed by this step): the Zephyr FVP
+Broken at a49a8dacaf (nano-ros, fixed by 4190): the Zephyr FVP
 controller configure stops in `NanoRosPromise.cmake:402` ("this image's
 entity inventory was composed after this configure's readers ran, and no
 `nros configure` seeded them"). Cause: since d8c4a1383f the C++ metadata
@@ -489,23 +496,24 @@ What remains of P9 and P11 after this:
   values.
 - Done when: `network_config.cpp` and `si_dds_interface.cpp` are gone, the
   FVP boot has no fixed 10 s DHCP sleep, the tap demo addresses unchanged.
-- Status on nano-ros-next (pin a49a8dacaf): not landed. Written and kept
-  out of the branch until the pin's FVP configure works (see "Pin on
-  nano-ros-next"): `controller_bringup/zephyr/net-fvp.toml` (`[eth0]
-  network = "fvp"`, `address = "dhcp"`; `[network.fvp] subnet =
-  "172.20.51.0/24"`, `dhcp = true`) first in the four user-mode FVP images'
-  `os_config`; `CONFIG_NET_DHCPV4=y` and `CONFIG_NET_CONFIG_SETTINGS=y` out
-  of `prj-actuation.conf` (the fragment check refuses any rendered symbol)
-  and into `prj-s32z.conf` with the 10 s initial delay; `prj-fvp.conf`
-  states `CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX=2`; `network_config.cpp`
-  skips interface 1 and `board_network_hook.cpp` the DHCP sleep when
+- Status on nano-ros-next (pin 9afb5c8a19): the FVP address landed.
+  `controller_bringup/zephyr/net-fvp.toml` (`[eth0] network = "fvp"`,
+  `address = "dhcp"`; `[network.fvp] subnet = "172.20.51.0/24"`, `dhcp =
+  true`) is first in the four user-mode FVP images' `os_config`;
+  `CONFIG_NET_DHCPV4=y` and `CONFIG_NET_CONFIG_SETTINGS=y` moved out of
+  `prj-actuation.conf` (the fragment check refuses any rendered symbol) into
+  `prj-s32z.conf` with the 10 s initial delay, and into `prj-fvp-tap.conf`
+  (settings only); `prj-fvp.conf` states
+  `CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX=2`; `network_config.cpp` skips
+  interface 1 and `board_network_hook.cpp` the DHCP sleep when
   `CONFIG_NET_CONFIG_NEED_IPV4` is set (IFACE2 / VLAN stay for the S32Z);
   the FVP test programs take `test/zephyr_app/net-fvp.conf`, the rendered
-  rows by hand. Checked so far: the rendered `build/nros/net/fvp.conf` and
-  the built `.config` (`NET_CONFIG_NEED_IPV4=y`, `NET_DHCPV4=y`,
-  `MY_IPV4_ADDR=""`, `INITIAL_DELAY_MAX=2`); not yet booted. The
-  172.20.51.0/24 subnet is the FVP user-mode default, not measured from a
-  boot here.
+  rows by hand. Booted on the FVP (user-mode networking): Zephyr's
+  net_config leases 172.20.51.1 (netmask 255.255.255.0, router
+  172.20.51.254, lease 86400 s) at 1.172 s model time, the island prints no
+  "Waiting for DHCP" and is Live at 1.245 s; the subnet in net-fvp.toml is
+  the one the model hands out. Still open for P6: `si_dds_interface.cpp`
+  and the `network_config.cpp` paths the S32Z and the tap images keep.
 - The tap images stay on the island's own path: nano-ros refuses
   `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
   `fvp-tap*` images, "images `fvp-tap` (eth0) and `fvp-tap-stats` (eth0)

@@ -28,7 +28,12 @@ extern "C" void nros_board_network_wait(void)
     log_success("ARM - Autoware: Actuation Safety Island");
     log_success("-----------------------------------------");
 
-#if defined(CONFIG_NET_DHCPV4) && CONFIG_NET_DHCPV4
+    // An image that states its network in a board network file (the FVP
+    // images) has Zephyr's net_config wait for the lease before the
+    // application starts (CONFIG_NET_CONFIG_NEED_IPV4, nano-ros issue 2679);
+    // only the others (S32Z) keep this grace.
+#if defined(CONFIG_NET_DHCPV4) && CONFIG_NET_DHCPV4 && \
+    !defined(CONFIG_NET_CONFIG_NEED_IPV4)
     log_info("Waiting for DHCP to get IP address...");
     sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
 #endif
