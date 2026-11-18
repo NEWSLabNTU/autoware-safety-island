@@ -45,7 +45,12 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-18: a49a8dacaf, past 4016 (67ba69c7ef, issue 2678:
+    # ON main, 2026-11-18: 9afb5c8a19, past 4190 (575f694215, issue 2689:
+    # SourceMetadata reads the schema v6 probe sidecar; on a49a8dacaf every
+    # Zephyr C++ configure stopped at NanoRosPromise.cmake:402). Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-18: a49a8dacaf, past 4016 (67ba69c7ef, issue 2678:
     # nano_ros_add_plain_executable, a board build's host program), 4011
     # (41ffa35b7f, issue 2679: a Zephyr board network file renders into
     # NET_CONFIG_*), 4018 (a launch value of another type stops the boot),
@@ -136,7 +141,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: a49a8dacaf86eef50dd70d527143ee67b8ced700
+      revision: 9afb5c8a193a57d46a99124bcbbbc16d4a421faa
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
