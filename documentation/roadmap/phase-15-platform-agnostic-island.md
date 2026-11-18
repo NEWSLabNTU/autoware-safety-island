@@ -73,7 +73,8 @@ nano-ros main 9afb5c8a19 (2026-11-18). Over a49a8dacaf it adds PR 4190
 sidecar and a stamp failure is loud), which fixes the configure break
 below; the Zephyr FVP controller image configures, links and boots on it
 (P6). play_launch and rlm are unchanged; `nros build --dry-run` resolves
-fvp, fvp-tap and s32z.
+fvp, fvp-tap and s32z. CI run 44262797472 (9be8383) is green on all
+three lanes.
 
 Before that, a49a8dacaf (2026-11-18). Over 5871cd6e45 it adds PR 4016
 (67ba69c7ef, issue 2678: `nano_ros_add_plain_executable`), 4011
@@ -512,7 +513,11 @@ What remains of P9 and P11 after this:
   net_config leases 172.20.51.1 (netmask 255.255.255.0, router
   172.20.51.254, lease 86400 s) at 1.172 s model time, the island prints no
   "Waiting for DHCP" and is Live at 1.245 s; the subnet in net-fvp.toml is
-  the one the model hands out. Still open for P6: `si_dds_interface.cpp`
+  the one the model hands out. zephyr-s32z links at 9be8383 (fresh
+  directory; `NET_DHCPV4=y`, `INITIAL_DELAY_MAX=10`, `NET_CONFIG_SETTINGS=y`
+  from `prj-s32z.conf`, no `NEED_IPV4`): text / data / bss 1952800 / 43964
+  / 4585134. CI run 44262797472 (9be8383) green: Zephyr FVP 24 min,
+  FreeRTOS POSIX 13, FreeRTOS AN536 12. Still open for P6: `si_dds_interface.cpp`
   and the `network_config.cpp` paths the S32Z and the tap images keep.
 - The tap images stay on the island's own path: nano-ros refuses
   `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
