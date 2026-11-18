@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 5871cd6e45 and the
+On branch `nano-ros-next` nano-ros is pinned at main a49a8dacaf and the
 CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -55,12 +55,12 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
 | 4009 | public trace marker through the installed trace sink | P11 |
 | 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
-| 4011 | board network file for Zephyr images (`NET_CONFIG_*`) | P6 |
+| 4011 | board network file for Zephyr images (`NET_CONFIG_*`); fixed at the pin (issue 2679, 41ffa35b7f); the island's adoption is not landed (P6) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
 | 4013 | SDK Eigen 3.4 for arm-none-eabi; closed won't fix: nano-ros ships no general-purpose C++ library, so the island brings its own (`src/eigen`, a workspace package) | P9 |
 | 4014 | Zephyr board descriptor for S32Z270 RTU0 (`s32z2xxdc2@D`); fixed on main (PR 4086), used on nano-ros-next | P11 |
 | 4015 | s32z270-freertos RTD variant (GIC port, NETC netif); the variant is on main (PR 4096), without the NETC netif | P11 |
-| 4016 | public opt-out for a host helper executable in a board build | P9 |
+| 4016 | public opt-out for a host helper executable in a board build; fixed at the pin (issue 2678, 67ba69c7ef: `nano_ros_add_plain_executable`), used on nano-ros-next | P9 |
 | 4017 | fvp-aemv8r-smp newlib lacks `fabsl`; fixed on main (PR 4039), used on nano-ros-next | P9 |
 | 4018 | bug: `declare_parameter` past the store capacity silently returns the default; fixed at the pin (PR 4030: the boot stops) | P3, P8 |
 
@@ -68,7 +68,32 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 5871cd6e45 (2026-11-17), past the nros11 tag (09219edc75).
+nano-ros main a49a8dacaf (2026-11-18). Over 5871cd6e45 it adds PR 4016
+(67ba69c7ef, issue 2678: `nano_ros_add_plain_executable`), 4011
+(e7827f2195 / 41ffa35b7f, issue 2679: a Zephyr board network file renders
+into `NET_CONFIG_*`), 4018 (f3d185fd44: a launch value of another type
+than its declaration stops the boot), the CAN frame driver's Zephyr backend
+(7e9088d214, 61364bbd78) and issue 2650 (d8c4a1383f, a49a8dacaf: the
+probe records the longest parameter description). play_launch and rlm are
+unchanged, so the contract needs no migrate; `nros build --dry-run`
+resolves fvp, fvp-tap and s32z.
+
+Broken at this pin (nano-ros, not filed by this step): the Zephyr FVP
+controller configure stops in `NanoRosPromise.cmake:402` ("this image's
+entity inventory was composed after this configure's readers ran, and no
+`nros configure` seeded them"). Cause: since d8c4a1383f the C++ metadata
+probe emits `parameter_description_max_len` /
+`parameter_constraints_max_len`, but the CLI's `SourceMetadata`
+(`nros-cli-core/src/orchestration/source_metadata.rs`,
+`deny_unknown_fields`) has neither field, so `stamp_provenance` fails to
+parse the sidecar and `metadata_refresh.rs` drops the error (`let _ =`).
+`src/controller_pkg/metadata/controller.json` is rewritten with no
+`provenance` on every `nros configure`, reads stale at once, and the
+image's configure takes no seed. zephyr-s32z stops the same way. CI run
+44203831657 (c35a136): FreeRTOS POSIX and FreeRTOS AN536 green, Zephyr FVP
+red at this configure in phase 1 (job 134464551728).
+
+Before that, 5871cd6e45 (2026-11-17), past the nros11 tag (09219edc75).
 Over e845661f0b it adds PR 4080 (89d696e5d7, issue 2652: `nros build`
 passes its own `-D_NANO_ROS_CODEGEN_TOOL` on every configure it starts),
 4039 (f29f50aa0d, issue 2630: `fabsl` / `copysignl` in nano-ros's Zephyr
@@ -132,9 +157,17 @@ refusal: every double is a float literal, every integer an integer.
   `nros build` configure (PR 4080). The Zephyr test programs keep it: there
   `build.sh` runs `west build` itself, not `nros build`.
 
-### Dropped on nano-ros-next (pin 5871cd6e45)
+### Dropped on nano-ros-next (pin a49a8dacaf)
 
 Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
+
+- c35a136, `controller_pkg/CMakeLists.txt`: the private
+  `_NROS_IN_IMAGE_ADD_EXECUTABLE` switch around `can_vcan_sender`'s
+  `add_executable` (P9, issue 4016, PR 4016's
+  `nano_ros_add_plain_executable`). `./build.sh --platform freertos-posix
+  --can-output-test` builds the sender as a plain x86-64 PIE with its own
+  `main` and no nros entry symbol; it runs and reports the missing
+  `SAFETY_ISLAND_CAN_IFACE`.
 
 - cdc5c01, `build.sh`: the `-D_NANO_ROS_CODEGEN_TOOL` on the Zephyr
   controller and FreeRTOS `nros build` configures (PR 4080). The existing
@@ -198,9 +231,7 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
 
 What remains of P9 and P11 after this:
 
-- P9: the host helper opt-out (4016) for `can_vcan_sender` (nano-ros has
-  no public spelling yet: `_NROS_IN_IMAGE_ADD_EXECUTABLE` is the only
-  bypass of its `add_executable` wrapper); the controller_pkg
+- P9: the controller_pkg
   `add_subdirectory` fallbacks, until the metadata probe configures a node
   package's workspace `<depend>`s (a nano-ros change, not filed); the
   package split and the rclcpp spellings (not measured on the R52 lanes).
@@ -458,6 +489,30 @@ What remains of P9 and P11 after this:
   values.
 - Done when: `network_config.cpp` and `si_dds_interface.cpp` are gone, the
   FVP boot has no fixed 10 s DHCP sleep, the tap demo addresses unchanged.
+- Status on nano-ros-next (pin a49a8dacaf): not landed. Written and kept
+  out of the branch until the pin's FVP configure works (see "Pin on
+  nano-ros-next"): `controller_bringup/zephyr/net-fvp.toml` (`[eth0]
+  network = "fvp"`, `address = "dhcp"`; `[network.fvp] subnet =
+  "172.20.51.0/24"`, `dhcp = true`) first in the four user-mode FVP images'
+  `os_config`; `CONFIG_NET_DHCPV4=y` and `CONFIG_NET_CONFIG_SETTINGS=y` out
+  of `prj-actuation.conf` (the fragment check refuses any rendered symbol)
+  and into `prj-s32z.conf` with the 10 s initial delay; `prj-fvp.conf`
+  states `CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX=2`; `network_config.cpp`
+  skips interface 1 and `board_network_hook.cpp` the DHCP sleep when
+  `CONFIG_NET_CONFIG_NEED_IPV4` is set (IFACE2 / VLAN stay for the S32Z);
+  the FVP test programs take `test/zephyr_app/net-fvp.conf`, the rendered
+  rows by hand. Checked so far: the rendered `build/nros/net/fvp.conf` and
+  the built `.config` (`NET_CONFIG_NEED_IPV4=y`, `NET_DHCPV4=y`,
+  `MY_IPV4_ADDR=""`, `INITIAL_DELAY_MAX=2`); not yet booted. The
+  172.20.51.0/24 subnet is the FVP user-mode default, not measured from a
+  boot here.
+- The tap images stay on the island's own path: nano-ros refuses
+  `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
+  `fvp-tap*` images, "images `fvp-tap` (eth0) and `fvp-tap-stats` (eth0)
+  both take 192.168.10.2 on network "tap"", though they are variants of
+  one host and never run together. A nano-ros gap (no way to say images
+  are alternatives); the island would otherwise need one address per
+  variant.
 
 ### P7. CAN behind one interface - L
 
@@ -503,8 +558,9 @@ What remains of P9 and P11 after this:
   ASI CMake, all lanes green.
 - Status on nano-ros-next (pending nros12 for `nano-ros`): the `fabsl`
   define is gone (6d3d71e); Eigen is the `eigen` workspace package
-  (b8ef477). The controller_pkg fallbacks stay (nano-ros's metadata probe
-  adds only the node package); `can_vcan_sender` waits on 4016; the package
+  (b8ef477); `can_vcan_sender` is `nano_ros_add_plain_executable` (c35a136,
+  4016). The controller_pkg fallbacks stay (nano-ros's metadata probe
+  adds only the node package); the package
   split and the rclcpp spellings are not started. See "Dropped on
   nano-ros-next".
 
