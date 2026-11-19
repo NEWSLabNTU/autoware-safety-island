@@ -28,8 +28,17 @@
   <depend>nros</depend>
   <!-- The platform layer (logger, clock, CAN, network, platform defines). -->
   <depend>asi_common</depend>
-  <!-- The vendored Autoware trajectory follower (src/autoware). -->
-  <depend>autoware_controller_libs</depend>
+  <!--
+    The vendored Autoware packages (src/autoware), as upstream
+    autoware_trajectory_follower_node <depend>s on them (its autoware_utils
+    is autoware_universe_utils here).
+  -->
+  <depend>autoware_motion_utils</depend>
+  <depend>autoware_mpc_lateral_controller</depend>
+  <depend>autoware_pid_longitudinal_controller</depend>
+  <depend>autoware_trajectory_follower_base</depend>
+  <depend>autoware_universe_utils</depend>
+  <depend>autoware_vehicle_info_utils</depend>
 
   <!--
     The message packages the controller uses. nano-ros generates each from

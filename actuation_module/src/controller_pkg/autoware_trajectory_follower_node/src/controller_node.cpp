@@ -28,6 +28,7 @@ using namespace common::logger;
 #include "controller_pkg/node_identity.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -47,12 +48,12 @@ extern "C" void asi_start_wall_clock_sync(void);
 namespace autoware::motion::control::trajectory_follower_node
 {
 // RFC-0044 construct-with-handle ctor. The entry hands the executor-bound
-// handle post-`rclcpp::init_in`; `NodeWithTimers<1>(handle, name)` creates the
+// handle post-`rclcpp::init_in`; `rclcpp::Node(handle, name)` creates the
 // node, then the body wires the subscriptions / publishers / timer + MPC/PID.
 // The per-node pthread spin of the legacy DDS shim is gone -- the executor
 // drives us.
 Controller::Controller(rclcpp::NodeHandle handle)
-: rclcpp::NodeWithTimers<1>(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
+: rclcpp::Node(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
   startup_config_(startupConfigFromParameters())
 {
 #if defined(ASI_FREERTOS_WALL_CLOCK)
@@ -159,21 +160,22 @@ Controller::Controller(rclcpp::NodeHandle handle)
       std::exit(1);
   }
 
-  // Timer -- RFC-0044 typed member timer, in its own callback group
+  // Timer -- upstream's create_wall_timer, in its own named callback group
   // (RFC-0047) so the bringup's [tasks.control] binds it to a real-time
   // scheduling context; the subscriptions below stay in the node's default
-  // context (see header note).
+  // context (see header note). The period is whole milliseconds, as before.
   {
-    const auto period_ms = static_cast<uint64_t>(ctrl_period * 1000);
-    create_timer_in_group<Controller, &Controller::callbackTimerControl>(
-      create_callback_group("control"), period_ms);
+    const std::chrono::milliseconds period(static_cast<int64_t>(ctrl_period * 1000));
+    const rclcpp::CallbackGroup control_group = create_callback_group("control");
+    timer_control_ = create_wall_timer(
+      period, [this]() { callbackTimerControl(); }, &control_group);
   }
 
-  // Subscribers -- RFC-0044 typed member-callback subscriptions. The wire
-  // type + member callback are the only spellings; the executor arena owns
-  // the subscriber (no descriptor, no `void*` ctx). A failed create sets
-  // ok()=false and the generated entry halts boot after construction, the
-  // nros equivalent of the DDS build's "cannot subscribe" exception.
+  // Subscribers -- upstream's create_subscription<Msg>(topic, qos, callback).
+  // The executor arena owns the subscriber and the `[this]` callable, and the
+  // node owns both, so the returned handle is not kept. A failed create stops
+  // the boot, the nros equivalent of the DDS build's "cannot subscribe"
+  // exception.
   namespace topics = controller_pkg::node_identity::topics;
 
   // KEEP_LAST depth 1 on every input (upstream fix #42 on the nros side):
@@ -182,23 +184,28 @@ Controller::Controller(rclcpp::NodeHandle handle)
   // the executor arena).
   const rclcpp::QoS latest_only = rclcpp::QoS::default_profile().keep_last(1);
 
-  create_subscription_in<SteeringReportMsg, Controller, &Controller::on_steering_status>(
-    topics::SUB_STEERING_STATUS, latest_only);
+  create_subscription<SteeringReportMsg>(
+    topics::SUB_STEERING_STATUS, latest_only,
+    [this](const SteeringReportMsg & msg) { on_steering_status(msg); });
   if (supervision_mode_ == supervision::Mode::SI_CONTROL) {
     if (startup_config_.trajectory_source == StartupConfig::TrajectorySource::VP) {
       // VP's own path + speed schedule; the SI places it with the same-frame
       // ego pose (vp_reference.hpp), so no adapter sits between VP and SI.
-      create_subscription_in<DrivingReferenceMsg, Controller, &Controller::on_driving_reference>(
-        topics::SUB_DRIVING_REFERENCE, latest_only);
+      create_subscription<DrivingReferenceMsg>(
+        topics::SUB_DRIVING_REFERENCE, latest_only,
+        [this](const DrivingReferenceMsg & msg) { on_driving_reference(msg); });
     } else {
-      create_subscription_in<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
-        topics::SUB_TRAJECTORY, latest_only);
+      create_subscription<TrajectoryMsg_Raw>(
+        topics::SUB_TRAJECTORY, latest_only,
+        [this](const TrajectoryMsg_Raw & msg) { on_trajectory(msg); });
     }
   }
-  create_subscription_in<OdometryMsg, Controller, &Controller::on_odometry>(
-    topics::SUB_ODOMETRY, latest_only);
-  create_subscription_in<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
-    topics::SUB_ACCELERATION, latest_only);
+  create_subscription<OdometryMsg>(
+    topics::SUB_ODOMETRY, latest_only,
+    [this](const OdometryMsg & msg) { on_odometry(msg); });
+  create_subscription<AccelWithCovarianceStampedMsg>(
+    topics::SUB_ACCELERATION, latest_only,
+    [this](const AccelWithCovarianceStampedMsg & msg) { on_acceleration(msg); });
   // Durability must match the deployment's bridge. The operation mode is
   // published only when it changes: the classic demo bridge retains it with
   // TRANSIENT_LOCAL so a late-joining SI still receives it (the reader
@@ -212,8 +219,9 @@ Controller::Controller(rclcpp::NodeHandle handle)
     } else {
       op_mode_qos.transient_local();
     }
-    create_subscription_in<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
-      topics::SUB_OPERATION_MODE_STATE, op_mode_qos);
+    create_subscription<OperationModeStateMsg>(
+      topics::SUB_OPERATION_MODE_STATE, op_mode_qos,
+      [this](const OperationModeStateMsg & msg) { on_operation_mode_state(msg); });
   }
 
   // The deployment owns the output mode: read the launch-seeded
@@ -234,18 +242,21 @@ Controller::Controller(rclcpp::NodeHandle handle)
   // session/sequence/decision/source/cycle identity alongside the control
   // payload).
   if (supervision_mode_ == supervision::Mode::VP_CONTROL) {
-    create_subscription_in<DrivingCommandMsg, Controller, &Controller::on_driving_command>(
-      topics::SUB_DRIVING_COMMAND, latest_only);
+    create_subscription<DrivingCommandMsg>(
+      topics::SUB_DRIVING_COMMAND, latest_only,
+      [this](const DrivingCommandMsg & msg) { on_driving_command(msg); });
   }
-  create_subscription_in<BoolMsg, Controller, &Controller::on_reenable>(
-    topics::SUB_REENABLE, latest_only);
-  create_subscription_in<Float64StampedMsg, Controller, &Controller::on_heartbeat>(
-    topics::SUB_VP_HEARTBEAT, latest_only);
-  approved_request_pub_ = create_publisher_in<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
+  create_subscription<BoolMsg>(
+    topics::SUB_REENABLE, latest_only,
+    [this](const BoolMsg & msg) { on_reenable(msg); });
+  create_subscription<Float64StampedMsg>(
+    topics::SUB_VP_HEARTBEAT, latest_only,
+    [this](const Float64StampedMsg & msg) { on_heartbeat(msg); });
+  approved_request_pub_ = create_publisher<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
 
   // Publishers
   if (common::can::output_mode_uses_dds(output_mode_)) {
-    control_cmd_pub_ = create_publisher_in<ControlMsg>(topics::PUB_CONTROL_CMD);
+    control_cmd_pub_ = create_publisher<ControlMsg>(topics::PUB_CONTROL_CMD);
   }
 
   if (common::can::output_mode_uses_can(output_mode_)) {
@@ -261,9 +272,9 @@ Controller::Controller(rclcpp::NodeHandle handle)
   }
 
   pub_processing_time_lat_ms_ =
-    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
   pub_processing_time_lon_ms_ =
-    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
 }
 
 StartupConfig Controller::startupConfigFromParameters()
@@ -1147,7 +1158,7 @@ void Controller::publishApprovedRequest(
     startup_config_.legacy_control_cmd == StartupConfig::LegacyControlCmd::ALWAYS ||
     decision == supervision::Decision::SI_STOP;
   if (legacy_dds_enabled && common::can::output_mode_uses_dds(output_mode_)) {
-    if (!control_cmd_pub_.publish(legacy).ok()) {
+    if (!control_cmd_pub_->publish(legacy).ok()) {
       log_error("Legacy control_cmd publication failed (approved still counted)");
     }
   }
@@ -1175,7 +1186,7 @@ void Controller::publishApprovedRequest(
   approved.fault_id = supervision_.latched ? supervision_.fault_id : 0;
   approved.control = control;
 
-  if (approved_request_pub_.publish(approved).ok()) {
+  if (approved_request_pub_->publish(approved).ok()) {
     log_debug(
       "Approved request published: seq %llu decision %u source %u fault %u",
       (unsigned long long)approved.output_sequence, approved.decision,
@@ -1240,11 +1251,11 @@ void Controller::publishHold()
 }
 
 void Controller::publishProcessingTime(
-  const double t_ms, rclcpp::Publisher<Float64StampedMsg>& pub)
+  const double t_ms, rclcpp::Publisher<Float64StampedMsg>::SharedPtr & pub)
 {
   Float64StampedMsg msg{};
   msg.stamp = Clock::toRosTime(Clock::now());
   msg.data = t_ms;
-  (void)pub.publish(msg);
+  (void)pub->publish(msg);
 }
 }  // namespace autoware::motion::control::trajectory_follower_node
