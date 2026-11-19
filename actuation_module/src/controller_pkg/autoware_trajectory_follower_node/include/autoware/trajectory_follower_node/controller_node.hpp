@@ -134,14 +134,14 @@ private:
   // in controller_bringup/system.toml); the subscriptions stay in the node's
   // default context, so input deserialization cannot stall the control period.
 
-  // Publishers -- RFC-0044 value-typed `rclcpp::Publisher<M>` members
-  // (default-constructed; assigned from create_publisher_in<M>(topic) in the ctor).
-  rclcpp::Publisher<ControlMsg> control_cmd_pub_;
+  // Publishers -- upstream's `rclcpp::Publisher<M>::SharedPtr` members, assigned
+  // from create_publisher<M>(topic) in the ctor.
+  rclcpp::Publisher<ControlMsg>::SharedPtr control_cmd_pub_;
   common::can::ControlCommandOutputMode output_mode_{common::can::default_control_command_output_mode()};
   std::shared_ptr<common::can::ControlCommandCanOutput> can_output_;
-  rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lat_ms_;
-  rclcpp::Publisher<Float64StampedMsg> pub_processing_time_lon_ms_;
-  rclcpp::Publisher<ApprovedRequestMsg> approved_request_pub_;
+  rclcpp::Publisher<Float64StampedMsg>::SharedPtr pub_processing_time_lat_ms_;
+  rclcpp::Publisher<Float64StampedMsg>::SharedPtr pub_processing_time_lon_ms_;
+  rclcpp::Publisher<ApprovedRequestMsg>::SharedPtr approved_request_pub_;
 
   // -------------------------------------------------------------------
   // Supervision (vp_si_control_contract, Safety Island issues #63/#64/#65)
@@ -292,7 +292,7 @@ private:
 
   //
   void publishProcessingTime(
-    const double t_ms, rclcpp::Publisher<Float64StampedMsg>& pub);
+    const double t_ms, rclcpp::Publisher<Float64StampedMsg>::SharedPtr & pub);
 
   //
   StopWatch<std::chrono::milliseconds> stop_watch_;

@@ -252,11 +252,11 @@ Controller::Controller(rclcpp::NodeHandle handle)
   create_subscription<Float64StampedMsg>(
     topics::SUB_VP_HEARTBEAT, latest_only,
     [this](const Float64StampedMsg & msg) { on_heartbeat(msg); });
-  approved_request_pub_ = create_publisher_in<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
+  approved_request_pub_ = create_publisher<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
 
   // Publishers
   if (common::can::output_mode_uses_dds(output_mode_)) {
-    control_cmd_pub_ = create_publisher_in<ControlMsg>(topics::PUB_CONTROL_CMD);
+    control_cmd_pub_ = create_publisher<ControlMsg>(topics::PUB_CONTROL_CMD);
   }
 
   if (common::can::output_mode_uses_can(output_mode_)) {
@@ -272,9 +272,9 @@ Controller::Controller(rclcpp::NodeHandle handle)
   }
 
   pub_processing_time_lat_ms_ =
-    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LAT_MS);
   pub_processing_time_lon_ms_ =
-    create_publisher_in<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
+    create_publisher<Float64StampedMsg>(topics::PUB_PROCESSING_TIME_LON_MS);
 }
 
 StartupConfig Controller::startupConfigFromParameters()
@@ -1158,7 +1158,7 @@ void Controller::publishApprovedRequest(
     startup_config_.legacy_control_cmd == StartupConfig::LegacyControlCmd::ALWAYS ||
     decision == supervision::Decision::SI_STOP;
   if (legacy_dds_enabled && common::can::output_mode_uses_dds(output_mode_)) {
-    if (!control_cmd_pub_.publish(legacy).ok()) {
+    if (!control_cmd_pub_->publish(legacy).ok()) {
       log_error("Legacy control_cmd publication failed (approved still counted)");
     }
   }
@@ -1186,7 +1186,7 @@ void Controller::publishApprovedRequest(
   approved.fault_id = supervision_.latched ? supervision_.fault_id : 0;
   approved.control = control;
 
-  if (approved_request_pub_.publish(approved).ok()) {
+  if (approved_request_pub_->publish(approved).ok()) {
     log_debug(
       "Approved request published: seq %llu decision %u source %u fault %u",
       (unsigned long long)approved.output_sequence, approved.decision,
@@ -1251,11 +1251,11 @@ void Controller::publishHold()
 }
 
 void Controller::publishProcessingTime(
-  const double t_ms, rclcpp::Publisher<Float64StampedMsg>& pub)
+  const double t_ms, rclcpp::Publisher<Float64StampedMsg>::SharedPtr & pub)
 {
   Float64StampedMsg msg{};
   msg.stamp = Clock::toRosTime(Clock::now());
   msg.data = t_ms;
-  (void)pub.publish(msg);
+  (void)pub->publish(msg);
 }
 }  // namespace autoware::motion::control::trajectory_follower_node
