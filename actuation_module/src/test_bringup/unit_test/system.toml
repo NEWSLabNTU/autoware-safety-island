@@ -1,0 +1,57 @@
+# The unit_test test program (actuation_module/test/unit_test.cpp) as a nano-ros
+# image, one per board that runs it. The image's entry is the program's own
+# package, src/asi_tests/asi_unit_test, whose hand-written main() is the
+# program, so `nros build` builds that package rather than generating an
+# entry. The program prints "=== All Tests Passed ===" when every check passed
+# and exits non-zero on a failed one, so `nros run --expect` grades it. CI
+# runs it with .github/scripts/ci-helpers.sh's nros_run_program:
+#
+#   nros_run_program unit_test_bringup:mps3-an536-freertos asi_unit_test 120 \
+#     "=== All Tests Passed ==="
+#
+# which is `nros run --plan` over the image's resolved plan plus its
+# executable: `nros run unit_test_bringup:<board>` alone resolves no artifact
+# for an image whose entry is a hand-written package.
+#
+# Each image is named after its board: the workspace configure of an image
+# whose entry is a hand-written package resolves the board's facts by the
+# board id (nano-ros sets NROS_DEPLOY to it), which must then be an image of
+# this bringup. So each program has a bringup of its own, and the
+# controller's image is named with its bringup
+# (`controller_bringup:freertos-posix`): `freertos-posix` alone is now an
+# image of three bringups.
+#
+# The Zephyr FVP builds of the test programs are still build.sh's (west,
+# test/zephyr_app) until `nros run` takes the model parameters they need.
+
+[system]
+name      = "unit_test_bringup"
+features  = ["param_services"]
+rmw       = "cyclonedds"
+domain_id = 0
+
+# An image whose entry is a hand-written program is sized by that program's
+# census, a host build of its package alone. That host build stops in the
+# board-facts lookup (its interface generation asks for an image `linux`
+# that the package does not declare), so the images take the sizes stated
+# below instead.
+[census]
+on_missing = "warn"
+
+[image_defaults]
+# A test node: a timer, a publisher, a subscription and the parameter
+# services.
+knobs.params.max_parameters = 16
+knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+
+# The FreeRTOS POSIX simulator, over host Cyclone DDS.
+[image.freertos-posix]
+board   = "freertos-posix"
+entry   = "asi_unit_test"
+profile = "RelWithDebInfo"
+
+# QEMU mps3-an536 (emulated Cortex-R52), lwIP over the LAN9118.
+[image.mps3-an536-freertos]
+board   = "mps3-an536-freertos"
+entry   = "asi_unit_test"
+profile = "RelWithDebInfo"

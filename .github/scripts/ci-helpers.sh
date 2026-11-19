@@ -8,6 +8,7 @@
 #   run_command_with_timeout <log_path> <timeout_seconds> <command> [args...]
 #   require_marker   <log_path> <fixed-string marker>
 #   kill_with_timeout <pid> [grace_seconds]
+#   nros_run_program <bringup>:<image> <program> <timeout_seconds> <line>...
 #   ensure_fvp_available   (sets ARMFVP_BIN_PATH; uses ROOT_DIR)
 
 set -euo pipefail
@@ -22,6 +23,47 @@ CI_KILL_AFTER_SECONDS="${CI_KILL_AFTER_SECONDS:-5}"
 # nano-ros-next; the log says which). Each lane calls it in its Phase 0.
 # shellcheck source=../../scripts/nros-cli.sh
 source "${ROOT_DIR}/scripts/nros-cli.sh"
+
+# Build and run one test program image (actuation_module/src/test_bringup)
+# with `nros run --expect`: exit 0 once every <line> has appeared on its
+# console, non-zero when the program ends or <timeout_seconds> passes first.
+#
+#   nros_run_program unit_test_bringup:freertos-posix asi_unit_test 60 \
+#     "=== All Tests Passed ==="
+#
+# The image's entry is the program's own package, a hand-written main(), and
+# `nros run` cannot name that package's executable: its plan carries no
+# artifact ("the build names no single executable"). So the plan is resolved
+# with `--dry-run --json`, the executable (pkg/<program>/<program> under the
+# image's cmake build dir) is added as its `elf`, and `nros run --plan` runs
+# it on the board's runner (native, QEMU) as `nros run` would.
+nros_run_program() {
+  local image="$1" program="$2" secs="$3"
+  shift 3
+  local expects=() line
+  for line in "$@"; do
+    expects+=(--expect "${line}")
+  done
+  local ws="${ROOT_DIR}/actuation_module"
+  local plan_dir="${ROOT_DIR}/build/nros-run-plans"
+  local plan="${plan_dir}/${image//[:\/]/_}.json"
+  mkdir -p "${plan_dir}"
+  ( cd "${ws}" && "${NROS_CLI}" build "${image}" ) || return 1
+  ( cd "${ws}" && "${NROS_CLI}" run "${image}" --dry-run --json ) >"${plan}.resolved" || return 1
+  python3 - "${plan}.resolved" "${plan}" "${program}" <<'PY' || return 1
+import json, os, sys
+src, dst, program = sys.argv[1:]
+text = open(src).read()
+plan = json.loads(text[text.index("{"):])
+elf = os.path.join(plan["build_dir"], "pkg", program, program)
+if not os.path.isfile(elf):
+    sys.exit(f"nros_run_program: {plan['image']} built no {elf}")
+plan.setdefault("artifacts", {})["elf"] = elf
+with open(dst, "w") as f:
+    json.dump(plan, f, indent=2)
+PY
+  ( cd "${ws}" && "${NROS_CLI}" run --plan "${plan}" "${expects[@]}" --timeout "${secs}" )
+}
 
 # Put the image's ROS / Autoware library directories on LD_LIBRARY_PATH.
 #

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <!--
+    Pure declarative, as controller_bringup: package.xml and system.toml
+    only. The image's entry is the test program's own package; see
+    system.toml.
+  -->
+  <name>dds_loopback_test_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Bringup pkg for the dds_loopback_test test program (actuation_module/test/dds_loopback_test.cpp):
+    a steering report published and received by one node. One image per board that runs it.
+  </description>
+  <maintainer email="d10922013@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>asi_dds_loopback_test</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

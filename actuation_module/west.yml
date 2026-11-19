@@ -45,7 +45,12 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-18: 9afb5c8a19, past 4190 (575f694215, issue 2689:
+    # ON main, 2026-11-19: 93368ca929, past the issue 2704 fix (PRs 4223,
+    # 4278: the Zephyr road generates the runtime's own rcl_interfaces types
+    # for Cyclone, so the FVP image's parameter services come up). Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-18: 9afb5c8a19, past 4190 (575f694215, issue 2689:
     # SourceMetadata reads the schema v6 probe sidecar; on a49a8dacaf every
     # Zephyr C++ configure stopped at NanoRosPromise.cmake:402). Branch
     # nano-ros-next only.
@@ -141,7 +146,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 9afb5c8a193a57d46a99124bcbbbc16d4a421faa
+      revision: 93368ca9299b547f0c7d032d8aa348d94571a256
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

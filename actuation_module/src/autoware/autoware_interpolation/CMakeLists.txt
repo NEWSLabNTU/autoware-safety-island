@@ -13,6 +13,12 @@ cmake_minimum_required(VERSION 3.22.1)
 if(TARGET autoware_interpolation)
   return()
 endif()
+# The controller's images only. A workspace configure adds every package, so
+# the test programs' images (src/test_bringup) configure this one too; there
+# it would build a second controller program for nothing.
+if(DEFINED NROS_BRINGUP_DIR AND NOT NROS_BRINGUP_DIR MATCHES "/controller_bringup/?$")
+  return()
+endif()
 project(autoware_interpolation LANGUAGES C CXX)
 
 # The packages this one <depend>s on, added here when nobody did yet:

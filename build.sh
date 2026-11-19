@@ -65,6 +65,8 @@ function usage() {
   echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program (freertos-posix: the"
   echo -e "${GREEN}                       ${NC}controller image plus the can_vcan_sender host program)."
   echo -e "${GREEN}    --dds-loopback-test${NC}Build Zephyr DDS loopback test program."
+  echo -e "${GREEN}                       ${NC}On FreeRTOS the test programs are images: see"
+  echo -e "${GREEN}                       ${NC}actuation_module/src/test_bringup (nros run)."
   echo ""
   echo -e "${GREEN}    Runtime target matrix:${NC}"
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
@@ -444,7 +446,7 @@ function build_zephyr_controller() {
   local native=(-d "${build_dir}" -p auto
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
   ( cd "${ROOT_DIR}/actuation_module" && \
-      "${NROS_CLI_BIN}" build "${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
+      "${NROS_CLI_BIN}" build "controller_bringup:${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
 }
 
 # The Zephyr test programs (--unit-test, --dds-publisher, --dds-subscriber,
@@ -555,15 +557,16 @@ function build_freertos_nros() {
   local label="$2"
   local artifact_name="$3"
   echo -e "${GREEN}Building FreeRTOS ${label} runtime (nros build ${image})...${NC}"
-  # The test programs are the Zephyr lane's, with one exception: on the POSIX
-  # simulator --can-output-test also builds can_vcan_sender, the host SocketCAN
-  # sender actuation_module/test/run-vcan-roundtrip.sh drives (beside the
-  # controller image, which it does not replace).
+  # The FreeRTOS test programs are images of their own (src/test_bringup),
+  # built and run by `nros run`, not by this script. One exception: on the
+  # POSIX simulator --can-output-test also builds can_vcan_sender, the host
+  # SocketCAN sender actuation_module/test/run-vcan-roundtrip.sh drives (beside
+  # the controller image, which it does not replace).
   local vcan_sender=0
   if [ "${BUILD_TEST_FLAG}" = "4" ] && [ "${image}" = "freertos-posix" ]; then
     vcan_sender=1
   elif [ "${BUILD_TEST_FLAG}" != "0" ]; then
-    echo -e "${RED}test programs are Zephyr-lane only (freertos-posix takes --can-output-test); this lane builds the controller image${NC}" 1>&2
+    echo -e "${RED}on FreeRTOS a test program is an image: nros run <program>_bringup:<board> --expect <line> (actuation_module/src/test_bringup). freertos-posix takes --can-output-test.${NC}" 1>&2
     exit 1
   fi
   # The domain is the image's ([image.<id>] domain_id), rendered into the
@@ -630,10 +633,12 @@ function build_freertos_nros() {
     fi
   fi
 
+  # Qualified: the test programs' bringups (src/test_bringup) name images
+  # after their boards too, so a bare `freertos-posix` is ambiguous.
   local log
   log="$(mktemp)"
   ( cd "${ROOT_DIR}/actuation_module" && \
-      "${nros_cli_bin}" build "${image}" -- "${native[@]}" ) 2>&1 | tee "${log}"
+      "${nros_cli_bin}" build "controller_bringup:${image}" -- "${native[@]}" ) 2>&1 | tee "${log}"
   local rc=${PIPESTATUS[0]}
   if [ "${rc}" != "0" ]; then
     rm -f "${log}"
@@ -685,9 +690,8 @@ function build_freertos_s32z2_nros() {
 
 # The EMULATED Cortex-R52 image (QEMU mps3-an536). Same CPU and kernel port as
 # the S32Z2 image, but nothing is licensed or hardware-gated: the board bundle
-# carries startup, GICv3, tick and the LAN9118 netif, so this image BOOTS:
-#   qemu-system-arm -machine mps3-an536 -nographic \
-#       -semihosting-config enable=on,target=native -kernel <image>
+# carries startup, GICv3, tick and the LAN9118 netif, so this image BOOTS
+# (QEMU from the SDK store): `nros run controller_bringup:an536`.
 function build_freertos_an536_nros() {
   build_freertos_nros an536 "AN536 (emulated R52)" actuation_an536_entry
 }

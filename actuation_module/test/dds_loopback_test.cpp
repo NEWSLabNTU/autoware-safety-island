@@ -47,13 +47,18 @@ public:
 
 alignas(LoopbackNode) static unsigned char g_node_buf[sizeof(LoopbackNode)];
 
-int main(void)
+// The hosted signature: on a FreeRTOS board nano-ros renames main() and calls
+// it from the board's entry as main(int, char **) (test_bringup's images).
+int main(int /*argc*/, char ** /*argv*/)
 {
   log_info("--------------------------------\n");
   log_info("Starting DDS loopback test\n");
   log_info("--------------------------------\n");
+#if defined(PLATFORM_ZEPHYR)
+  // Zephyr's DHCP client; a FreeRTOS board's network is up before main().
   log_info("Waiting for DHCP to get IP address...\n");
   sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
+#endif
 
 #if defined(CONFIG_ENABLE_SNTP) && CONFIG_ENABLE_SNTP
   if (Clock::init_clock_via_sntp() < 0) {

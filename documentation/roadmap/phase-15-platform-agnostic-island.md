@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main a49a8dacaf and the
-CLI is built from source; there P4 is done too, and the P9 `fabsl` and
+On branch `nano-ros-next` nano-ros is pinned at main 93368ca929 (2026-11-19)
+and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -49,7 +49,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 
 | issue | gap | step |
 |---|---|---|
-| 4005 | consumer evidence for tracker issues 0758 (SNTP re-acquire, epoch failure policy), 0772 (FreeRTOS epoch), 2165 (Zephyr SMP log stops after four records) | P4, P5 |
+| 4005 | consumer evidence for tracker issues 0758 (SNTP re-acquire, epoch failure policy), 0772 (FreeRTOS epoch), 2165 (Zephyr SMP log stops after four records; closed 2026-11-19 as not reproducing at 93368ca929, see P4) | P4, P5 |
 | 4006 | `nros-toolchain.toml` cannot pin a git commit | P11 |
 | 4007 | fvp runner: model parameters (SMSC NIC, tap hostbridge, uart out_file) | P10, P11 |
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
@@ -68,7 +68,18 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 9afb5c8a19 (2026-11-18). Over a49a8dacaf it adds PR 4190
+nano-ros main 93368ca929 (2026-11-19, 5b600fe). Over 9afb5c8a19 it adds the
+nano-ros issue 2704 fix (PRs 4223, 4278): the Zephyr road now generates the
+runtime's own `rcl_interfaces` types for Cyclone, so the FVP image's six
+parameter services come up. At 9afb5c8a19 the image booted and printed
+"parameter services could not be created for node /controller ...
+Transport(Unsupported)" and ran without them. Booted on the FVP
+(user-mode networking) at 93368ca929: no such line and no descriptor
+overflow, "parameter store: 164 slots ... carved", Live, and the
+controller logging through 121 s. `nros-sdk.lock` records the sources and
+system packages this build resolved.
+
+Before that, nano-ros main 9afb5c8a19 (2026-11-18). Over a49a8dacaf it adds PR 4190
 (575f694215, issue 2689: `SourceMetadata` reads the schema v6 probe
 sidecar and a stamp failure is loud), which fixes the configure break
 below; the Zephyr FVP controller image configures, links and boots on it
@@ -452,14 +463,20 @@ What remains of P9 and P11 after this:
     pthread mutexes; `CONFIG_LOG_THROTTLE_RATE` went from the Kconfig, the
     FreeRTOS config header and asi_common's CMake. No site needed `_ONCE` or
     `_SKIPFIRST`: the island had no hand-rolled once or skip-first logging.
+  - 2165 closed (2026-11-19) and the Zephyr printk bypass is gone (80ff827):
+    every `log_*` line goes through nros_log on every target. Measured on the
+    SMP FVP at 93368ca929 with the bypass compiled out: the island's lines,
+    "Actuation Safety Island is Live" included, arrive as `<inf> nros:`
+    records, 259 records through 121 s, no "log record(s) lost", and
+    `nros_log::DISPATCH_GUARD`, `early::PENDING` and `early::LOST` read 0 at
+    10, 31, 61 and 121 s (read over Iris, with a rodata cross-check against
+    the ELF). nano-ros 139 closed 2165 on these runs and is hardening the
+    Zephyr sink separately (no caller-stack buffer).
+    Doable now, not done: the controller's own unthrottled `log_*` lines can
+    become `RCLCPP_*(get_logger(), ...)` (they stayed `log_*` only for the
+    bypass). It touches `controller_node.cpp`, so it waits for the P9 work
+    there.
   - Waiting on nano-ros:
-    - 2165 is open, so the `log_*` mapping keeps its Zephyr printk bypass and
-      the controller's own unthrottled lines stay `log_*`: on the SMP FVP an
-      nros_log record past the first four never reaches the console, and the
-      FVP lane greps "Actuation Safety Island is Live". The throttled lines go
-      through nros_log on every target, so on the FVP they are lost with the
-      rest until 2165 is fixed; no FVP check greps one (posix and an536 grep
-      "Control is skipped since input data is not ready.").
     - the level stays `CONFIG_LOG_LEVEL` (compile time: `log_debug` and
       `PROFILE_*` compile out below 2). `knobs.log.max_level` is a ceiling
       nros_log checks at run time, after the call site has evaluated its
@@ -592,6 +609,55 @@ What remains of P9 and P11 after this:
   lanes.
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
+- Status on nano-ros-next (branch `nros-next-p10`, pin 93368ca929): the
+  FreeRTOS POSIX and AN536 lanes are done; the FVP lanes wait on 4007 and
+  are unchanged (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test`
+  and `test/zephyr_app`).
+  - Test images: the unit and DDS loopback tests are one image per board,
+    `unit_test_bringup:{freertos-posix,mps3-an536-freertos}` and
+    `dds_loopback_test_bringup:{...}` (`src/test_bringup/<program>/`), whose
+    entry is the program's own package (`src/asi_tests/asi_<program>`,
+    `nano_ros_add_executable(... ROS2_MAIN)` over `test/<program>.cpp`).
+    One bringup per program, not one `test_bringup`, and images named after
+    their boards: a hand-written entry's configure resolves board facts by
+    `NROS_DEPLOY`, which nano-ros sets to the board id, so the image key
+    must be the board id. The controller's images are therefore named
+    `controller_bringup:<id>` in build.sh and CI (`freertos-posix` is an
+    image of three bringups).
+  - CI: both lanes build with `nros build controller_bringup:<id>` and run
+    every image with `nros run ... --expect <line>... --timeout N`; nothing
+    starts QEMU or the POSIX entry, or greps their output, by hand. The test
+    images go through `nros_run_program` (ci-helpers.sh): `nros run --plan`
+    over the resolved plan with the program's executable added, because
+    `nros run` resolves no artifact for a hand-written entry. Local runs
+    (2026-11-19): POSIX lane exit 0 (controller, three SI_DDS_INTERFACE
+    overrides and the nosuch0 refusal, unit test, loopback, host tests);
+    AN536 lane exit 0 (controller on QEMU 12.7 s, unit test 4.1 s, loopback
+    6.6 s). A wrong `--expect` line fails the run (exit 1 on timeout).
+    CI run 44547138407 (c8e931a): FreeRTOS POSIX green (20 min), FreeRTOS
+    AN536 green (21 min); Zephyr FVP red before any build, at the lockstep
+    check: `west.yml` still pins 9afb5c8a19 while the submodule is
+    93368ca929 (5b600fe moved only the submodule), as on `nano-ros-next`.
+  - Workarounds, each to drop when nano-ros covers it: `[census] on_missing
+    = "warn"` in both test bringups (the owned entry's host census stops in
+    board facts, `--deploy linux`); the bringup guards in `controller_pkg`,
+    `autoware_controller_libs` and the test packages (a workspace configure
+    adds every package; the controller's component executable does not
+    build in another bringup's root); the `--plan` step above.
+  - `build.sh`: the FreeRTOS lanes no longer call it. Its FreeRTOS path
+    stays for the CARLA image, the S32Z2 link, the vcan sender and the
+    demos, which read its `actuation_*_entry` links; the FVP lanes keep
+    `build_zephyr_test`. What went is the QEMU command in its comments and
+    the "Zephyr-lane only" refusal, now a pointer to the test images.
+  - The source CLI path builds the runner packages too
+    (`scripts/nros-cli.sh`); `nros run` needs them.
+  - Seen on the AN536 controller (an image this branch does not change):
+    "parameter services
+    could not be created for node /controller at service
+    describe_parameters: Transport(Backend("rmw_ret error"))" after "is
+    Live". The POSIX image creates them.
+  - Not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
+    `ament-env.sh` to a doc line.
 
 ### P11. Pins and boards - M-L, parallel with P4-P10
 
