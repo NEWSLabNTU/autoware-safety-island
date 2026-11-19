@@ -185,6 +185,7 @@ jobs:
             ~/.cargo/git
             modules/nros/packages/cli/target
             modules/nros/packages/cli/nros-launch-resolve/target
+            modules/nros/packages/runners/target
           key: nros-cli-freertos-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: nros-cli-freertos-
 
@@ -271,6 +272,7 @@ jobs:
             ~/.nros/sdk
             modules/nros/packages/cli/target
             modules/nros/packages/cli/nros-launch-resolve/target
+            modules/nros/packages/runners/target
           key: nros-an536-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: nros-an536-
 
