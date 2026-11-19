@@ -111,6 +111,11 @@ nros_cli_select() {
       cargo build --release --manifest-path "${nros_repo}/packages/cli/Cargo.toml" -p nros-cli
       cargo build --release \
         --manifest-path "${nros_repo}/packages/cli/nros-launch-resolve/Cargo.toml"
+      # The runner packages `nros run` starts an image through (native, QEMU,
+      # FVP); a checkout's CLI looks for them in packages/runners/target/.
+      # nano-ros lists them in scripts/lib/cli-companion-packages.txt.
+      cargo build --release --locked \
+        --manifest-path "${nros_repo}/packages/runners/Cargo.toml" --workspace
       mkdir -p "${nros_repo}/packages/cli/target/release"
       ln -sf "${nros_repo}/packages/cli/nros-launch-resolve/target/release/nros-launch-resolve" \
              "${nros_repo}/packages/cli/target/release/nros-launch-resolve"
