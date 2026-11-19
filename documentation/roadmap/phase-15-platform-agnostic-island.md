@@ -609,6 +609,55 @@ What remains of P9 and P11 after this:
   lanes.
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
+- Status on nano-ros-next (branch `nros-next-p10`, pin 93368ca929): the
+  FreeRTOS POSIX and AN536 lanes are done; the FVP lanes wait on 4007 and
+  are unchanged (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test`
+  and `test/zephyr_app`).
+  - Test images: the unit and DDS loopback tests are one image per board,
+    `unit_test_bringup:{freertos-posix,mps3-an536-freertos}` and
+    `dds_loopback_test_bringup:{...}` (`src/test_bringup/<program>/`), whose
+    entry is the program's own package (`src/asi_tests/asi_<program>`,
+    `nano_ros_add_executable(... ROS2_MAIN)` over `test/<program>.cpp`).
+    One bringup per program, not one `test_bringup`, and images named after
+    their boards: a hand-written entry's configure resolves board facts by
+    `NROS_DEPLOY`, which nano-ros sets to the board id, so the image key
+    must be the board id. The controller's images are therefore named
+    `controller_bringup:<id>` in build.sh and CI (`freertos-posix` is an
+    image of three bringups).
+  - CI: both lanes build with `nros build controller_bringup:<id>` and run
+    every image with `nros run ... --expect <line>... --timeout N`; nothing
+    starts QEMU or the POSIX entry, or greps their output, by hand. The test
+    images go through `nros_run_program` (ci-helpers.sh): `nros run --plan`
+    over the resolved plan with the program's executable added, because
+    `nros run` resolves no artifact for a hand-written entry. Local runs
+    (2026-11-19): POSIX lane exit 0 (controller, three SI_DDS_INTERFACE
+    overrides and the nosuch0 refusal, unit test, loopback, host tests);
+    AN536 lane exit 0 (controller on QEMU 12.7 s, unit test 4.1 s, loopback
+    6.6 s). A wrong `--expect` line fails the run (exit 1 on timeout).
+    CI run 44547138407 (c8e931a): FreeRTOS POSIX green (20 min), FreeRTOS
+    AN536 green (21 min); Zephyr FVP red before any build, at the lockstep
+    check: `west.yml` still pins 9afb5c8a19 while the submodule is
+    93368ca929 (5b600fe moved only the submodule), as on `nano-ros-next`.
+  - Workarounds, each to drop when nano-ros covers it: `[census] on_missing
+    = "warn"` in both test bringups (the owned entry's host census stops in
+    board facts, `--deploy linux`); the bringup guards in `controller_pkg`,
+    `autoware_controller_libs` and the test packages (a workspace configure
+    adds every package; the controller's component executable does not
+    build in another bringup's root); the `--plan` step above.
+  - `build.sh`: the FreeRTOS lanes no longer call it. Its FreeRTOS path
+    stays for the CARLA image, the S32Z2 link, the vcan sender and the
+    demos, which read its `actuation_*_entry` links; the FVP lanes keep
+    `build_zephyr_test`. What went is the QEMU command in its comments and
+    the "Zephyr-lane only" refusal, now a pointer to the test images.
+  - The source CLI path builds the runner packages too
+    (`scripts/nros-cli.sh`); `nros run` needs them.
+  - Seen on the AN536 controller (an image this branch does not change):
+    "parameter services
+    could not be created for node /controller at service
+    describe_parameters: Transport(Backend("rmw_ret error"))" after "is
+    Live". The POSIX image creates them.
+  - Not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
+    `ament-env.sh` to a doc line.
 
 ### P11. Pins and boards - M-L, parallel with P4-P10
 
