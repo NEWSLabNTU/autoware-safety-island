@@ -95,8 +95,8 @@ private:
   // the deployment's launch file owns it). Invalid values are fatal.
   StartupConfig startupConfigFromParameters();
 
-  // Subscribers -- RFC-0044 typed member callbacks (`void on_X(const Msg&)`),
-  // wired via create_subscription_in<Msg, Controller, &Controller::on_X>(topic).
+  // Subscribers -- `void on_X(const Msg&)`, wired via upstream's
+  // create_subscription<Msg>(topic, qos, callback) with a `[this]` lambda.
   void on_steering_status(const SteeringReportMsg& msg);
   void on_operation_mode_state(const OperationModeStateMsg& msg);
   void on_odometry(const OdometryMsg& msg);

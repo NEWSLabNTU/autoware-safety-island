@@ -171,11 +171,11 @@ Controller::Controller(rclcpp::NodeHandle handle)
       period, [this]() { callbackTimerControl(); }, &control_group);
   }
 
-  // Subscribers -- RFC-0044 typed member-callback subscriptions. The wire
-  // type + member callback are the only spellings; the executor arena owns
-  // the subscriber (no descriptor, no `void*` ctx). A failed create sets
-  // ok()=false and the generated entry halts boot after construction, the
-  // nros equivalent of the DDS build's "cannot subscribe" exception.
+  // Subscribers -- upstream's create_subscription<Msg>(topic, qos, callback).
+  // The executor arena owns the subscriber and the `[this]` callable, and the
+  // node owns both, so the returned handle is not kept. A failed create stops
+  // the boot, the nros equivalent of the DDS build's "cannot subscribe"
+  // exception.
   namespace topics = controller_pkg::node_identity::topics;
 
   // KEEP_LAST depth 1 on every input (upstream fix #42 on the nros side):
@@ -184,23 +184,28 @@ Controller::Controller(rclcpp::NodeHandle handle)
   // the executor arena).
   const rclcpp::QoS latest_only = rclcpp::QoS::default_profile().keep_last(1);
 
-  create_subscription_in<SteeringReportMsg, Controller, &Controller::on_steering_status>(
-    topics::SUB_STEERING_STATUS, latest_only);
+  create_subscription<SteeringReportMsg>(
+    topics::SUB_STEERING_STATUS, latest_only,
+    [this](const SteeringReportMsg & msg) { on_steering_status(msg); });
   if (supervision_mode_ == supervision::Mode::SI_CONTROL) {
     if (startup_config_.trajectory_source == StartupConfig::TrajectorySource::VP) {
       // VP's own path + speed schedule; the SI places it with the same-frame
       // ego pose (vp_reference.hpp), so no adapter sits between VP and SI.
-      create_subscription_in<DrivingReferenceMsg, Controller, &Controller::on_driving_reference>(
-        topics::SUB_DRIVING_REFERENCE, latest_only);
+      create_subscription<DrivingReferenceMsg>(
+        topics::SUB_DRIVING_REFERENCE, latest_only,
+        [this](const DrivingReferenceMsg & msg) { on_driving_reference(msg); });
     } else {
-      create_subscription_in<TrajectoryMsg_Raw, Controller, &Controller::on_trajectory>(
-        topics::SUB_TRAJECTORY, latest_only);
+      create_subscription<TrajectoryMsg_Raw>(
+        topics::SUB_TRAJECTORY, latest_only,
+        [this](const TrajectoryMsg_Raw & msg) { on_trajectory(msg); });
     }
   }
-  create_subscription_in<OdometryMsg, Controller, &Controller::on_odometry>(
-    topics::SUB_ODOMETRY, latest_only);
-  create_subscription_in<AccelWithCovarianceStampedMsg, Controller, &Controller::on_acceleration>(
-    topics::SUB_ACCELERATION, latest_only);
+  create_subscription<OdometryMsg>(
+    topics::SUB_ODOMETRY, latest_only,
+    [this](const OdometryMsg & msg) { on_odometry(msg); });
+  create_subscription<AccelWithCovarianceStampedMsg>(
+    topics::SUB_ACCELERATION, latest_only,
+    [this](const AccelWithCovarianceStampedMsg & msg) { on_acceleration(msg); });
   // Durability must match the deployment's bridge. The operation mode is
   // published only when it changes: the classic demo bridge retains it with
   // TRANSIENT_LOCAL so a late-joining SI still receives it (the reader
@@ -214,8 +219,9 @@ Controller::Controller(rclcpp::NodeHandle handle)
     } else {
       op_mode_qos.transient_local();
     }
-    create_subscription_in<OperationModeStateMsg, Controller, &Controller::on_operation_mode_state>(
-      topics::SUB_OPERATION_MODE_STATE, op_mode_qos);
+    create_subscription<OperationModeStateMsg>(
+      topics::SUB_OPERATION_MODE_STATE, op_mode_qos,
+      [this](const OperationModeStateMsg & msg) { on_operation_mode_state(msg); });
   }
 
   // The deployment owns the output mode: read the launch-seeded
@@ -236,13 +242,16 @@ Controller::Controller(rclcpp::NodeHandle handle)
   // session/sequence/decision/source/cycle identity alongside the control
   // payload).
   if (supervision_mode_ == supervision::Mode::VP_CONTROL) {
-    create_subscription_in<DrivingCommandMsg, Controller, &Controller::on_driving_command>(
-      topics::SUB_DRIVING_COMMAND, latest_only);
+    create_subscription<DrivingCommandMsg>(
+      topics::SUB_DRIVING_COMMAND, latest_only,
+      [this](const DrivingCommandMsg & msg) { on_driving_command(msg); });
   }
-  create_subscription_in<BoolMsg, Controller, &Controller::on_reenable>(
-    topics::SUB_REENABLE, latest_only);
-  create_subscription_in<Float64StampedMsg, Controller, &Controller::on_heartbeat>(
-    topics::SUB_VP_HEARTBEAT, latest_only);
+  create_subscription<BoolMsg>(
+    topics::SUB_REENABLE, latest_only,
+    [this](const BoolMsg & msg) { on_reenable(msg); });
+  create_subscription<Float64StampedMsg>(
+    topics::SUB_VP_HEARTBEAT, latest_only,
+    [this](const Float64StampedMsg & msg) { on_heartbeat(msg); });
   approved_request_pub_ = create_publisher_in<ApprovedRequestMsg>(topics::PUB_APPROVED_REQUEST);
 
   // Publishers
