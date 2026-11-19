@@ -13,7 +13,6 @@
 //   * the stop_timer test — a ComponentNode timer lives with its node
 //     (rclcpp::Timer's dtor cancels it); there is no mid-life stop API.
 
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -46,7 +45,9 @@ struct TestState {
 
 static TestState g_state;
 
-// Helper macros for test readability
+// Helper macros for test readability. A failed check exits non-zero rather
+// than assert()s: the release builds compile assert out, and `nros run
+// --expect` grades a test program by its last line and its exit.
 #define TEST_START(name) \
     log_info("=== Testing " #name " ===\n"); \
     g_state.reset();
@@ -58,7 +59,7 @@ static TestState g_state;
     do { \
         if (!(condition)) { \
             log_error("Assertion failed: %s\n", message); \
-            assert(false && message); \
+            std::exit(1); \
         } \
     } while (0)
 
@@ -210,11 +211,16 @@ static void test_clock_utils()
 
 alignas(TestNode) static unsigned char g_node_buf[sizeof(TestNode)];
 
-int main()
+// The hosted signature: on a FreeRTOS board nano-ros renames main() and calls
+// it from the board's entry as main(int, char **) (test_bringup's images).
+int main(int /*argc*/, char ** /*argv*/)
 {
     log_info("=== Starting Node Test Suite ===\n");
+#if defined(PLATFORM_ZEPHYR)
+    // Zephyr's DHCP client; a FreeRTOS board's network is up before main().
     log_info("Waiting for Network interface to be ready\n");
     sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
+#endif
 
 #if defined(CONFIG_ENABLE_SNTP) && CONFIG_ENABLE_SNTP
     if (Clock::init_clock_via_sntp() < 0) {
