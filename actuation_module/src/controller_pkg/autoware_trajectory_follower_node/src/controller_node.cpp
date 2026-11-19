@@ -28,6 +28,7 @@ using namespace common::logger;
 #include "controller_pkg/node_identity.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -47,12 +48,12 @@ extern "C" void asi_start_wall_clock_sync(void);
 namespace autoware::motion::control::trajectory_follower_node
 {
 // RFC-0044 construct-with-handle ctor. The entry hands the executor-bound
-// handle post-`rclcpp::init_in`; `NodeWithTimers<1>(handle, name)` creates the
+// handle post-`rclcpp::init_in`; `rclcpp::Node(handle, name)` creates the
 // node, then the body wires the subscriptions / publishers / timer + MPC/PID.
 // The per-node pthread spin of the legacy DDS shim is gone -- the executor
 // drives us.
 Controller::Controller(rclcpp::NodeHandle handle)
-: rclcpp::NodeWithTimers<1>(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
+: rclcpp::Node(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
   startup_config_(startupConfigFromParameters())
 {
 #if defined(ASI_FREERTOS_WALL_CLOCK)
@@ -159,14 +160,15 @@ Controller::Controller(rclcpp::NodeHandle handle)
       std::exit(1);
   }
 
-  // Timer -- RFC-0044 typed member timer, in its own callback group
+  // Timer -- upstream's create_wall_timer, in its own named callback group
   // (RFC-0047) so the bringup's [tasks.control] binds it to a real-time
   // scheduling context; the subscriptions below stay in the node's default
-  // context (see header note).
+  // context (see header note). The period is whole milliseconds, as before.
   {
-    const auto period_ms = static_cast<uint64_t>(ctrl_period * 1000);
-    create_timer_in_group<Controller, &Controller::callbackTimerControl>(
-      create_callback_group("control"), period_ms);
+    const std::chrono::milliseconds period(static_cast<int64_t>(ctrl_period * 1000));
+    const rclcpp::CallbackGroup control_group = create_callback_group("control");
+    timer_control_ = create_wall_timer(
+      period, [this]() { callbackTimerControl(); }, &control_group);
   }
 
   // Subscribers -- RFC-0044 typed member-callback subscriptions. The wire

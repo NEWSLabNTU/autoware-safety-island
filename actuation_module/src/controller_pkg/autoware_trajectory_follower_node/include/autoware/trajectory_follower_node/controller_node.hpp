@@ -38,8 +38,8 @@
 #include <vector>
 
 // nano-ros port (RFC-0044): the vendored controller is base-swapped off the
-// legacy `common/node` DDS shim onto `rclcpp::NodeWithTimers<1>`, the
-// rclcpp-faithful IS-A-node base: identity in the ctor, typed member-callback
+// legacy `common/node` DDS shim onto `rclcpp::Node`, the rclcpp-faithful
+// IS-A-node base: identity in the ctor, typed member-callback
 // subscriptions, value-returning parameter facade. The MPC/PID control math
 // and the supervision logic (vp_si_control_contract) are untouched.
 #include <rclcpp/rclcpp.hpp>
@@ -59,7 +59,7 @@ namespace trajectory_follower = ::autoware::motion::control::trajectory_follower
 
 /// \classController
 /// \brief The node class used for generating longitudinal control commands (velocity/acceleration)
-class TRAJECTORY_FOLLOWER_PUBLIC Controller : public rclcpp::NodeWithTimers<1>
+class TRAJECTORY_FOLLOWER_PUBLIC Controller : public rclcpp::Node
 {
 public:
   /// RFC-0044 construct-with-handle ctor: the generated entry placement-news
@@ -272,6 +272,7 @@ private:
 
   //
   void callbackTimerControl();
+  rclcpp::TimerBase::SharedPtr timer_control_;
 
   //
   bool processData();

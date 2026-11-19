@@ -47,7 +47,7 @@ namespace controller_pkg {
 /// behaviour — the 5 subscriptions, 3 publishers, timer, MPC + PID
 /// controllers — comes from the base class; the node name and topic
 /// strings are sourced from `controller_pkg/node_identity.hpp`.
-/// Phase 242.5 (RFC-0044). The vendored base is now `rclcpp::NodeWithTimers<1>` (an
+/// Phase 242.5 (RFC-0044). The vendored base is `rclcpp::Node` (an
 /// IS-A-node, construct-with-handle component). `controller_pkg::Controller`
 /// inherits the base's `explicit Controller(rclcpp::NodeHandle)` ctor so the
 /// generated Zephyr Entry carrier can placement-new it with the executor handle.

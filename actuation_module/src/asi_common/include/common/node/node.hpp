@@ -5,10 +5,10 @@
 // API. The legacy raw-CycloneDDS node base retired with the
 // freertos-s32z2-legacy lane.
 //
-// The controller derives `rclcpp::NodeWithTimers<1>` (nano-ros phase-427 W4
-// merged the old `nros::ComponentNode` into `rclcpp::Node`; phase-503 moved
-// the C++ headers to `<rclcpp/*>` and dropped the `nros::` namespace), and the
-// test programs derive it too.
+// The controller derives `rclcpp::Node` (nano-ros phase-427 W4 merged the old
+// `nros::ComponentNode` into `rclcpp::Node`; phase-503 moved the C++ headers
+// to `<rclcpp/*>` and dropped the `nros::` namespace); the test programs
+// derive `rclcpp::NodeWithTimers<1>`.
 #include <memory>
 
 #include <rclcpp/rclcpp.hpp>
