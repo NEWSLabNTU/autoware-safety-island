@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  Copyright (c) 2026, NEWSLab NTU.
+  SPDX-License-Identifier: Apache-2.0
+
+  Vendored from Autoware. The <depend>s are upstream's that exist in this
+  workspace; not here: autoware_internal_debug_msgs,
+  autoware_osqp_interface (upstream's OSQP solver is not vendored),
+  diagnostic_msgs, diagnostic_updater, rclcpp, rclcpp_components, tf2,
+  tf2_ros; autoware_utils is autoware_universe_utils here.
+  nros and asi_common (the logger, clock, node facade and the message
+  umbrella autoware/autoware_msgs/messages.hpp) stand in for rclcpp.
+-->
+<package format="3">
+  <name>autoware_mpc_lateral_controller</name>
+  <version>0.1.0</version>
+  <description>
+    Autoware's MPC lateral controller, with the unconstrained fast QP
+    solver.
+  </description>
+  <maintainer email="cshih@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>nros</depend>
+  <depend>asi_common</depend>
+  <depend>autoware_interpolation</depend>
+  <depend>autoware_motion_utils</depend>
+  <depend>autoware_trajectory_follower_base</depend>
+  <depend>autoware_universe_utils</depend>
+  <depend>autoware_vehicle_info_utils</depend>
+  <depend>eigen</depend>
+  <depend>autoware_control_msgs</depend>
+  <depend>autoware_planning_msgs</depend>
+  <depend>autoware_vehicle_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

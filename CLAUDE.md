@@ -37,8 +37,9 @@ actuation_module/            nano-ros workspace root (`nros configure .`)
                              file + contract; zephyr/ = the Zephyr images'
                              os_config fragments (prj-*.conf, overlays)
     s32z2_board_glue/        NXP S32Z2 FreeRTOS board glue
-    autoware/                autoware_controller_libs: vendored Autoware controllers
-                             (MPC, PID) and utility libraries
+    autoware/                Vendored Autoware packages, one ament package each as
+                             upstream (MPC, PID, follower base, motion, universe and
+                             vehicle-info utils, interpolation)
     eigen/                   The island's Eigen 3.4.0 headers (psincos patch for
                              arm-none-eabi applied); find_package(Eigen3) finds it
     asi_common/              Platform layer: include/{common,platform}, message

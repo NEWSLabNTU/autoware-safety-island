@@ -12,15 +12,25 @@ project(controller_pkg LANGUAGES C CXX)
 # actuation_module root (this file lives at <root>/src/controller_pkg/).
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# The platform layer and the Autoware controller library. Configured before
-# this package in a workspace build; nano-ros's metadata probe adds this
-# package on its own, so add them here when nobody did.
+# The platform layer and the vendored Autoware packages the node uses.
+# Configured before this package in a workspace build; nano-ros's metadata
+# probe adds this package on its own, so add them here when nobody did (each
+# Autoware package adds its own <depend>s the same way).
 if(NOT TARGET asi_common)
   add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
 endif()
-if(NOT TARGET autoware_controller_libs)
-  add_subdirectory("${_ACT_ROOT}/src/autoware" autoware_controller_libs)
-endif()
+set(_AUTOWARE_DEPS
+  autoware_motion_utils
+  autoware_mpc_lateral_controller
+  autoware_pid_longitudinal_controller
+  autoware_trajectory_follower_base
+  autoware_universe_utils
+  autoware_vehicle_info_utils)
+foreach(_dep IN LISTS _AUTOWARE_DEPS)
+  if(NOT TARGET ${_dep})
+    add_subdirectory("${_ACT_ROOT}/src/autoware/${_dep}" ${_dep})
+  endif()
+endforeach()
 
 # --- The component library + its registration (RFC-0057) -------------------
 # nano-ros's reference shape, the ament analog: the library owns the sources,
@@ -46,7 +56,7 @@ nros_components_register_node(controller_lib
 # component.
 target_include_directories(controller_lib PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
-target_link_libraries(controller_lib PUBLIC autoware_controller_libs asi_common)
+target_link_libraries(controller_lib PUBLIC ${_AUTOWARE_DEPS} asi_common)
 
 # Per-topic delivery counters in the controller callbacks, for answering "at
 # what RATE is this topic reaching the app?" -- a question the controller's own
@@ -66,7 +76,7 @@ if(TARGET app)
   target_include_directories(app PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
-  target_link_libraries(app PRIVATE autoware_controller_libs asi_common)
+  target_link_libraries(app PRIVATE ${_AUTOWARE_DEPS} asi_common)
 endif()
 
 # --- FreeRTOS POSIX: the SocketCAN vcan sender (build.sh --can-output-test) --
