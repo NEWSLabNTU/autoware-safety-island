@@ -49,7 +49,12 @@ alignas(LoopbackNode) static unsigned char g_node_buf[sizeof(LoopbackNode)];
 
 // The hosted signature: on a FreeRTOS board nano-ros renames main() and calls
 // it from the board's entry as main(int, char **) (test_bringup's images).
+// Zephyr declares `int main(void)` itself, so its test app keeps that one.
+#if defined(__ZEPHYR__)
+int main(void)
+#else
 int main(int /*argc*/, char ** /*argv*/)
+#endif
 {
   log_info("--------------------------------\n");
   log_info("Starting DDS loopback test\n");
