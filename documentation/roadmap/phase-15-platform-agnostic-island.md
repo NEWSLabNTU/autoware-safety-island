@@ -250,10 +250,11 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
 
 What remains of P9 and P11 after this:
 
-- P9: the controller_pkg
-  `add_subdirectory` fallbacks, until the metadata probe configures a node
-  package's workspace `<depend>`s (a nano-ros change, not filed); the
-  package split and the rclcpp spellings (not measured on the R52 lanes).
+- P9: the `add_subdirectory` fallbacks in controller_pkg and the seven
+  Autoware packages, until the metadata probe configures a node package's
+  workspace `<depend>`s, and the Autoware packages' add-once guard, until
+  the generated Zephyr root adds packages in `<depend>` order (both
+  nano-ros changes, not filed).
 - P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
@@ -590,9 +591,56 @@ What remains of P9 and P11 after this:
   define is gone (6d3d71e); Eigen is the `eigen` workspace package
   (b8ef477); `can_vcan_sender` is `nano_ros_add_plain_executable` (c35a136,
   4016). The controller_pkg fallbacks stay (nano-ros's metadata probe
-  adds only the node package); the package
-  split and the rclcpp spellings are not started. See "Dropped on
-  nano-ros-next".
+  adds only the node package). See "Dropped on nano-ros-next".
+  - Package split (b39a736): `autoware_controller_libs` is gone;
+    `src/autoware/<pkg>/` holds seven ament packages, one per vendored
+    upstream package (`autoware_universe_utils`, `_interpolation`,
+    `_motion_utils`, `_vehicle_info_utils`, `_trajectory_follower_base`,
+    `_mpc_lateral_controller`, `_pid_longitudinal_controller`). Each
+    `<depend>`s on what upstream 1.5.0 declares that exists here
+    (`autoware_utils*` is `autoware_universe_utils`; rclcpp, tf2,
+    diagnostic_*, osqp and the internal message packages are not here),
+    plus `nros` and `asi_common`; `autoware_universe_utils` also takes the
+    message packages asi_common's umbrella header names. controller_pkg
+    `<depend>`s on the six upstream `autoware_trajectory_follower_node`
+    names. Each package keeps an `add_subdirectory` fallback for its own
+    `<depend>`s and returns at once when its target exists: nano-ros's
+    generated Zephyr root (`west_app.rs`) adds the image's packages in name
+    order, not `<depend>` order, so `autoware_interpolation`'s fallback adds
+    `autoware_universe_utils` before the root does (without the guard the
+    FVP configure stops: "cannot create target ... already exists"). The
+    FreeRTOS root is ordered (`nano_ros_workspace(ORDER_FROM_DEPENDS)`).
+  - rclcpp spellings in `controller_node.cpp`, all kept: the control timer
+    is `create_wall_timer(period, [this]{...}, &control_group)` in a
+    `TimerBase::SharedPtr` member, same named group and same whole-ms
+    period, and the base is `rclcpp::Node` (4551531); the nine
+    subscriptions are `create_subscription<M>(topic, qos, [this](const M&)
+    {...})` (a72efce); the four publishers are `create_publisher<M>(topic)`
+    into `Publisher<M>::SharedPtr` members (0934230). A failed create now
+    stops the boot at the call instead of latching `ok()` for the entry.
+  - text / data / bss (bytes). Each spelling measured alone on the split:
+
+    | build | freertos-an536 | zephyr-fvp | zephyr-s32z |
+    |---|---|---|---|
+    | before split | 1603576 / 15864 / 35635604 | 2169166 / 33658 / 15475453 | 1985944 / 44056 / 4585363 |
+    | split | 1603868 / 15864 / 35635604 | 2169339 / 33658 / 15475453 | 1986236 / 44056 / 4585327 |
+    | + timer only | -668 / 0 / -8 | -353 / 0 / -24 | +76 / 0 / +52 |
+    | + subscriptions only | -872 / 0 / 0 | -678 / 0 / 0 | -640 / 0 / 0 |
+    | + publishers only | +528 / 0 / +32 | +501 / 0 / +32 | +692 / 0 / +76 |
+    | all three | 1602300 / 15864 / 35635628 | 2168255 / 33658 / 15475461 | 1985504 / 44056 / 4585355 |
+
+    The split's text delta is the linker keeping another TU's copy of a
+    weak Eigen instantiation (`product_evaluator`,
+    `dense_assignment_loop`) once the archives link in another order. With
+    all three spellings the images are smaller than before the split
+    (-1276, -911, -440 text); zephyr-s32z RAM 90.09% of 7 MiB.
+  - Run: freertos-posix (`run-freertos-posix-ci.sh`) and freertos-an536
+    (`run-freertos-an536-ci.sh`, `nros run` on QEMU) green; zephyr-fvp
+    phase 1 boots to "Actuation Safety Island is Live" with the controller
+    in DDS_ONLY; zephyr-s32z links. FVP phase 2 (unit_test) stops at
+    configure in the P10 test packages, not in these: `nros dev image
+    board-facts` for `src/asi_tests/asi_dds_loopback_test --deploy linux`
+    finds no system.toml declaring `[image.linux]`.
 
 ### P10. Tests and CI on nros run - M
 
@@ -641,7 +689,7 @@ What remains of P9 and P11 after this:
   - Workarounds, each to drop when nano-ros covers it: `[census] on_missing
     = "warn"` in both test bringups (the owned entry's host census stops in
     board facts, `--deploy linux`); the bringup guards in `controller_pkg`,
-    `autoware_controller_libs` and the test packages (a workspace configure
+    the seven Autoware packages and the test packages (a workspace configure
     adds every package; the controller's component executable does not
     build in another bringup's root); the `--plan` step above.
   - `build.sh`: the FreeRTOS lanes no longer call it. Its FreeRTOS path
