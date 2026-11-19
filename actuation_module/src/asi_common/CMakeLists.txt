@@ -121,10 +121,20 @@ elseif(NROS_PLATFORM STREQUAL "freertos" AND NOT _asi_newlib_cross)
   # from a static archive the linker would never pull it, the weak symbol
   # being defined already.
   add_library(asi_common_posix_hook OBJECT src/freertos_posix/si_dds_interface.cpp)
-  target_link_libraries(asi_common_posix_hook PRIVATE asi_common)
+  # asi_common's headers and defines, not asi_common itself: its link
+  # interface carries this object, which made the object a source of itself
+  # (CMake refuses that once a plain executable links asi_common).
+  target_include_directories(asi_common_posix_hook PRIVATE
+    $<TARGET_PROPERTY:asi_common,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_compile_definitions(asi_common_posix_hook PRIVATE
+    $<TARGET_PROPERTY:asi_common,INTERFACE_COMPILE_DEFINITIONS>)
   nros_link_runtime_umbrella(asi_common_posix_hook PRIVATE CANDIDATES NanoRos::NanoRosCpp)
   target_compile_features(asi_common_posix_hook PRIVATE cxx_std_17)
-  target_link_libraries(asi_common INTERFACE $<TARGET_OBJECTS:asi_common_posix_hook>)
+  # The target name too: an INTERFACE library's $<TARGET_OBJECTS> adds the
+  # object to its consumers but no build order, so a consumer could link
+  # before the object existed ("No rule to make target ...o").
+  target_link_libraries(asi_common INTERFACE
+    asi_common_posix_hook $<TARGET_OBJECTS:asi_common_posix_hook>)
 elseif(_asi_newlib_cross)
   # No wall clock on bare-metal FreeRTOS: nano-ros reports none and newlib's
   # _gettimeofday answers garbage, so every stamped command would be garbage.
