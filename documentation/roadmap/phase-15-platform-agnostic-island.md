@@ -275,7 +275,7 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   `run-freertos-an536-ci.sh` exit 0 (controller Live at 8.9 s model time),
   `run-zephyr-fvp-ci.sh` exit 0 (all six phases; phase 1 controller Live,
   `prio=9`; phase 5 builds the fvp-tap controller image).
-- Pin 1866c0594f, this commit, `build.sh`, `controller_bringup/system.toml`
+- Pin 1866c0594f, 35229f3, `build.sh`, `controller_bringup/system.toml`
   (P11, issue 4007, nano-ros issue 2629, cbbcf089a6): the controller
   images' FVP model parameters come from rows, not `ARMFVP_EXTRA_FLAGS` in
   the environment. fvp-aemv8r-smp's `[board.run.fvp] params` states the
@@ -305,6 +305,11 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   cache_state_modelled=0` for interactive demo runs; Zephyr's
   `armfvp.cmake` appends the environment after the rows, so it still
   applies.
+- CI run 44738961021 (35229f3, both entries above) green on all three
+  lanes; local FreeRTOS POSIX and AN536 lanes rerun on 35229f3, exit 0
+  (AN536 controller Live at 9.4 s model time). `can_vcan_sender` was
+  already `nano_ros_add_plain_executable` (c35a136); no use of the private
+  `_NROS_IN_IMAGE_ADD_EXECUTABLE` is left.
 
 What remains of P9 and P11 after this:
 
