@@ -6,12 +6,6 @@
 
 cmake_minimum_required(VERSION 3.22.1)
 
-# Added once. A dependent's add_subdirectory() fallback may have added this
-# package already: nano-ros's generated Zephyr root adds the image's
-# packages in name order, not <depend> order.
-if(TARGET autoware_pid_longitudinal_controller)
-  return()
-endif()
 # The controller's images only. A workspace configure adds every package, so
 # the test programs' images (src/test_bringup) configure this one too; there
 # it would build a second controller program for nothing.
@@ -22,7 +16,7 @@ project(autoware_pid_longitudinal_controller LANGUAGES C CXX)
 
 # The packages this one <depend>s on, added here when nobody did yet:
 # nano-ros's metadata probe configures a node package without its <depend>
-# closure, and its generated Zephyr root adds packages in name order.
+# closure.
 if(NOT TARGET asi_common)
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../asi_common" asi_common)
 endif()

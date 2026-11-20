@@ -264,14 +264,24 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   instead of the `ASI_S32Z2_NXP_PORT` switch in `asi_common/CMakeLists.txt`.
   The s32ct_config submodule and the NXP RTD are not on this host, so none
   of it can be built here.
+- Pin 1866c0594f, this commit, the seven `src/autoware/*/CMakeLists.txt`:
+  the add-once guard (`if(TARGET <self>) return()`) at the top of each
+  Autoware package (P9). nano-ros issue 2756 (00dbf47f37): the generated
+  Zephyr application adds an image's packages in `<depend>` order, as the
+  FreeRTOS road's `ORDER_FROM_DEPENDS` does, so a package's own line comes
+  before any dependent's fallback looks for it. The `add_subdirectory`
+  fallbacks stay (see "Checked, kept" above). Local lanes without the
+  guards (2026-11-20): `run-freertos-posix-ci.sh` exit 0,
+  `run-freertos-an536-ci.sh` exit 0 (controller Live at 8.9 s model time),
+  `run-zephyr-fvp-ci.sh` exit 0 (all six phases; phase 1 controller Live,
+  `prio=9`; phase 5 builds the fvp-tap controller image).
 
 What remains of P9 and P11 after this:
 
 - P9: the `add_subdirectory` fallbacks in controller_pkg and the seven
   Autoware packages, until the metadata probe configures a node package's
-  workspace `<depend>`s, and the Autoware packages' add-once guard, until
-  the generated Zephyr root adds packages in `<depend>` order (both
-  nano-ros changes, not filed).
+  workspace `<depend>`s (a nano-ros change, not filed). The Autoware
+  packages' add-once guard is gone (nano-ros issue 2756, see below).
 - P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
@@ -621,7 +631,8 @@ What remains of P9 and P11 after this:
 - Status on nano-ros-next (pending nros12 for `nano-ros`): the `fabsl`
   define is gone (6d3d71e); Eigen is the `eigen` workspace package
   (b8ef477); `can_vcan_sender` is `nano_ros_add_plain_executable` (c35a136,
-  4016). The controller_pkg fallbacks stay (nano-ros's metadata probe
+  4016); the Autoware packages' add-once guard is gone (nano-ros issue
+  2756). The controller_pkg fallbacks stay (nano-ros's metadata probe
   adds only the node package). See "Dropped on nano-ros-next".
   - Package split (b39a736): `autoware_controller_libs` is gone;
     `src/autoware/<pkg>/` holds seven ament packages, one per vendored
@@ -635,12 +646,14 @@ What remains of P9 and P11 after this:
     message packages asi_common's umbrella header names. controller_pkg
     `<depend>`s on the six upstream `autoware_trajectory_follower_node`
     names. Each package keeps an `add_subdirectory` fallback for its own
-    `<depend>`s and returns at once when its target exists: nano-ros's
-    generated Zephyr root (`west_app.rs`) adds the image's packages in name
-    order, not `<depend>` order, so `autoware_interpolation`'s fallback adds
-    `autoware_universe_utils` before the root does (without the guard the
-    FVP configure stops: "cannot create target ... already exists"). The
-    FreeRTOS root is ordered (`nano_ros_workspace(ORDER_FROM_DEPENDS)`).
+    `<depend>`s. Until pin 1866c0594f each also returned at once when its
+    target existed: nano-ros's generated Zephyr root (`west_app.rs`) added
+    the image's packages in name order, not `<depend>` order, so
+    `autoware_interpolation`'s fallback added `autoware_universe_utils`
+    before the root did (without the guard the FVP configure stopped:
+    "cannot create target ... already exists"). nano-ros issue 2756 orders
+    the Zephyr root as the FreeRTOS one
+    (`nano_ros_workspace(ORDER_FROM_DEPENDS)`), and the guard is gone.
   - rclcpp spellings in `controller_node.cpp`, all kept: the control timer
     is `create_wall_timer(period, [this]{...}, &control_group)` in a
     `TimerBase::SharedPtr` member, same named group and same whole-ms
