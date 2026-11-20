@@ -16,7 +16,8 @@ Build and run the Safety Island (repository root):
 
 ```bash
 ./build.sh --platform freertos-posix -d build/freertos-posix
-SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
+  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 ```
 
 `CAN_ONLY` is not built on the nano-ros branch: `build.sh` has no

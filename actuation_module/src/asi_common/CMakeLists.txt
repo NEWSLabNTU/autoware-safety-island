@@ -10,9 +10,8 @@
 #                FreeRTOS CONFIG_* mirror header, the newlib pthread shim on
 #                arm-none-eabi, and the support sources of each platform
 #                (Zephyr: network bring-up, SNTP resync, the entry's network
-#                hook, the Kconfig-gated diagnostics; FreeRTOS POSIX: the
-#                SI_DDS_INTERFACE network hook; bare-metal FreeRTOS: the wall
-#                clock).
+#                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS: the
+#                wall clock).
 #
 # Eigen is the `eigen` package's (src/eigen), not this one's.
 #
@@ -114,27 +113,6 @@ if(_asi_zephyr)
     target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/tracing/include)
   endif()
   target_link_libraries(app PRIVATE asi_common)
-elseif(NROS_PLATFORM STREQUAL "freertos" AND NOT _asi_newlib_cross)
-  # The FreeRTOS POSIX simulator: SI_DDS_INTERFACE, the run-time network
-  # selector, is a strong nros_board_network_wait() over the board runner's
-  # weak one. Linked as an OBJECT into each executable that links asi_common:
-  # from a static archive the linker would never pull it, the weak symbol
-  # being defined already.
-  add_library(asi_common_posix_hook OBJECT src/freertos_posix/si_dds_interface.cpp)
-  # asi_common's headers and defines, not asi_common itself: its link
-  # interface carries this object, which made the object a source of itself
-  # (CMake refuses that once a plain executable links asi_common).
-  target_include_directories(asi_common_posix_hook PRIVATE
-    $<TARGET_PROPERTY:asi_common,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(asi_common_posix_hook PRIVATE
-    $<TARGET_PROPERTY:asi_common,INTERFACE_COMPILE_DEFINITIONS>)
-  nros_link_runtime_umbrella(asi_common_posix_hook PRIVATE CANDIDATES NanoRos::NanoRosCpp)
-  target_compile_features(asi_common_posix_hook PRIVATE cxx_std_17)
-  # The target name too: an INTERFACE library's $<TARGET_OBJECTS> adds the
-  # object to its consumers but no build order, so a consumer could link
-  # before the object existed ("No rule to make target ...o").
-  target_link_libraries(asi_common INTERFACE
-    asi_common_posix_hook $<TARGET_OBJECTS:asi_common_posix_hook>)
 elseif(_asi_newlib_cross)
   # No wall clock on bare-metal FreeRTOS: nano-ros reports none and newlib's
   # _gettimeofday answers garbage, so every stamped command would be garbage.

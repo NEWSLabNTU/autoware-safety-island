@@ -37,13 +37,14 @@ Build and run the FreeRTOS POSIX runtime from the repository root with the same 
 ```bash
 ./build.sh --platform freertos-posix -d build/freertos-posix
 
-SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
+CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="wlp2s0"/></Interfaces></General>' \
+  ./build/freertos-posix/actuation_posix_entry
 ```
 
 Replace `wlp2s0` with the multicast-capable interface on your host, for example `eth0`.
-The interface is a runtime choice (`SI_DDS_INTERFACE`); the build has no
-interface option. A released binary takes the same variable:
-`SI_DDS_INTERFACE=wlp2s0 ./actuation_freertos`.
+The interface is a runtime choice (CycloneDDS's `CYCLONEDDS_URI`); the build
+has no interface option. A released binary takes the same variable, before
+`./actuation_freertos`.
 
 ## Autoware image, controller preset and bridge
 
@@ -87,7 +88,8 @@ sudo ip link set up vcan0
 
 ./build.sh --platform freertos-posix -d build/freertos-posix
 
-SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
+  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --dry-run
 ```
 
@@ -123,7 +125,8 @@ sudo ip link add vcan0 type vcan
 sudo ip link set up vcan0
 
 ./build.sh --platform freertos-posix -d build/freertos-posix
-SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
+  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
 ```
 

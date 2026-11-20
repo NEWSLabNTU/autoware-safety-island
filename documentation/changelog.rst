@@ -27,7 +27,11 @@ Releases are listed newest-first. Unreleased work lives under
 Unreleased
 **********
 
-No unreleased changes.
+- FreeRTOS POSIX: ``SI_DDS_INTERFACE`` is removed. The DDS interface is
+  CycloneDDS's own ``CYCLONEDDS_URI``, for example
+  ``CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>'``, which the runtime reads when it
+  opens its DDS session. The startup log no longer prints a
+  ``Network interface`` line.
 
 ******
 v0.3.0

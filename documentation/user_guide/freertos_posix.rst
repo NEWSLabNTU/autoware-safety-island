@@ -49,17 +49,22 @@ Output (a link to the artifact ``nros build`` reports):
 
 The build has no DDS-interface or output-mode option: the image publishes
 control on DDS (``DDS_AND_CAN`` on the CAN stub). The DDS interface is
-chosen at runtime with ``SI_DDS_INTERFACE``. It takes an interface name, an
-IPv4 address, or ``auto`` (let CycloneDDS choose):
+chosen at runtime by CycloneDDS's own ``CYCLONEDDS_URI``, which the runtime
+reads when it opens its DDS session. Name the interface, or give its IPv4
+address with ``address="..."``; unset, CycloneDDS chooses one itself:
 
 .. code-block:: console
 
-  $ SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
+  $ CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="wlp2s0"/></Interfaces></General>' \
+      ./build/freertos-posix/actuation_posix_entry
 
 Replace ``wlp2s0`` with the interface that should carry domain-2 DDS traffic.
+A named interface that does not exist stops the runtime with
+``RMW session open failed``. ``CYCLONEDDS_URI`` takes a list, so a file and a
+fragment combine: ``CYCLONEDDS_URI=file:///path/cyclonedds.xml,<General>...``.
 
-The released ``actuation_freertos`` binary is built with ``lo`` and relies on
-this override for LAN use; see :doc:`open_ad_kit`.
+The released ``actuation_freertos`` binary takes the same variable; see
+:doc:`open_ad_kit`.
 
 *************
 Run Locally
@@ -95,7 +100,8 @@ interface:
 
   $ cd ..
   $ ./build.sh --platform freertos-posix -d build/freertos-posix
-  $ SI_DDS_INTERFACE=wlp2s0 ./build/freertos-posix/actuation_posix_entry
+  $ CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="wlp2s0"/></Interfaces></General>' \
+      ./build/freertos-posix/actuation_posix_entry
 
 Verify bridged control commands from the ``demo/`` directory:
 
@@ -105,8 +111,9 @@ Verify bridged control commands from the ``demo/`` directory:
   $ docker compose -f docker-compose.yaml -f docker-compose.posix.yaml exec safety-island-bridge bash -lc \
       'source /opt/ros/humble/setup.bash && source /opt/autoware/setup.bash && ROS_DOMAIN_ID=1 ros2 topic echo --once /control/trajectory_follower/control_cmd'
 
-If discovery stalls, check that ``SAFETY_ISLAND_DDS_INTERFACE`` and
-``SI_DDS_INTERFACE`` name the same multicast-capable host interface. See
+If discovery stalls, check that ``SAFETY_ISLAND_DDS_INTERFACE`` and the
+interface in the runtime's ``CYCLONEDDS_URI`` name the same multicast-capable
+host interface. See
 :doc:`troubleshooting`.
 
 ``scripts/run-posix-demo.sh`` does all of the above in one command, from the

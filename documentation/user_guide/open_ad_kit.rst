@@ -61,35 +61,28 @@ base image ships. CycloneDDS is linked statically.
 Selecting the DDS interface
 *********************************
 
-``SI_DDS_INTERFACE`` selects the Cyclone DDS interface at runtime (POSIX
-build only), so one binary
+The POSIX build takes its Cyclone DDS interface at runtime from Cyclone's own
+``CYCLONEDDS_URI``, read when the runtime opens its DDS session, so one binary
 serves loopback CI and a LAN:
 
 .. list-table::
-   :widths: 35 65
+   :widths: 45 55
    :header-rows: 1
 
-   * - ``SI_DDS_INTERFACE``
+   * - ``CYCLONEDDS_URI``
      - Effect
    * - unset
-     - Use the compile-time value (``lo`` in releases).
-   * - ``lo``, ``eth0``, ...
-     - Select the interface by name.
-   * - ``192.168.1.10``
-     - Select the interface that owns this IPv4 address.
-   * - ``auto`` or empty
      - Let CycloneDDS pick an interface.
+   * - ``<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>``
+     - Select the interface by name (``lo``, ``eth0``, ...).
+   * - ``<General><Interfaces><NetworkInterface address="192.168.1.10"/></Interfaces></General>``
+     - Select the interface that owns this IPv4 address.
+   * - ``file:///path/to/cyclonedds.xml``
+     - Take the interface, and anything else, from a file.
 
-The startup log records the choice and where it came from:
-
-.. code-block:: text
-
-  Network interface (by name): lo [SI_DDS_INTERFACE]
-  Actuation Safety Island is Live
-  Waiting for acceleration data
-
-``Waiting for ... data`` repeats until the bridged inputs arrive. An interface
-that does not exist makes DDS domain creation fail and the process exit.
+Entries combine, comma-separated, later ones on top. A named interface that
+does not exist makes DDS session creation fail (``RMW session open failed``)
+and the runtime stop before ``Actuation Safety Island is Live``.
 
 ``lo`` is not multicast-capable on Linux, so CycloneDDS disables multicast on
 it and discovers peers by unicast. Pin the bridge's domain 2 to the same
@@ -132,7 +125,8 @@ The other runtime switches (``SI_SUPERVISION_MODE``, ``SI_TRAJECTORY_SOURCE``,
 
 .. code-block:: console
 
-  $ SI_DDS_INTERFACE=lo ./actuation_freertos
+  $ CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
+      ./actuation_freertos
 
 **************************************
 Keeping Autoware's own controller off

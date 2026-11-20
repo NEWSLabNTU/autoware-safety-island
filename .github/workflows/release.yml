@@ -247,8 +247,8 @@ jobs:
   smoke-freertos:
     # The released POSIX binary must start on a plain Ubuntu host, not only in
     # the devcontainer it was built in: pin the glibc floor (22.04) and the
-    # current LTS (24.04), on the default loopback interface and with the
-    # SI_DDS_INTERFACE runtime override.
+    # current LTS (24.04), with Cyclone choosing the interface and with one
+    # named in CYCLONEDDS_URI.
     name: FreeRTOS POSIX smoke (${{ matrix.image }})
     needs: build-freertos
     runs-on: ubuntu-24.04
@@ -268,7 +268,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x bin/actuation_freertos
-          for env in "" "SI_DDS_INTERFACE=lo" "SI_DDS_INTERFACE=auto"; do
+          for env in "" 'CYCLONEDDS_URI=<General><Interfaces><NetworkInterface name="lo" presence_required="true"/></Interfaces></General>'; do
             echo "::group::${{ matrix.image }} ${env:-<default>}"
             set +e
             env_args=()
@@ -284,7 +284,6 @@ jobs:
               echo "actuation_freertos exited early with status ${rc} on ${{ matrix.image }} (${env:-default})" >&2
               exit 1
             fi
-            grep -Fq "Network interface" run.log
             grep -Fq "Actuation Safety Island is Live" run.log
             grep -Eq "Waiting for .* data" run.log
           done

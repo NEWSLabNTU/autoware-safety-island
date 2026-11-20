@@ -63,8 +63,8 @@ also needs large UDP buffers; see that project's CARLA simulation docs.
      $ sudo ip link add vcan0 type vcan
      $ sudo ip link set up vcan0
      $ ./build.sh --platform freertos-posix -d build/freertos-posix
-     $ SI_DDS_INTERFACE=lo SAFETY_ISLAND_CAN_IFACE=vcan0 \
-         ./build/freertos-posix/actuation_posix_entry
+     $ CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
+         SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
 
    This build sends no CAN on vcan0 (see the note above).
      $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
@@ -97,7 +97,7 @@ DDS
 
 Open AD Kit pins domain 1 to loopback. Its closed-loop deployment's
 ``cyclonedds.xml`` pins domains 1 and 2 to ``lo``.
-Run the Safety Island with ``SI_DDS_INTERFACE=lo``. The domain-bridge
+Run the Safety Island with ``lo`` named in ``CYCLONEDDS_URI``, as above. The domain-bridge
 forwards the five controller inputs 1 → 2 and does not forward
 ``control_cmd`` (``CAN_ONLY``). The SI subscribes to ``/planning/trajectory``,
 the trajectory Autoware 2.0's own follower reads, so Autoware 2.0 needs no

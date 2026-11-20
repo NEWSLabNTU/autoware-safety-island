@@ -81,9 +81,6 @@ add_ros_lib_paths
 #     the not-ready path every cycle, and the supervisor
 #     (vp_si_control_contract) publishes HOLD with the stopped payload there
 #     rather than nothing (silence lets a stale command stay latched);
-#   - SI_DDS_INTERFACE (upstream #75): with no override Cyclone picks the
-#     interface itself. The CI container sets no CYCLONEDDS_URI, so the
-#     default line is the auto one.
 echo "Phase 2 - runtime smoke (nros run)"
 ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" run controller_bringup:freertos-posix --timeout 60 \
     --expect "Starting Controller Node" \
@@ -91,36 +88,34 @@ echo "Phase 2 - runtime smoke (nros run)"
     --expect "Actuation Safety Island is Live" \
     --expect "Control command output mode: DDS_ONLY" \
     --expect "Supervision mode: si" \
-    --expect "Control is skipped since input data is not ready." \
-    --expect "Network interface: auto [default]" )
+    --expect "Control is skipped since input data is not ready." )
 echo "Controller smoke OK: boot markers + control-loop spin observed"
 
-# The variable overrides the interface at run time, so one released binary
-# serves loopback (CI) and a LAN.
-echo "Phase 2b - SI_DDS_INTERFACE runtime override"
-for sel in "127.0.0.1|Network interface (by IP address): 127.0.0.1 [SI_DDS_INTERFACE]" \
-           "lo|Network interface (by name): lo [SI_DDS_INTERFACE]" \
-           "auto|Network interface: auto [SI_DDS_INTERFACE]"; do
-  value="${sel%%|*}"
-  marker="${sel#*|}"
-  ( cd "${ROOT_DIR}/actuation_module" && SI_DDS_INTERFACE="${value}" \
+# The DDS interface is Cyclone's own CYCLONEDDS_URI, which nano-ros's hosted
+# Cyclone reads when it opens the session, so one released binary serves
+# loopback (CI) and a LAN. By address and by name:
+echo "Phase 2b - CYCLONEDDS_URI interface selection"
+for sel in 'address="127.0.0.1"' 'name="lo"'; do
+  ( cd "${ROOT_DIR}/actuation_module" && \
+      CYCLONEDDS_URI="<General><Interfaces><NetworkInterface ${sel} presence_required=\"true\"/></Interfaces></General>" \
       "${NROS_CLI}" run controller_bringup:freertos-posix --timeout 30 \
-        --expect "${marker}" --expect "Actuation Safety Island is Live" )
+        --expect "Actuation Safety Island is Live" )
 done
-# A name that is no interface reaches Cyclone (presence_required), so the
-# session refuses to open: proof the selector is applied, not only logged.
-# The run passes on the refusal; its console must not reach "is Live".
-nosuch_log="${ROOT_DIR}/build/freertos-posix/controller-env-nosuch0.log"
+# A name that is no interface (presence_required) makes the session refuse to
+# open: proof the URI is applied, not only accepted. The run passes on the
+# refusal; its console must not reach "is Live".
+nosuch_log="${ROOT_DIR}/build/freertos-posix/controller-uri-nosuch0.log"
 mkdir -p "$(dirname "${nosuch_log}")"
-( cd "${ROOT_DIR}/actuation_module" && SI_DDS_INTERFACE=nosuch0 \
+( cd "${ROOT_DIR}/actuation_module" && \
+    CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="nosuch0" presence_required="true"/></Interfaces></General>' \
     "${NROS_CLI}" run controller_bringup:freertos-posix --timeout 30 \
       --expect "RMW session open failed" ) >"${nosuch_log}" 2>&1 || {
   dump_log "${nosuch_log}"
-  echo "SI_DDS_INTERFACE=nosuch0: no \"RMW session open failed\"" >&2
+  echo "CYCLONEDDS_URI nosuch0: no \"RMW session open failed\"" >&2
   exit 1
 }
 forbid_marker "${nosuch_log}" "Actuation Safety Island is Live"
-echo "SI_DDS_INTERFACE override OK"
+echo "CYCLONEDDS_URI interface selection OK"
 
 # The test programs (actuation_module/test), each an image of its own
 # (src/test_bringup), on the same board.
