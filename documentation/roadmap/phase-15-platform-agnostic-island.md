@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 011a9c4c5b (2026-11-20)
+On branch `nano-ros-next` nano-ros is pinned at main 1866c0594f (2026-11-20)
 and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -68,7 +68,14 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 011a9c4c5b (2026-11-20, d3a2941). Over 93368ca929 it adds PR
+nano-ros main 1866c0594f (2026-11-20, 2b6fe0c). Over 011a9c4c5b it adds PR
+4423 (issue 2758: the RMW ABI enums are pinned int-wide, so C and Rust agree
+on their layout on arm-none-eabi) and PR 4430 (issue 2761: every RTOS runner
+takes `nros_board_network_wait` as a weak reference). Cyclone is unchanged.
+Local lanes on it: POSIX exit 0, AN536 exit 0 (controller Live at 8.9 s
+model time; unit and loopback tests pass).
+
+Before that, nano-ros main 011a9c4c5b (2026-11-20, d3a2941). Over 93368ca929 it adds PR
 4414 (issue 2755): arm-none-eabi enums are one byte, and Cyclone's generic
 QoS (plist) code treated enum fields as four, so validation read heap
 padding and intermittently refused the AN536 controller's parameter
@@ -555,12 +562,12 @@ What remains of P9 and P11 after this:
   through the URI and keeps the refusal check (`nosuch0` fails the session,
   never "is Live"); the release smoke runs with Cyclone's choice and with
   `lo` named; guides, demo READMEs and the changelog show the URI form.
-  Workaround (a35c5aa): the POSIX test images include
-  `<rclc/detail/main.h>` for nano-ros's weak no-op hook, because the
-  FreeRTOS runner calls it through a plain extern and their hand-written
-  entries emit no default (the island hook had hidden it). Drop when the
-  nano-ros runner takes the hook as a weak reference (being fixed, all
-  boards). CI run 44653385379 (a35c5aa) green on all three lanes.
+  The POSIX test images briefly included `<rclc/detail/main.h>` (a35c5aa)
+  for nano-ros's weak no-op hook, because the FreeRTOS runner called it
+  through a plain extern and their hand-written entries emit no default
+  (the island hook had hidden it). nano-ros PR 4430 makes every RTOS runner
+  take the hook as a weak reference, and the include went with the pin
+  bump to 1866c0594f (2b6fe0c).
 - The tap images stay on the island's own path: nano-ros refuses
   `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
   `fvp-tap*` images, "images `fvp-tap` (eth0) and `fvp-tap-stats` (eth0)
