@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 93368ca929 (2026-11-19)
+On branch `nano-ros-next` nano-ros is pinned at main 011a9c4c5b (2026-11-20)
 and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -68,7 +68,17 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 93368ca929 (2026-11-19, 5b600fe). Over 9afb5c8a19 it adds the
+nano-ros main 011a9c4c5b (2026-11-20, d3a2941). Over 93368ca929 it adds PR
+4414 (issue 2755): arm-none-eabi enums are one byte, and Cyclone's generic
+QoS (plist) code treated enum fields as four, so validation read heap
+padding and intermittently refused the AN536 controller's parameter
+services (about 9 boots in 69 before, 0 in 50 after; Cyclone 05b3c9eda5 in
+`nros-sdk.lock`). It also adds PR 4415 (issue 2753: `nros run --base-paths`
+keeps the image argument). Local AN536 lane on it: controller Live at
+11.9 s model time with no parameter-service error. CI run 44655818128
+(d3a2941) green on all three lanes.
+
+Before that, nano-ros main 93368ca929 (2026-11-19, 5b600fe). Over 9afb5c8a19 it adds the
 nano-ros issue 2704 fix (PRs 4223, 4278): the Zephyr road now generates the
 runtime's own `rcl_interfaces` types for Cyclone, so the FVP image's six
 parameter services come up. At 9afb5c8a19 the image booted and printed
@@ -535,8 +545,22 @@ What remains of P9 and P11 after this:
   directory; `NET_DHCPV4=y`, `INITIAL_DELAY_MAX=10`, `NET_CONFIG_SETTINGS=y`
   from `prj-s32z.conf`, no `NEED_IPV4`): text / data / bss 1952800 / 43964
   / 4585134. CI run 44262797472 (9be8383) green: Zephyr FVP 24 min,
-  FreeRTOS POSIX 13, FreeRTOS AN536 12. Still open for P6: `si_dds_interface.cpp`
-  and the `network_config.cpp` paths the S32Z and the tap images keep.
+  FreeRTOS POSIX 13, FreeRTOS AN536 12. Still open for P6: the `network_config.cpp`
+  paths the S32Z and the tap images keep.
+- `SI_DDS_INTERFACE` is gone (19c14c1, user decision 2026-11-20): the POSIX
+  images take their DDS interface from Cyclone's own `CYCLONEDDS_URI`, which
+  nano-ros's hosted Cyclone reads when it opens the session.
+  `si_dds_interface.cpp` (a strong `nros_board_network_wait()`) and its
+  OBJECT library are removed; the POSIX lane selects by address and by name
+  through the URI and keeps the refusal check (`nosuch0` fails the session,
+  never "is Live"); the release smoke runs with Cyclone's choice and with
+  `lo` named; guides, demo READMEs and the changelog show the URI form.
+  Workaround (a35c5aa): the POSIX test images include
+  `<rclc/detail/main.h>` for nano-ros's weak no-op hook, because the
+  FreeRTOS runner calls it through a plain extern and their hand-written
+  entries emit no default (the island hook had hidden it). Drop when the
+  nano-ros runner takes the hook as a weak reference (being fixed, all
+  boards). CI run 44653385379 (a35c5aa) green on all three lanes.
 - The tap images stay on the island's own path: nano-ros refuses
   `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
   `fvp-tap*` images, "images `fvp-tap` (eth0) and `fvp-tap-stats` (eth0)
@@ -703,7 +727,8 @@ What remains of P9 and P11 after this:
     "parameter services
     could not be created for node /controller at service
     describe_parameters: Transport(Backend("rmw_ret error"))" after "is
-    Live". The POSIX image creates them.
+    Live". The POSIX image creates them. Fixed at pin 011a9c4c5b (nano-ros
+    issue 2755, see "Pin on nano-ros-next").
   - Not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
     `ament-env.sh` to a doc line.
 
