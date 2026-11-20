@@ -19,6 +19,11 @@
 #include <new>
 
 #include <rclcpp/rclcpp.hpp>
+// nano-ros's weak no-op nros_board_network_wait(). The FreeRTOS runner calls
+// it through a plain extern, and this hand-written entry includes nothing else
+// that emits it, so the FreeRTOS POSIX image would not link. Drop once the
+// runner takes it as a weak reference, as the ThreadX runner does.
+#include <rclc/detail/main.h>
 
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
