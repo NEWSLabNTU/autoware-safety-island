@@ -45,7 +45,13 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-20: 011a9c4c5b, past PRs 4414 (7eb34e188e, issue 2755:
+    # ON main, 2026-11-20: 1866c0594f, past PRs 4423 (issue 2758: the RMW ABI
+    # enums are int-wide on every target, so C and Rust agree on arm-none-eabi)
+    # and 4430 (issue 2761: every RTOS runner takes nros_board_network_wait as
+    # a weak reference, so a hand-written entry that never includes
+    # rclc/detail/main.h links on FreeRTOS POSIX). Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-20: 011a9c4c5b, past PRs 4414 (7eb34e188e, issue 2755:
     # Cyclone stores enum QoS fields at the ABI's enum size, so the AN536
     # controller's parameter services come up; arm-none-eabi enums are one
     # byte) and 4415 (issue 2753: `nros run --base-paths` keeps the image
@@ -152,7 +158,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 011a9c4c5bd3da2e4d953bbe74ae288c5c787932
+      revision: 1866c0594fc31054b6bc502f32e82d04f8d6fc83
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
