@@ -361,8 +361,10 @@ function run_zephyr_model() {
 }
 
 # The Zephyr environment every Zephyr build gets: the host nros CLI (on
-# PATH, scripts/nros-cli.sh), the message prefixes, nano-ros's checkout, and the FVP
-# model flags. Shared by the controller images and the test programs.
+# PATH, scripts/nros-cli.sh), the message prefixes and nano-ros's checkout.
+# Shared by the controller images and the test programs. The FVP model
+# parameters are not here: a controller image's come from its rows
+# (build_zephyr_controller), a test program's from build_zephyr_test.
 function zephyr_env() {
   require_nros_checkout
   # This repo's Zephyr patches (patches/zephyr): a fresh checkout or a
@@ -384,28 +386,6 @@ function zephyr_env() {
   # The Zephyr module resolves the codegen tool and the SDK store through the
   # CLI on PATH, and nano-ros's checkout through NROS_REPO_DIR.
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
-
-  # The FVP's SMSC 91C111 ethernet model defaults to disabled
-  # (bp.smsc_91c111.enabled=0); without it Zephyr's eth_smsc91x probe fails
-  # ("Identification value not in BSR", MAC 00:00:00:00:00:00) and the net
-  # stack times out waiting for the interface. Enable it for every FVP run;
-  # promiscuous so the guest sees DDS multicast frames off the host bridge.
-  # armfvp.cmake reads ARMFVP_EXTRA_FLAGS from the environment at CONFIGURE
-  # time and bakes it into the `run` target, which `--run` replays.
-  export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS:-} -C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1"
-  if [ "${NETWORK_PROFILE}" = "tap" ]; then
-    local fvp_tap_interface="${FVP_TAP_INTERFACE:-tap0}"
-    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.hostbridge.userNetworking=0 -C bp.hostbridge.interfaceName=${fvp_tap_interface}"
-  fi
-  if [ "${TRACE_ENABLED}" = "1" ]; then
-    # -d may be relative or absolute, so resolve rather than prefix ROOT_DIR.
-    local trace_out="${TRACE_OUT_FILE:-$(realpath -m "${BUILD_DIR}")/trace.ctf}"
-    mkdir -p "$(dirname "${trace_out}")"
-    # board.cmake aims every FVP PL011 at stdout (out_file=-); send uart1 to a
-    # file instead so the CTF octet stream is not interleaved with the console.
-    export ARMFVP_EXTRA_FLAGS="${ARMFVP_EXTRA_FLAGS} -C bp.pl011_uart1.out_file=${trace_out}"
-    echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
-  fi
 }
 
 # The bringup image a controller build is: [image.<id>] in
@@ -439,6 +419,20 @@ function zephyr_image_id() {
 function build_zephyr_controller() {
   local image
   image="$(zephyr_image_id)"
+  # The FVP model parameters are the image's: fvp-aemv8r-smp's
+  # [board.run.fvp] params (the SMSC 91C111 NIC, promiscuous), then the
+  # image's [image.<id>.run] nic (the tap images: tap0) and run.fvp params
+  # (the trace images: uart1 into trace.ctf). nros build hands them to
+  # armfvp.cmake at configure (nano-ros issue 2629), and `--run` replays the
+  # run target it writes. So the TAP name is the rows' too.
+  if [ "${NETWORK_PROFILE}" = "tap" ] && [ "${FVP_TAP_INTERFACE:-tap0}" != "tap0" ]; then
+    echo -e "${RED}FVP_TAP_INTERFACE=${FVP_TAP_INTERFACE}: a controller image names its TAP in${NC}" 1>&2
+    echo -e "${RED}controller_bringup/system.toml ([image.${image}] run.nic); change it there.${NC}" 1>&2
+    exit 1
+  fi
+  if [ "${TRACE_ENABLED}" = "1" ] && [ "${TRACE_RING_ENABLED}" != "1" ]; then
+    echo -e "${GREEN}Tracing enabled: CTF stream -> $(realpath -m "${BUILD_DIR}")/trace.ctf${NC}"
+  fi
   echo -e "${GREEN}Building Zephyr controller image (nros build ${image})...${NC}"
   local build_dir
   build_dir="$(realpath -m "${BUILD_DIR}")"
@@ -511,8 +505,29 @@ function build_zephyr_test() {
     export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-8388608}"
   fi
 
+  # The FVP model parameters. A test program is no bringup image, so it has
+  # no board or image rows to take them from (nros build hands those to a
+  # controller image); state them here, as a cache list armfvp.cmake appends
+  # to the run target. Always passed, so a dropped one leaves the cache.
+  # The SMSC 91C111 NIC is off by default and Zephyr's eth_smsc91x probe
+  # fails without it; promiscuous lets the guest see DDS multicast.
+  local fvp_params=(-C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1)
+  if [ "${NETWORK_PROFILE}" = "tap" ]; then
+    fvp_params+=(-C bp.hostbridge.userNetworking=0
+      -C "bp.hostbridge.interfaceName=${FVP_TAP_INTERFACE:-tap0}")
+  fi
+  if [ "${TRACE_ENABLED}" = "1" ]; then
+    # board.cmake aims every FVP PL011 at stdout (out_file=-); send uart1 to a
+    # file instead so the CTF octet stream is not interleaved with the console.
+    local trace_out
+    trace_out="$(realpath -m "${BUILD_DIR}")/trace.ctf"
+    fvp_params+=(-C "bp.pl011_uart1.out_file=${trace_out}")
+    echo -e "${GREEN}Tracing enabled: CTF stream -> ${trace_out}${NC}"
+  fi
+
   local build_args=(
     -DASI_TEST="${test}"
+    -DARMFVP_EXTRA_FLAGS="$(IFS=';'; echo "${fvp_params[*]}")"
     -D_NANO_ROS_CODEGEN_TOOL="${NROS_CLI_BIN}"
     -DEXTRA_CFLAGS="-Wno-error"
     -DEXTRA_CXXFLAGS="-Wno-error"

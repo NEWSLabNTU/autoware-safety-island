@@ -110,6 +110,14 @@ priority = 9
 # evaluation layers. The fragments assign asi_common's Kconfig symbols, which
 # asi_common defines as a Zephyr module.
 #
+# FVP model parameters: fvp-aemv8r-smp states the SMSC 91C111 NIC (enabled,
+# promiscuous) for every image; an image adds its own in [image.<id>.run]:
+# `nic = { tap = "tap0" }` (the host bridge's TAP mode; the tap images) and
+# `fvp.params` (the trace images send uart1, the CTF stream, to trace.ctf in
+# the build directory, where the model runs). nros build hands them to
+# Zephyr's armfvp.cmake at configure (nano-ros issue 2629), so a change
+# re-configures the image. A TAP other than tap0 is a change of these rows.
+#
 # The sizing knobs every image shares ([image_defaults] below); an image
 # block states only what differs from them. The FVP images also state
 # zephyr.heap_size = 8 MiB (the nros allocator funnel, z_malloc and
@@ -164,6 +172,7 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.zephyr.heap_size = 8388608
+run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
 # fragment comes after prj-trace.conf: it switches the UART backend off.
@@ -179,6 +188,7 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.zephyr.heap_size = 8388608
+run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # The FVP image on the TAP network (build.sh --network tap), for the demo
 # stack: Autoware on domain 1, the island on 2, `domain_bridge` between them.
@@ -191,6 +201,7 @@ os_config = [
   "zephyr/prj-fvp-tap.conf",
 ]
 knobs.zephyr.heap_size = 8388608
+run.nic = { tap = "tap0" }
 
 # [image.fvp-stats] on the TAP network.
 [image.fvp-tap-stats]
@@ -203,6 +214,7 @@ os_config = [
   "zephyr/prj-trace-stats.conf",
 ]
 knobs.zephyr.heap_size = 8388608
+run.nic = { tap = "tap0" }
 
 # [image.fvp-trace] on the TAP network.
 [image.fvp-tap-trace]
@@ -217,6 +229,8 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.zephyr.heap_size = 8388608
+run.nic = { tap = "tap0" }
+run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # [image.fvp-trace-ring] on the TAP network.
 [image.fvp-tap-trace-ring]
@@ -232,6 +246,8 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.zephyr.heap_size = 8388608
+run.nic = { tap = "tap0" }
+run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # The S32Z270 RTU0 R52 on Zephyr (build.sh --platform zephyr-s32z, release
 # only; no emulator models this SoC). The board is nano-ros's

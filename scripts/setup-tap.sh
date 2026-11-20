@@ -20,8 +20,9 @@
 # Verify with:  tc -s qdisc show dev tap1
 #
 # Idempotent: re-running converges to the requested state. If you use a
-# non-default --iface, export FVP_TAP_INTERFACE=<iface> before ./build.sh so
-# the generated FVP runner command names the same device.
+# non-default --iface, the FVP must name the same device: a controller image
+# names it in controller_bringup/system.toml ([image.fvp-tap*] run.nic); a
+# test program takes FVP_TAP_INTERFACE=<iface> before ./build.sh.
 #
 # ---- Why --rate exists (nano-ros issue 0917) --------------------------------
 # QEMU's tap backend hands frames to the guest as fast as the host can write
@@ -142,5 +143,5 @@ fi
 
 say "${IFACE} ready: $(ip -brief addr show "${IFACE}" | awk '{$1=$1};1')"
 if [ "${IFACE}" != "tap0" ]; then
-  warn "non-default interface — export FVP_TAP_INTERFACE=${IFACE} before ./build.sh --network tap."
+  warn "non-default interface — name ${IFACE} in the fvp-tap images' run.nic (system.toml); test programs take FVP_TAP_INTERFACE=${IFACE}."
 fi

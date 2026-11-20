@@ -144,7 +144,7 @@ export ARMFVP_BIN_PATH=/path/to/fvp/bin
 ./build.sh --platform zephyr-fvp --network tap -d build/zephyr-fvp-tap
 ```
 
-Set `FVP_TAP_INTERFACE` before building if your TAP interface is not named `tap0`; the TAP interface name is embedded in the generated FVP runner command.
+If your TAP interface is not named `tap0`, change `run.nic` in the `fvp-tap` image rows of `actuation_module/src/controller_bringup/system.toml`; the TAP interface name is embedded in the generated FVP runner command.
 
 Set up the host TAP interface (idempotent; `--help` for options,
 `--delete` to tear down):

@@ -264,7 +264,7 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   instead of the `ASI_S32Z2_NXP_PORT` switch in `asi_common/CMakeLists.txt`.
   The s32ct_config submodule and the NXP RTD are not on this host, so none
   of it can be built here.
-- Pin 1866c0594f, this commit, the seven `src/autoware/*/CMakeLists.txt`:
+- Pin 1866c0594f, 7cfb9bc, the seven `src/autoware/*/CMakeLists.txt`:
   the add-once guard (`if(TARGET <self>) return()`) at the top of each
   Autoware package (P9). nano-ros issue 2756 (00dbf47f37): the generated
   Zephyr application adds an image's packages in `<depend>` order, as the
@@ -275,6 +275,36 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   `run-freertos-an536-ci.sh` exit 0 (controller Live at 8.9 s model time),
   `run-zephyr-fvp-ci.sh` exit 0 (all six phases; phase 1 controller Live,
   `prio=9`; phase 5 builds the fvp-tap controller image).
+- Pin 1866c0594f, this commit, `build.sh`, `controller_bringup/system.toml`
+  (P11, issue 4007, nano-ros issue 2629, cbbcf089a6): the controller
+  images' FVP model parameters come from rows, not `ARMFVP_EXTRA_FLAGS` in
+  the environment. fvp-aemv8r-smp's `[board.run.fvp] params` states the
+  SMSC 91C111 enable and promiscuous mode; the four tap images state
+  `run.nic = { tap = "tap0" }` (host bridge TAP mode); the four trace
+  images state `run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]`,
+  relative to the build directory the model runs in (the old default
+  path). `nros build` hands them to `armfvp.cmake` as
+  `-DARMFVP_EXTRA_FLAGS`. `TRACE_OUT_FILE` is gone (its one caller,
+  `capture-fvp-trace.sh`, passed the default); `FVP_TAP_INTERFACE` other
+  than tap0 now stops a controller build with a pointer to the rows.
+  Read back from the generated `run_armfvp` command: fvp ends
+  `-C bp.smsc_91c111.enabled=1 -C bp.smsc_91c111.promiscuous=1`; fvp-tap
+  adds `-C bp.hostbridge.userNetworking=0 -C
+  bp.hostbridge.interfaceName=tap0`; fvp-trace adds `-C
+  bp.pl011_uart1.out_file=trace.ctf`. Local `run-zephyr-fvp-ci.sh` exit 0
+  (six phases).
+  Not covered: the Zephyr test programs (`build_zephyr_test`, the
+  hand-written west application `test/zephyr_app`) are no bringup image,
+  so no board or image row reaches them, and the board's
+  `[board.run.fvp]` params are applied only on `nros build`'s west road.
+  `build_zephyr_test` states the same parameters itself, now as a
+  `-DARMFVP_EXTRA_FLAGS` cache list (always passed) instead of the
+  environment, and keeps `FVP_TAP_INTERFACE` (the tap CI lane's CAN
+  tunnel program reads it). They go when the test programs become images
+  (P10's FVP half). `scripts/run-tap-demo.sh` still exports `-C
+  cache_state_modelled=0` for interactive demo runs; Zephyr's
+  `armfvp.cmake` appends the environment after the rows, so it still
+  applies.
 
 What remains of P9 and P11 after this:
 
@@ -286,8 +316,9 @@ What remains of P9 and P11 after this:
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
   hand upstream as is; the RTD switch above; one pin and the west import
-  (4006); FVP model parameters from the runner (4007); the Zephyr patches
-  and trace marker (4008, 4009).
+  (4006); the Zephyr patches and trace marker (4008, 4009). FVP model
+  parameters come from the board and image rows (4007, see below), except
+  for the test programs, which are no image.
 - P7 (CAN behind one interface) still waits on the board-owned CAN frame
   driver (4012).
 
@@ -702,9 +733,11 @@ What remains of P9 and P11 after this:
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
 - Status on nano-ros-next (branch `nros-next-p10`, pin 93368ca929): the
-  FreeRTOS POSIX and AN536 lanes are done; the FVP lanes wait on 4007 and
-  are unchanged (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test`
-  and `test/zephyr_app`).
+  FreeRTOS POSIX and AN536 lanes are done; the FVP lanes are unchanged
+  (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test` and
+  `test/zephyr_app`). 4007 is fixed at pin 1866c0594f and the controller
+  images use it (see "Dropped on nano-ros-next"); the test programs still
+  state their FVP parameters in `build_zephyr_test` until they are images.
   - Test images: the unit and DDS loopback tests are one image per board,
     `unit_test_bringup:{freertos-posix,mps3-an536-freertos}` and
     `dds_loopback_test_bringup:{...}` (`src/test_bringup/<program>/`), whose

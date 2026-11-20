@@ -60,10 +60,10 @@ mkdir -p "${BUILD_DIR}"
 
 if [ "${DO_BUILD}" = "1" ]; then
   say "building with --trace (CTF -> uart1) …"
-  # TRACE_OUT_FILE is read by build.sh; it bakes the uart1 redirect into the
-  # `run` target at CMake configure time via ARMFVP_EXTRA_FLAGS.
-  TRACE_OUT_FILE="${TRACE_FILE}" \
-    "${ROOT}/build.sh" --platform zephyr-fvp --trace -d "${BUILD_DIR}"
+  # The fvp-trace image's run.fvp params send uart1 to trace.ctf in the
+  # build directory (TRACE_FILE); nros build bakes it into the `run` target
+  # at configure.
+  "${ROOT}/build.sh" --platform zephyr-fvp --trace -d "${BUILD_DIR}"
 fi
 
 [ -f "${BUILD_DIR}/zephyr/zephyr.elf" ] || die "no ELF at ${BUILD_DIR}/zephyr/zephyr.elf"
