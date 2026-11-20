@@ -45,7 +45,13 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-19: 93368ca929, past the issue 2704 fix (PRs 4223,
+    # ON main, 2026-11-20: 011a9c4c5b, past PRs 4414 (7eb34e188e, issue 2755:
+    # Cyclone stores enum QoS fields at the ABI's enum size, so the AN536
+    # controller's parameter services come up; arm-none-eabi enums are one
+    # byte) and 4415 (issue 2753: `nros run --base-paths` keeps the image
+    # argument). Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-19: 93368ca929, past the issue 2704 fix (PRs 4223,
     # 4278: the Zephyr road generates the runtime's own rcl_interfaces types
     # for Cyclone, so the FVP image's parameter services come up). Branch
     # nano-ros-next only.
@@ -146,7 +152,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 93368ca9299b547f0c7d032d8aa348d94571a256
+      revision: 011a9c4c5bd3da2e4d953bbe74ae288c5c787932
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
