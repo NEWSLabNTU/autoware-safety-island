@@ -6,8 +6,9 @@ released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main dc97616723 (2026-11-22)
-and the CLI is built from source; there P4 is done too, P8 in part (the census
-is on; `PLATFORM_*` waits on P5-P7), and the P9 `fabsl` and
+and the CLI is built from source; there P4 is done too, P6 for the FVP
+images, P8 in part (the census is on; `PLATFORM_*` waits on P5-P7; P7 waits
+on a nano-ros link-order bug), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -90,7 +91,10 @@ The bump renames the island's rows in the three `system.toml` files, and the
 environment `build.sh` exports for the Zephyr test programs
 (`NROS_SUBSCRIPTION_BUFFER_SIZE` is now `NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES`,
 `NROS_ZEPHYR_HEAP_SIZE` is now `NROS_MEMORY_HEAP_BYTES`); the values are
-unchanged.
+unchanged. CI run 44951533482 (f15d71b, the bump with the renames) is green on
+all three lanes: Zephyr FVP 35 min (the controller "Actuation Safety Island
+is Live", the CAN loopback test and the tap build smoke pass), FreeRTOS POSIX
+19, FreeRTOS AN536 21.
 
 Before that, nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
 (phase-583 W1: a registered component's carrier is named for its
@@ -710,13 +714,45 @@ What remains of P9 and P11 after this:
   (the island hook had hidden it). nano-ros PR 4430 makes every RTOS runner
   take the hook as a weak reference, and the include went with the pin
   bump to 1866c0594f (2b6fe0c).
-- The tap images stay on the island's own path: nano-ros refuses
-  `net-fvp-tap.toml` (192.168.10.2 on network `tap`) named by the four
-  `fvp-tap*` images, "images `fvp-tap` (eth0) and `fvp-tap-stats` (eth0)
-  both take 192.168.10.2 on network "tap"", though they are variants of
-  one host and never run together. A nano-ros gap (no way to say images
-  are alternatives); the island would otherwise need one address per
-  variant.
+- The tap images' address landed (pin dc97616723): nano-ros PR 4578
+  (issue 2690, RFC-0136) adds `[image_alternatives]`, and
+  `controller_bringup/system.toml` states `fvp-tap = ["fvp-tap",
+  "fvp-tap-stats", "fvp-tap-trace", "fvp-tap-trace-ring"]`. The four images
+  name `zephyr/net-fvp-tap.toml` first in `os_config` (`[eth0] network =
+  "tap"`, `address = "192.168.10.2"`; `[network.tap] subnet =
+  "192.168.10.0/24"`, `gateway = "192.168.10.1"`). `nros build --dry-run`
+  of each renders `build/nros/net/<image>.conf` with
+  `CONFIG_NET_CONFIG_SETTINGS=y`, `AUTO_INIT=y`, `NEED_IPV4=y`,
+  `CONFIG_NET_DHCPV4=n`, `CONFIG_NET_CONFIG_MY_IPV4_ADDR="192.168.10.2"`,
+  netmask 255.255.255.0 and gateway 192.168.10.1 (the four files differ
+  only in their header comment). `prj-fvp-tap.conf` no longer sets
+  `CONFIG_NET_CONFIG_SETTINGS`, `CONFIG_NET_DHCPV4` or
+  `CONFIG_NET_IFACE1_*`; the tap test programs take
+  `test/zephyr_app/net-fvp-tap.conf`, the same rows by hand (checked equal
+  to the rendered file), and the UDP tunnel test no longer calls
+  `configure_network()`.
+- Removed from `network_config.cpp`: the interface-1 path (the tap images
+  were its only user) and the `ASI_NET_IFACE1_OWNED_BY_NET_CONFIG` switch;
+  from asi_common's Kconfig: `NET_IFACE1_ADDR`, `_GW`, `_NETMASK`, `_VLAN`.
+  Kept, for the S32Z: the interface-2 path (`NET_IFACE2_*`, with the VLAN
+  tag `setup_iface` applies) and the DHCPv4 wait of an image without
+  `NET_CONFIG_AUTO_INIT`. No in-tree configuration sets either today
+  (`prj-s32z.conf` states DHCPv4 through net_config and no `NET_IFACE2_*` or
+  `NET_VLAN`), so both are a board hook for a hardware deployment that
+  states a second interface; the S32Z board declares no interface for a
+  board network file. Also kept: `board_network_hook.cpp`'s 10 s DHCP grace,
+  which only the S32Z takes (no `NEED_IPV4` there).
+- Done-when check: `si_dds_interface.cpp` is gone; the FVP boot has no fixed
+  DHCP sleep (every FVP image renders `NEED_IPV4`); the tap demo addresses
+  are unchanged (192.168.10.2, gateway and peers .1). `network_config.cpp`
+  is not gone: its S32Z interface-2 / VLAN path and DHCP wait stay until the
+  S32Z states its network in a board file or the hook moves to its board
+  package. No CI lane boots a tap image (it needs a host tap0). CI run
+  44953249873 (e182201, P6 over the pin) is green on all three lanes:
+  Zephyr FVP 38 min (the user-mode controller "Actuation Safety Island is
+  Live"; Phase 5 builds the `fvp-tap` controller image with
+  `net-fvp-tap.toml` and links `zephyr.elf`), FreeRTOS POSIX 26, FreeRTOS
+  AN536 21.
 
 ### P7. CAN behind one interface - L
 
@@ -732,6 +768,50 @@ What remains of P9 and P11 after this:
   and let a separate CAN gateway own the bus.
 - Done when: no `#if` backend chain, vcan roundtrip CI and the FVP tap
   tunnel pass, all lanes green.
+- Status on nano-ros-next (pin dc97616723): ready, not landed; blocked on
+  a nano-ros link-order bug. The change is commit 342ba67 on branch
+  `nros-next-p7` (over the pin bump):
+  - `platform/platform_can.h` and its five backends (`zephyr_can.h`,
+    `zephyr_can_udp_tunnel.h`, `freertos_can_socketcan.h`,
+    `freertos_can_mock.h`, `freertos_can_stub.h`, `freertos_can.h`) go;
+    `common/can/can_platform.hpp` wraps nano-ros's `<nros/platform_can.h>`
+    with one `#if` (whether the image builds the output at all), no backend
+    chain. The board picks the backend: Zephyr's (native CAN, the S32Z),
+    SocketCAN on the host-stack boards (`[image.<id>.can] device = "vcan0"`
+    on freertos-posix, freertos-posix-carla, linux, linux-carla, replacing
+    `SAFETY_ISLAND_CAN_IFACE`), the fail-loud defaults on AN536 and the
+    FreeRTOS S32Z2 (PR 4577; no `ASI_CONTROL_CMD_CAN_OUTPUT` option is
+    needed, and `[image.an536]` states no CAN override), the census mock in
+    a census or probe build.
+  - The FVP tunnel is the image's strong `nros_platform_can_*` driver,
+    `asi_common/src/zephyr/can_udp_tunnel_driver.cpp` (same datagram bytes).
+  - `SAFETY_ISLAND_CAN_FORMAT` becomes the launch arg `can_format`
+    (classic | fd), a controller parameter declared in every mode.
+  - CI run 44951633475 (9a4794c, P7 + P6 over the pin): red on all three
+    lanes at the controller's census. The host image `controller_bringup:linux`
+    (`NROS_LEAF_CENSUS_HOST=1`) fails to link `linux_entry`: "undefined
+    reference to `nros_platform_can_open`" (and `_close`, `_send`,
+    `_fd_active`) from `libcontroller_lib.a(controller_node.cpp.o)`.
+    `nros_entry_can_image` links the `nros_can_census_mock` archive onto the
+    entry, and CMake places it on the link line before the component
+    archives the entry reaches through its `<pkg>_<exec>_component`
+    INTERFACE wrapper, so ld's single pass has left the mock behind when
+    `libcontroller_lib.a` asks for it. A six-line CMake project reproduces
+    the order (`cc main.o -o entry libmock.a libcomp_lib.a`). nano-ros's own
+    test (`tests/can-census-mock-tests.sh`) calls the driver from the entry's
+    own source, so it does not see it. The `nros_can_socketcan` archive the
+    freertos-posix image links goes the same way. A nano-ros issue is
+    drafted (not yet filed); the island does not work around it (that would
+    name nano-ros's internal targets).
+  - What the vcan roundtrip and the FVP tap tunnel need, which no CI lane
+    has: the vcan roundtrip (`.github/scripts/run-freertos-vcan-ci.sh`) needs
+    the `vcan` kernel module on the runner and `CAP_NET_ADMIN` over a vcan0
+    (it falls back to an unprivileged user + network namespace, `unshare
+    -rn`, when the runner allows user namespaces); the FVP tap tunnel
+    (`run-zephyr-fvp-tap-ci.sh`, `test/run-fvp-tap-tunnel.sh`) needs a host
+    `tap0` at 192.168.10.1/24 the FVP model can open
+    (`bp.hostbridge.interfaceName=tap0`, so `CAP_NET_ADMIN` and
+    `/dev/net/tun` in the job's container) plus a vcan for the gateway.
 
 ### P8. Census on - M
 
@@ -780,7 +860,13 @@ What remains of P9 and P11 after this:
     all three lanes: every lane takes the controller's census (and the CARLA
     variant's on POSIX and FVP) and the test programs', none warns that a
     census could not be taken, and the FVP controller is Live.
-  - Not removed: the `asi_common` platform detection and the `CONFIG_*`
+  - Not removed (pin dc97616723): the `asi_common` platform detection and
+    the `CONFIG_*` mirror. The `PLATFORM_*` removal is still not possible:
+    P7 waits on the link-order bug (the CAN chain is still `PLATFORM_*`), and
+    `platform_clock.h` (P5), `platform_network.h` (the S32Z's
+    `network_config.cpp`, P6) and `platform_threading.h` still dispatch on
+    it. Even with P7 in, the clock and threading headers keep the switch.
+    Earlier: the `asi_common` platform detection and the `CONFIG_*`
     mirror. Twenty `include/platform/*` headers still dispatch on
     `PLATFORM_*` (clock P5, network P6, CAN P7, threading), so they go with
     those steps. The census's host images take the FreeRTOS road there, as
