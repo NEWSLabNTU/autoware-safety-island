@@ -81,6 +81,10 @@ CI already downloads it and exports `ARMFVP_BIN_PATH`), 4520 (issue 2771:
 (issue 2793: Zephyr DTCM stacks in a section `--gc-sections` can trim), 4560
 (issue 2780), 4554, 4564, 4571 and 4572 (the stack floor walk), and 4532 /
 4538 (issues 2779, 2799). Cyclone is unchanged (`nros-sdk.lock` as it was).
+The island needed no change for it: CI run 44926900989 (a559bd0) green on all
+three lanes, the FVP controller "Actuation Safety Island is Live", and the test
+programs' owned-entry census taken (no "could not be taken" warning). P8 (the
+census on) followed; see there.
 
 Before that, nano-ros main 14be463e27 (2026-11-21). Over 1866c0594f it adds PR 4444
 (the AN536 LAN9118 RX drain), 4452, 4457 and 4491 (the platform CAN frame
@@ -746,6 +750,13 @@ What remains of P9 and P11 after this:
     carrier (`controller_pkg__controller`, nano-ros PR 4505) from
     `controller_lib`'s sources without its include directories or links;
     `controller_pkg/CMakeLists.txt` states them on it.
+  - Checks: local POSIX lane exit 0 (parameter store 150 slots, unit and
+    loopback tests pass); `nros build` of `controller_bringup:an536`,
+    `unit_test_bringup:mps3-an536-freertos` and `controller_bringup:fvp`
+    (each checks the census) succeed. CI run 44929146307 (34ab106) green on
+    all three lanes: every lane takes the controller's census (and the CARLA
+    variant's on POSIX and FVP) and the test programs', none warns that a
+    census could not be taken, and the FVP controller is Live.
   - Not removed: the `asi_common` platform detection and the `CONFIG_*`
     mirror. Twenty `include/platform/*` headers still dispatch on
     `PLATFORM_*` (clock P5, network P6, CAN P7, threading), so they go with
