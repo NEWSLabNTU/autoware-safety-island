@@ -203,12 +203,18 @@ os_config = [
 knobs.memory.heap_bytes = 8388608
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
+# The four tap images are one host built four ways, never booted together:
+# they share net-fvp-tap.toml's static address (nano-ros RFC-0136).
+[image_alternatives]
+fvp-tap = ["fvp-tap", "fvp-tap-stats", "fvp-tap-trace", "fvp-tap-trace-ring"]
+
 # The FVP image on the TAP network (build.sh --network tap), for the demo
 # stack: Autoware on domain 1, the island on 2, `domain_bridge` between them.
 [image.fvp-tap]
 board     = "fvp-aemv8r-smp"
 domain_id = 2
 os_config = [
+  "zephyr/net-fvp-tap.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",
@@ -221,6 +227,7 @@ run.nic = { tap = "tap0" }
 board     = "fvp-aemv8r-smp"
 domain_id = 2
 os_config = [
+  "zephyr/net-fvp-tap.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",
@@ -234,6 +241,7 @@ run.nic = { tap = "tap0" }
 board     = "fvp-aemv8r-smp"
 domain_id = 2
 os_config = [
+  "zephyr/net-fvp-tap.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",
@@ -250,6 +258,7 @@ run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 board     = "fvp-aemv8r-smp"
 domain_id = 2
 os_config = [
+  "zephyr/net-fvp-tap.toml",
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",

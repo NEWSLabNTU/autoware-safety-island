@@ -10,7 +10,6 @@
 #include "common/can/control_command_output_mode.hpp"
 #include "common/logger/logger.hpp"
 #include "platform/platform_can.h"
-#include "platform/platform_network.h"
 
 #if defined(PLATFORM_ZEPHYR)
   #include <zephyr/device.h>
@@ -396,7 +395,8 @@ static void test_zephyr_can_udp_tunnel_send()
   using common::can::ControlCommandCanOutput;
   using common::can::ControlCommandOutputMode;
 
-  ASSERT_MSG(configure_network() == 0, "TAP network configures");
+  // The tap address is Zephyr net_config's (test/zephyr_app/net-fvp-tap.conf),
+  // up before main().
   ControlCommandCanOutput output;
   ASSERT_MSG(output.init(), "CAN UDP tunnel initializes");
   ASSERT_MSG(

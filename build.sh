@@ -463,12 +463,11 @@ function build_zephyr_test() {
     board_id="s32z270dc2_rtu0_r52@D"
     confs=("${app}/nano_ros.conf" "${zconf}/prj-s32z.conf")
   fi
-  # The network the user-mode controller images state in a board network
-  # file (controller_bringup/zephyr/net-fvp.toml), as nros build renders it;
-  # the tap images and the S32Z state their own (prj-fvp-tap.conf,
-  # prj-s32z.conf).
+  # The network the FVP controller images state in a board network file
+  # (controller_bringup/zephyr/net-fvp.toml, net-fvp-tap.toml), as nros build
+  # renders it; the S32Z states its own (prj-s32z.conf).
   if [ "${NETWORK_PROFILE}" = "tap" ]; then
-    confs+=("${zconf}/prj-fvp-tap.conf")
+    confs+=("${zconf}/prj-fvp-tap.conf" "${app}/net-fvp-tap.conf")
   elif [ "${BUILD_PLATFORM}" != "zephyr-s32z" ]; then
     confs+=("${app}/net-fvp.conf")
   fi

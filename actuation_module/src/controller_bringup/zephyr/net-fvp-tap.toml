@@ -1,0 +1,17 @@
+# Copyright (c) 2026, Arm Limited / NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Board network file of the four fvp-tap* images: the FVP's one interface on
+# the host's tap0 (192.168.10.1/24, which serves Cyclone DDS domain 2 and the
+# SNTP server). nros build renders it into Zephyr's NET_CONFIG_* with a static
+# address and NET_DHCPV4=n, so the island has no interface bring-up of its
+# own. The four images are variants of one host and share the address; they
+# are one [image_alternatives] group in system.toml.
+
+[eth0]
+network = "tap"
+address = "192.168.10.2"
+
+[network.tap]
+subnet  = "192.168.10.0/24"
+gateway = "192.168.10.1"
