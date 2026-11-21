@@ -45,7 +45,18 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-22: ee02c58931, past PRs 4505 (phase-583 W1: one
+    # ON main, 2026-11-22: dc97616723, past PRs 4577 (issues 2787, 2788: the
+    # metadata probe links the census CAN mock; every non-host, non-Zephyr
+    # board gets fail-loud weak CAN defaults, so the AN536 links with the CAN
+    # output on and open returns ENOTSUP), 4578 (issue 2690, RFC-0136:
+    # [image_alternatives] lets variants of one host share an address), 4585
+    # and 4580 (phase-583: an owned entry's programs' censuses and stack
+    # floors), 4575 (phase-583 W2/W3: nros run --exec), 4573 (phase-581 W5:
+    # knob renames batch 1; none the island states), 4526 (issue 2792), 4488
+    # (issue 2777), 4549, 4561, 4574 and 4581. Cyclone is unchanged. Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-22: ee02c58931, past PRs 4505 (phase-583 W1: one
     # carrier per EXECUTABLE; an owned entry's census refuses several
     # programs), 4552 (issue 2805: the owned-entry host census build finds the
     # workspace's own interface packages), 4540 and 4553 (issues 2802, 2808:
@@ -182,7 +193,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: ee02c58931fca1a4380d58a974d603e0606a33e0
+      revision: dc97616723c48746731760e024c37802b73af8c5
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main ee02c58931 (2026-11-22)
+On branch `nano-ros-next` nano-ros is pinned at main dc97616723 (2026-11-22)
 and the CLI is built from source; there P4 is done too, P8 in part (the census
 is on; `PLATFORM_*` waits on P5-P7), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
@@ -69,7 +69,20 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
+nano-ros main dc97616723 (2026-11-22). Over ee02c58931 it adds PR 4577
+(issues 2787, 2788: the metadata probe links the census CAN mock through
+`nros_link_can_census_mock`, and every non-host, non-Zephyr board gets
+fail-loud weak CAN defaults from one place, so the AN536 links with the CAN
+output on and `nros_platform_can_open` returns ENOTSUP at run time; see P7),
+4578 (issue 2690, RFC-0136: a top-level `[image_alternatives]` table lets
+images that never run together share a static address or MAC; see P6), 4585
+and 4580 (phase-583: an owned entry's programs' censuses fold, stack floors
+per program), 4575 (`nros run --exec`), 4573 (phase-581 W5 knob renames
+batch 1; the island states none of the renamed keys), 4526 (issue 2792),
+4488 (issue 2777), 4549, 4561, 4574 and 4581. Cyclone is unchanged
+(`nros-sdk.lock` as it was).
+
+Before that, nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
 (phase-583 W1: a registered component's carrier is named for its
 `EXECUTABLE`, and an owned entry's census refuses a package that builds
 several programs), 4552 (issue 2805: the owned entry's host census build puts
