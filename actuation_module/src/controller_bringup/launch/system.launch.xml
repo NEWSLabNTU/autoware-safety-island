@@ -29,6 +29,11 @@
   <!-- 2.B.2 — output mode. Values: DDS_ONLY | CAN_ONLY | DDS_AND_CAN.
        A CAN mode needs an image built with CONFIG_CONTROL_CMD_CAN_OUTPUT. -->
   <arg name="control_output" default="DDS_ONLY"/>
+  <!-- CAN frame format in a CAN mode: classic (the three-frame command) | fd
+       (one CAN-FD frame; the device must carry CAN-FD, else the CAN open
+       fails). The device is the image's: [image.<id>.can] device in
+       system.toml on a host board, devicetree on Zephyr. -->
+  <arg name="can_format" default="classic"/>
   <!-- Supervision startup selection (vp_si_control_contract; the DDS build
        reads the same four from SI_* environment variables). Empty = unset:
        both supervision_mode and trajectory_source empty selects the build
@@ -63,6 +68,7 @@
     <param from="$(dirname)/../config/longitudinal/pid_profile_$(var actuation_param_profile).param.yaml"/>
     <!-- 2.B.2 — output mode flows in as a node param ($(var control_output)). -->
     <param name="control_output" value="$(var control_output)"/>
+    <param name="can_format" value="$(var can_format)"/>
     <param name="supervision_mode" value="$(var supervision_mode)"/>
     <param name="trajectory_source" value="$(var trajectory_source)"/>
     <param name="legacy_control_cmd" value="$(var legacy_control_cmd)"/>

@@ -64,7 +64,7 @@ also needs large UDP buffers; see that project's CARLA simulation docs.
      $ sudo ip link set up vcan0
      $ ./build.sh --platform freertos-posix -d build/freertos-posix
      $ CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
-         SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+         ./build/freertos-posix/actuation_posix_entry
 
    This build sends no CAN on vcan0 (see the note above).
      $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
@@ -86,7 +86,7 @@ three. Everything else is unchanged:
 
 .. code-block:: console
 
-  $ SAFETY_ISLAND_CAN_FORMAT=fd SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+  $ ./build/freertos-posix/actuation_posix_entry   # an image with can_format = "fd" in its args
   $ python3 demo/can_carla_bridge/bridge.py --interface vcan0 --can-format fd --ego-role ego_vehicle
 
 See :doc:`../design/can_fd`.

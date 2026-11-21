@@ -65,10 +65,9 @@ CAN output
   $ ./build.sh --can-output-test
 
 Builds ``actuation_module/test/can_output_test.cpp``. The test validates the
-control-command encoder and on ``freertos-posix`` the in-memory mock backend
-(``PLATFORM_FREERTOS_CAN_MOCK``). Runtime SocketCAN is
-not used in this test; set ``SAFETY_ISLAND_CAN_IFACE`` on the main binary
-instead. See ``demo/can_carla_bridge/README.md``.
+control-command encoder and the output modes on the Zephyr FVP. The
+``freertos-posix`` controller image sends through nano-ros's SocketCAN backend
+on its ``[image.<id>.can] device`` (``vcan0``). See ``demo/can_carla_bridge/README.md``.
 
 SocketCAN ``vcan`` roundtrip (``CAP_NET_ADMIN``, or unprivileged user
 namespaces):

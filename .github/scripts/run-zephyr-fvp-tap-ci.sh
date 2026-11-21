@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
 BUILD_ROOT="${ROOT_DIR}/build/zephyr-fvp-tap-can"
 TAP="${FVP_TAP_INTERFACE:-tap0}"
-IFACE="${SAFETY_ISLAND_CAN_IFACE:-vcan0}"
+IFACE="${VCAN_IFACE:-vcan0}"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 

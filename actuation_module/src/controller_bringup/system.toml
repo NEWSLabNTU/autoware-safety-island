@@ -134,8 +134,9 @@ priority = 9
 
 [image_defaults]
 # No knobs.params.max_parameters: nano-ros derives the store from what the
-# controller declares (149 parameters, trajectory follower + MPC lateral +
-# PID longitudinal + vehicle info, plus use_sim_time: 150 slots). A stated
+# controller declares (150 parameters, trajectory follower + MPC lateral +
+# PID longitudinal + vehicle info + can_format, plus use_sim_time: 151
+# slots). A stated
 # value would win over the derived one.
 # The parameter store's value capacities are a board fact nano-ros no longer
 # defaults (issue 2768): the controller declares string parameters
@@ -292,11 +293,18 @@ board = "freertos-posix"
 # RelWithDebInfo (-O2 -g), the profile the FreeRTOS images were always built
 # with; the CMake road defaults to Release (-O3, ~130 KB more text on an536).
 profile = "RelWithDebInfo"
+# The CAN frame device the controller's CAN output opens (RFC-0132 D4: on a
+# host-stack board the image names it; SocketCAN). Used only in a CAN mode
+# (launch arg control_output); vcan0 is the demo's and the CARLA bridge's.
+[image.freertos-posix.can]
+device = "vcan0"
 
 # The host image the census builds and runs for every cross image that
 # states no `args`: the same launch file, on nano-ros's `linux` board.
 [image.linux]
 board = "linux"
+[image.linux.can]
+device = "vcan0"
 
 # The binding variant the CARLA image resolves (nano-ros: a launch resolved
 # with arguments must be declared here).
@@ -312,12 +320,16 @@ args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
 board   = "freertos-posix"
 profile = "RelWithDebInfo"
 args    = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
+[image.freertos-posix-carla.can]
+device = "vcan0"
 
 # The census's host image for [image.freertos-posix-carla]: a census is taken
 # from a host image resolved from the same launch file and arguments.
 [image.linux-carla]
 board = "linux"
 args  = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
+[image.linux-carla.can]
+device = "vcan0"
 
 # Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree

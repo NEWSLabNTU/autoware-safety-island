@@ -89,7 +89,7 @@ sudo ip link set up vcan0
 ./build.sh --platform freertos-posix -d build/freertos-posix
 
 CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
-  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+  ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --dry-run
 ```
 
@@ -126,7 +126,7 @@ sudo ip link set up vcan0
 
 ./build.sh --platform freertos-posix -d build/freertos-posix
 CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
-  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+  ./build/freertos-posix/actuation_posix_entry
 python3 demo/can_carla_bridge/bridge.py --interface vcan0 --ego-role ego_vehicle
 ```
 

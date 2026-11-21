@@ -52,18 +52,28 @@ if(_asi_zephyr)
 else()
   target_compile_definitions(asi_common INTERFACE PLATFORM_FREERTOS=1)
   # platform_config.h reads a Kconfig-mirror header on FreeRTOS: the
-  # controller's FreeRTOS logger, network and CAN defaults (the CAN output is
-  # built in, so the mock CAN path stays exercised).
+  # controller's FreeRTOS logger and network defaults.
   set(CONFIG_LOG_LEVEL 1)
   set(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX 0)
   set(CONFIG_ENABLE_SNTP OFF)
-  set(CONFIG_CONTROL_CMD_CAN_OUTPUT 1)
   configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/freertos_config_generated.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/freertos_config_generated.h")
   target_include_directories(asi_common INTERFACE
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos")
+endif()
+
+# The CAN control-command output (common/can/can_platform.hpp over nano-ros's
+# <nros/platform_can.h>). On Zephyr it is the Kconfig symbol
+# CONFIG_CONTROL_CMD_CAN_OUTPUT. Elsewhere it is always built: every board
+# links a frame driver backend (SocketCAN on the host-stack boards, whose
+# images name their device in [image.<id>.can]; nano-ros's weak fail-loud
+# defaults on the other boards, whose open returns ENOTSUP; the census mock
+# in a census or metadata-probe host build). The launch arg control_output
+# says whether it is used.
+if(NOT _asi_zephyr)
+  target_compile_definitions(asi_common INTERFACE CONFIG_CONTROL_CMD_CAN_OUTPUT=1)
 endif()
 
 if(_asi_newlib_cross)
@@ -94,6 +104,15 @@ if(_asi_zephyr)
     "the network hook a generated controller entry calls before nros::init" ON)
   target_sources(app PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/common/net/network_config.cpp")
+  # The FVP has no CAN controller: its CAN output is the island's UDP tunnel
+  # (one 48-byte datagram per three-frame command), the strong
+  # nros_platform_can_* symbols of this source. An object of `app`, as the
+  # frame driver's board hook asks (RFC-0132 D3); CONFIG_CAN is off then, so
+  # nano-ros's Zephyr backend is not linked beside it.
+  if(CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL)
+    target_sources(app PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/can_udp_tunnel_driver.cpp")
+  endif()
   if(ASI_COMMON_ENTRY_HOOK)
     target_sources(app PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src/common/clock/clock_resync.cpp"

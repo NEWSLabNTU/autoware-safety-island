@@ -16,18 +16,19 @@ FVP UDP tunnel, and S32Z hardware remain classic only.
 Enabling it
 *************
 
-- Safety Island: build ``freertos-posix`` as usual, then set
-  ``SAFETY_ISLAND_CAN_FORMAT=fd`` next to ``SAFETY_ISLAND_CAN_IFACE``. The
-  default is ``classic``.
+- Safety Island: build ``freertos-posix`` as usual and bind the launch arg
+  ``can_format`` to ``fd`` (an ``[image.<id>] args`` row in
+  ``controller_bringup/system.toml``). The default is ``classic``. The
+  device is the image's ``[image.<id>.can] device``.
 - Host bridge: ``python3 demo/can_carla_bridge/bridge.py --can-format fd``.
   The default is ``classic``.
 - ``vcan`` carries CAN-FD frames; current kernels give ``vcan0`` the FD MTU of
   72 bytes. The ``vcan`` roundtrip script sets the FD MTU while the link is
   down before running.
 
-Fail closed: an unknown ``SAFETY_ISLAND_CAN_FORMAT`` value, an interface whose
-MTU is below 72 (CAN-FD disabled), or a platform without FD support all make
-``can_init()`` fail instead of silently sending classic frames.
+Fail closed: an unknown ``can_format`` value stops the controller; an
+interface whose MTU is below 72 (CAN-FD disabled), or a backend without FD
+support, makes the CAN open fail instead of silently sending classic frames.
 
 *************
 Frame format

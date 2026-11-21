@@ -9,10 +9,15 @@
 #include "common/can/control_command_encoder.hpp"
 #include "common/can/control_command_output_mode.hpp"
 #include "common/logger/logger.hpp"
-#include "platform/platform_can.h"
 
-#if defined(PLATFORM_ZEPHYR)
+// The Zephyr test program (test/zephyr_app) is the one build of this test. The
+// CAN output goes through nano-ros's platform CAN frame driver: on the CAN
+// loopback build its Zephyr backend over the chosen controller, on the UDP
+// tunnel build the island's tunnel driver (asi_common
+// src/zephyr/can_udp_tunnel_driver.cpp).
+#if defined(__ZEPHYR__)
   #include <zephyr/device.h>
+  #include <zephyr/devicetree.h>
   #include <zephyr/drivers/can.h>
   #include <zephyr/kernel.h>
 #endif
@@ -183,51 +188,6 @@ static void assert_frame_equals(
   }
 }
 
-#if defined(PLATFORM_FREERTOS_CAN_MOCK)
-static void test_freertos_can_output_records_frames()
-{
-  using common::can::ControlCommandCanOutput;
-  using common::can::ControlCommandOutputMode;
-
-  common::can::platform::reset_recorded_can_frames();
-
-  ControlCommandCanOutput output;
-  ASSERT_MSG(output.init(), "FreeRTOS CAN mock initializes");
-  ASSERT_MSG(output.send(make_sample_control_msg(), ControlCommandOutputMode::DDS_AND_CAN), "first CAN send succeeds");
-  ASSERT_MSG(output.send(make_sample_control_msg(), ControlCommandOutputMode::DDS_AND_CAN), "second CAN send succeeds");
-
-  ASSERT_MSG(common::can::platform::recorded_can_frame_count() == 6U, "two sends record six frames");
-  ASSERT_MSG(common::can::platform::recorded_can_frame_at(0).id == 0x100U, "first recorded frame id");
-  ASSERT_MSG(common::can::platform::recorded_can_frame_at(1).id == 0x101U, "second recorded frame id");
-  ASSERT_MSG(common::can::platform::recorded_can_frame_at(2).id == 0x102U, "third recorded frame id");
-  ASSERT_MSG(read_u16_le(common::can::platform::recorded_can_frame_at(2), 2) == 0U, "first send sequence");
-  ASSERT_MSG(read_u16_le(common::can::platform::recorded_can_frame_at(5), 2) == 1U, "second send sequence");
-}
-
-static void test_failed_batch_does_not_advance_sequence()
-{
-  using common::can::ControlCommandCanOutput;
-  using common::can::ControlCommandOutputMode;
-
-  common::can::platform::reset_recorded_can_frames();
-  ControlCommandCanOutput output;
-  ASSERT_MSG(output.init(), "mock initializes");
-
-  auto nan_msg = make_sample_control_msg();
-  nan_msg.longitudinal.velocity = std::numeric_limits<float>::quiet_NaN();
-  ASSERT_MSG(!output.send(nan_msg, ControlCommandOutputMode::CAN_ONLY), "encode failure is reported");
-
-  common::can::platform::mock_send_fail_from = 1U;
-  ASSERT_MSG(!output.send(make_sample_control_msg(), ControlCommandOutputMode::CAN_ONLY), "mid-batch failure is reported");
-  ASSERT_MSG(common::can::platform::recorded_can_frame_count() == 1U, "failed batch recorded the first frame only");
-
-  common::can::platform::mock_send_fail_from = std::numeric_limits<std::size_t>::max();
-  ASSERT_MSG(output.send(make_sample_control_msg(), ControlCommandOutputMode::CAN_ONLY), "retry after failure succeeds");
-  ASSERT_MSG(common::can::platform::recorded_can_frame_count() == 4U, "retry records three more frames");
-  ASSERT_MSG(read_u16_le(common::can::platform::recorded_can_frame_at(3), 2) == 0U, "sequence is unchanged after failed batch");
-}
-#endif
-
 static void test_udp_tunnel_pack_unpack()
 {
   using common::can::ControlCommandOutputMode;
@@ -314,9 +274,20 @@ static void test_udp_tunnel_golden_datagram()
   assert_frame_equals(unpacked.frames[2], frames[2], "golden status frame");
 }
 
-#if defined(PLATFORM_ZEPHYR) && defined(CONFIG_CONTROL_CMD_CAN_OUTPUT) && \
+#if defined(__ZEPHYR__) && defined(CONFIG_CONTROL_CMD_CAN_OUTPUT) && \
   CONFIG_CONTROL_CMD_CAN_OUTPUT && defined(CONFIG_CAN)
 CAN_MSGQ_DEFINE(zephyr_can_rx_msgq, 8);
+
+// The controller the frame driver opens for open(NULL): the `nros,can`
+// chosen, else `zephyr,canbus` (nano-ros RFC-0132 D4).
+static const struct device * zephyr_can_device()
+{
+  #if DT_HAS_CHOSEN(nros_can)
+  return DEVICE_DT_GET(DT_CHOSEN(nros_can));
+  #else
+  return DEVICE_DT_GET(DT_CHOSEN(zephyr_canbus));
+  #endif
+}
 
 static common::can::CanFrame to_common_can_frame(const struct can_frame & frame)
 {
@@ -340,7 +311,7 @@ static void add_zephyr_can_filter(const uint32_t id)
   filter.flags = 0U;
 
   const int filter_id = ::can_add_rx_filter_msgq(
-    common::can::platform::can_device(), &zephyr_can_rx_msgq, &filter);
+    zephyr_can_device(), &zephyr_can_rx_msgq, &filter);
   ASSERT_MSG(filter_id >= 0, "Zephyr CAN filter registration succeeds");
 }
 
@@ -349,15 +320,17 @@ static void test_zephyr_can_output_loopback()
   using common::can::ControlCommandCanOutput;
   using common::can::ControlCommandOutputMode;
 
-  const struct device * device = common::can::platform::can_device();
+  const struct device * device = zephyr_can_device();
   ASSERT_MSG(device_is_ready(device), "Zephyr CAN device is ready");
-  // nano-ros (RFC-0109 D10, phase-514 W5) now starts the `zephyr,canbus`
-  // controller in an APPLICATION SYS_INIT, before main(). Zephyr only changes
-  // the mode of a STOPPED controller (-EBUSY otherwise), so stop it first;
-  // output.init() below starts it again, as on a cold boot.
+  // nano-ros (RFC-0109 D10, phase-514 W5) starts the chosen controller in an
+  // APPLICATION SYS_INIT, before main(), and the frame driver's open starts
+  // nothing. Zephyr only changes the mode of a STOPPED controller (-EBUSY
+  // otherwise), so stop it, set loopback, and start it again here.
   const int stop_rc = ::can_stop(device);
   ASSERT_MSG(stop_rc == 0 || stop_rc == -EALREADY, "Zephyr CAN controller stops for the mode change");
   ASSERT_MSG(::can_set_mode(device, CAN_MODE_LOOPBACK) == 0, "Zephyr CAN loopback mode is set");
+  const int start_rc = ::can_start(device);
+  ASSERT_MSG(start_rc == 0 || start_rc == -EALREADY, "Zephyr CAN controller starts in loopback");
 
   add_zephyr_can_filter(common::can::kLateralCommandCanId);
   add_zephyr_can_filter(common::can::kLongitudinalCommandCanId);
@@ -388,7 +361,7 @@ static void test_zephyr_can_output_loopback()
 }
 #endif
 
-#if defined(PLATFORM_ZEPHYR) && defined(CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL) && \
+#if defined(__ZEPHYR__) && defined(CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL) && \
   CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL
 static void test_zephyr_can_udp_tunnel_send()
 {
@@ -419,10 +392,7 @@ int main()
   test_fd_encoding_modes();
   test_udp_tunnel_pack_unpack();
   test_udp_tunnel_golden_datagram();
-#if defined(PLATFORM_FREERTOS_CAN_MOCK)
-  test_freertos_can_output_records_frames();
-  test_failed_batch_does_not_advance_sequence();
-#elif defined(PLATFORM_ZEPHYR)
+#if defined(__ZEPHYR__)
   #if defined(CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL) && \
     CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL
   test_zephyr_can_udp_tunnel_send();
@@ -434,9 +404,5 @@ int main()
   #endif
 #endif
   log_info("CAN output tests passed");
-#if defined(PLATFORM_FREERTOS)
-  std::exit(0);
-#else
   return 0;
-#endif
 }

@@ -124,10 +124,7 @@ if(ASI_CAN_VCAN_SENDER AND NOT TARGET app AND NROS_PLATFORM STREQUAL "freertos"
   target_include_directories(can_vcan_sender_obj PRIVATE
     $<TARGET_PROPERTY:controller_lib,INCLUDE_DIRECTORIES>)
   target_compile_definitions(can_vcan_sender_obj PRIVATE
-    $<TARGET_PROPERTY:controller_lib,COMPILE_DEFINITIONS>
-    # The SocketCAN backend (platform/freertos/freertos_can_socketcan.h)
-    # instead of the image's stub.
-    PLATFORM_FREERTOS_POSIX=1)
+    $<TARGET_PROPERTY:controller_lib,COMPILE_DEFINITIONS>)
   target_compile_features(can_vcan_sender_obj PRIVATE cxx_std_17)
   target_compile_options(can_vcan_sender_obj PRIVATE -Wall -Wextra -Wno-unused-parameter)
   # The generated nros config headers come from the same build steps
@@ -149,7 +146,11 @@ if(ASI_CAN_VCAN_SENDER AND NOT TARGET app AND NROS_PLATFORM STREQUAL "freertos"
   # stated way out (nano-ros issue 2678, PR 4016).
   nano_ros_add_plain_executable(can_vcan_sender
     $<TARGET_OBJECTS:can_vcan_sender_obj> "${_variant_c}")
-  target_link_libraries(can_vcan_sender PRIVATE pthread)
+  # nano-ros's SocketCAN backend of the platform CAN frame driver: the
+  # library the freertos-posix image's entry links for its
+  # [image.<id>.can] device (cmake/NanoRosCanImage.cmake), so this program
+  # sends through the same backend. It opens vcan0 by name.
+  target_link_libraries(can_vcan_sender PRIVATE nros_can_socketcan pthread)
   set_target_properties(can_vcan_sender PROPERTIES
     LINKER_LANGUAGE CXX
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")

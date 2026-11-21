@@ -17,7 +17,7 @@ Build and run the Safety Island (repository root):
 ```bash
 ./build.sh --platform freertos-posix -d build/freertos-posix
 CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="lo"/></Interfaces></General>' \
-  SAFETY_ISLAND_CAN_IFACE=vcan0 ./build/freertos-posix/actuation_posix_entry
+  ./build/freertos-posix/actuation_posix_entry
 ```
 
 `CAN_ONLY` is not built on the nano-ros branch: `build.sh` has no
@@ -42,6 +42,7 @@ For Open AD Kit, pass `--ego-role ego_vehicle` (see
 `documentation/user_guide/can_carla_closed_loop.rst`). Watchdog timeout defaults to 0.5 s.
 
 CAN-FD is optional: run the Safety Island with
-`SAFETY_ISLAND_CAN_FORMAT=fd` and the bridge with `--can-format fd`. The bridge
+the launch arg `can_format` bound to `fd` (an
+`[image.<id>] args` row in `controller_bringup/system.toml`) and the bridge with `--can-format fd`. The bridge
 then decodes one 24-byte `0x103` frame instead of
 `0x100`/`0x101`/`0x102`.

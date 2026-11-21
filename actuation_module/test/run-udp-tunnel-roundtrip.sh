@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BIND="${UDP_TUNNEL_BIND:-127.0.0.1}"
 PORT="${UDP_TUNNEL_PORT:-5555}"
-IFACE="${SAFETY_ISLAND_CAN_IFACE:-vcan0}"
+IFACE="${VCAN_IFACE:-vcan0}"
 
 setup_vcan() {
   if ip link show "${IFACE}" >/dev/null 2>&1; then

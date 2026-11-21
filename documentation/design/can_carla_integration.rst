@@ -63,8 +63,8 @@ Shared decisions
 - **Mock is test-only.** Runtime CAN output does not fall back to the
   in-memory recorder when no interface is configured.
 - **CAN-FD is opt-in.** ``freertos-posix`` can send one 24-byte ``0x103``
-  frame instead of the classic three (``SAFETY_ISLAND_CAN_FORMAT=fd`` plus
-  ``bridge.py --can-format fd``). Every other runtime stays classic; see
+  frame instead of the classic three (launch arg ``can_format`` = ``fd``
+  plus ``bridge.py --can-format fd``). Every other runtime stays classic; see
   :doc:`can_fd`.
 
 **********************
@@ -77,11 +77,10 @@ planning or Open AD Kit.
 Components
 ==========
 
-1. **SocketCAN backend** for ``freertos-posix``. Isolated with
-   ``PLATFORM_FREERTOS_POSIX`` so Linux ``PF_CAN`` never enters S32Z2
-   builds. ``SAFETY_ISLAND_CAN_IFACE`` (for example ``vcan0``) is required
-   at runtime; missing or unopenable interface fails ``can_init()``. The
-   in-memory mock is compiled only into ``--can-output-test``.
+1. **SocketCAN backend** for ``freertos-posix``: nano-ros's platform CAN
+   frame driver, selected by the board, so Linux ``PF_CAN`` never enters
+   S32Z2 builds. The image names the interface (``[image.<id>.can] device``,
+   ``vcan0``); a missing or unopenable interface fails the CAN open.
 2. **Python host decoder** in ``demo/can_carla_bridge/``. ``0x102`` is the
    commit marker: require fresh ``0x100`` and ``0x101``, wrapping sequence
    (forward jumps accepted, replays/stale rejected), and a 0.5 s monotonic
@@ -111,7 +110,7 @@ Demo and validation
 
 - Host: ``ip link add vcan0 type vcan`` and bring it up.
 - Build ``freertos-posix`` with ``--control-output CAN_ONLY`` or
-  ``DDS_AND_CAN``, ``SAFETY_ISLAND_CAN_IFACE=vcan0``.
+  ``DDS_AND_CAN``; the image's CAN device is ``vcan0``.
 - Run the bridge against CARLA 0.9.16, confirm the ego steers/throttles.
 - CI: privilege-free encoder/decoder/mock tests, plus a capability-gated
   ``vcan`` integration job. No GPU, no CARLA container.
@@ -254,8 +253,10 @@ Kconfig
 Only ``CONFIG_CONTROL_CMD_CAN_TRANSPORT_NATIVE`` selects ``CAN``.
 ``CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL`` selects ``NET_UDP`` /
 ``NET_IPV4`` and does not require ``zephyr,canbus``.
-``platform_can.h`` includes ``zephyr_can_udp_tunnel.h`` on the TAP path
-so ``zephyr_can.h`` is not compiled.
+The TAP path compiles the island's tunnel driver
+(``asi_common/src/zephyr/can_udp_tunnel_driver.cpp``, the strong
+``nros_platform_can_*`` symbols) and no CAN controller, so nano-ros's Zephyr
+CAN backend is not linked.
 
 Watchdog
 ========

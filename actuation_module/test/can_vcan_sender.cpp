@@ -6,6 +6,10 @@
 #include "common/can/control_command_can_output.hpp"
 #include "common/logger/logger.hpp"
 
+// A host program, not an image: it links nano-ros's SocketCAN backend of the
+// platform CAN frame driver (<nros/platform_can.h>) and no image hands it a
+// device, so it opens vcan0 by name.
+
 #define ASSERT_MSG(condition, message) \
   do { \
     if (!(condition)) { \
@@ -13,6 +17,11 @@
       assert(false && message); \
     } \
   } while (0)
+
+namespace
+{
+constexpr const char * kIface = "vcan0";
+}
 
 static ControlMsg make_sample_control_msg()
 {
@@ -36,10 +45,8 @@ static ControlMsg make_sample_control_msg()
 // MTU lowered by run-vcan-roundtrip.sh).
 static int expect_fd_init_failure()
 {
-  setenv("SAFETY_ISLAND_CAN_IFACE", "vcan0", 1);
-  setenv("SAFETY_ISLAND_CAN_FORMAT", "fd", 1);
   common::can::ControlCommandCanOutput output;
-  ASSERT_MSG(!output.init(), "CAN-FD init fails closed below the FD MTU");
+  ASSERT_MSG(!output.init(true, kIface), "CAN-FD init fails closed below the FD MTU");
   common::logger::log_info("low-MTU CAN-FD init failed closed");
   return 0;
 }
@@ -53,16 +60,12 @@ int main(int argc, char ** argv)
 
   common::logger::log_info("=== Starting SocketCAN vcan sender ===");
 
-  unsetenv("SAFETY_ISLAND_CAN_IFACE");
-  ASSERT_MSG(!common::can::platform::can_init(), "missing iface fails init");
-
-  setenv("SAFETY_ISLAND_CAN_IFACE", "does_not_exist", 1);
-  ASSERT_MSG(!common::can::platform::can_init(), "missing device fails init");
-
-  setenv("SAFETY_ISLAND_CAN_IFACE", "vcan0", 1);
+  // No image named a device for this program, so open(NULL) has none.
+  ASSERT_MSG(!common::can::platform::can_init(), "no image device fails init");
+  ASSERT_MSG(!common::can::platform::can_init(false, "does_not_exist"), "missing device fails init");
 
   common::can::ControlCommandCanOutput output;
-  ASSERT_MSG(output.init(), "SocketCAN TX initializes on vcan0");
+  ASSERT_MSG(output.init(false, kIface), "SocketCAN TX initializes on vcan0");
   ASSERT_MSG(
     output.send(make_sample_control_msg(), common::can::ControlCommandOutputMode::CAN_ONLY),
     "encoded command is sent");
@@ -74,11 +77,7 @@ int main(int argc, char ** argv)
     !common::can::platform::can_send_fd(fd_encoded.frame),
     "classic SocketCAN refuses a CAN-FD send");
 
-  setenv("SAFETY_ISLAND_CAN_FORMAT", "invalid", 1);
-  ASSERT_MSG(!output.init(), "unknown CAN format fails init");
-
-  setenv("SAFETY_ISLAND_CAN_FORMAT", "fd", 1);
-  ASSERT_MSG(output.init(), "SocketCAN CAN-FD TX initializes on vcan0");
+  ASSERT_MSG(output.init(true, kIface), "SocketCAN CAN-FD TX initializes on vcan0");
   ASSERT_MSG(
     output.send(make_sample_control_msg(), common::can::ControlCommandOutputMode::CAN_ONLY),
     "encoded command is sent as CAN-FD");

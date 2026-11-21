@@ -15,7 +15,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD_DIR="${1:-${ROOT_DIR}/build/zephyr-fvp-tap-can}"
 TAP="${FVP_TAP_INTERFACE:-tap0}"
-IFACE="${SAFETY_ISLAND_CAN_IFACE:-vcan0}"
+IFACE="${VCAN_IFACE:-vcan0}"
 TIMEOUT_SECONDS="${FVP_TAP_TIMEOUT_SECONDS:-120}"
 # The collector starts before `west build --target run`, so its deadline must
 # outlive the FVP timeout to count commands emitted after a slow build or boot.

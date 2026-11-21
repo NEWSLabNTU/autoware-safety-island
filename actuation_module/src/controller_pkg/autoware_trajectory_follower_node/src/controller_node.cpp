@@ -235,6 +235,16 @@ Controller::Controller(rclcpp::NodeHandle handle)
       mode_str.c_str(), common::can::default_control_command_output_mode());
   }
   log_info("Control command output mode: %s", common::can::output_mode_name(output_mode_));
+  // The CAN frame format is the application's (classic: the three-frame
+  // command; fd: the one CAN-FD frame), the `can_format` launch arg; the
+  // device is the image's ([image.<id>.can] device on a host board,
+  // devicetree on Zephyr). Declared in every mode, so the census counts it.
+  const std::string can_format = declare_parameter<std::string>("can_format", "classic");
+  const bool can_want_fd = can_format == "fd";
+  if (!can_want_fd && can_format != "classic") {
+    log_error("can_format must be \"classic\" or \"fd\", got \"%s\"", can_format.c_str());
+    std::exit(1);
+  }
 
   // Supervision I/O: the VP command candidate (used in VP_CONTROL and for
   // cross-checking in either mode), the explicit operator re-enable topic,
@@ -261,7 +271,7 @@ Controller::Controller(rclcpp::NodeHandle handle)
 
   if (common::can::output_mode_uses_can(output_mode_)) {
     can_output_ = std::make_shared<common::can::ControlCommandCanOutput>();
-    if (!can_output_->init()) {
+    if (!can_output_->init(can_want_fd)) {
       if (output_mode_ == common::can::ControlCommandOutputMode::CAN_ONLY) {
         log_error("CAN output initialization failed in CAN_ONLY mode");
         std::exit(1);

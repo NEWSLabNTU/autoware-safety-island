@@ -7,11 +7,6 @@
 // Logging
 #define CONFIG_LOG_LEVEL @CONFIG_LOG_LEVEL@
 
-// The CAN control-command output is built in (the mock / stub / SocketCAN
-// backend platform_can.h selects); the launch arg control_output selects
-// whether it is used.
-#define CONFIG_CONTROL_CMD_CAN_OUTPUT @CONFIG_CONTROL_CMD_CAN_OUTPUT@
-
 // Network
 #define CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX @CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX@
 

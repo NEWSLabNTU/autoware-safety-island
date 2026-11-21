@@ -6,10 +6,10 @@
 #include <pthread.h>
 
 #include "autoware/autoware_msgs/messages.hpp"
+#include "common/can/can_platform.hpp"
 #include "common/can/control_command_encoder.hpp"
 #include "common/can/control_command_output_mode.hpp"
 #include "common/logger/logger.hpp"
-#include "platform/platform_can.h"
 
 namespace common::can
 {
@@ -21,11 +21,14 @@ public:
   ControlCommandCanOutput(const ControlCommandCanOutput &) = delete;
   ControlCommandCanOutput & operator=(const ControlCommandCanOutput &) = delete;
 
-  bool init()
+  /// Open the CAN device: the image's (`device` nullptr) or the named one.
+  /// `want_fd` sends the one-frame CAN-FD command instead of the classic
+  /// three-frame batch; it is the application's choice, not the image's.
+  bool init(const bool want_fd = false, const char * device = nullptr)
   {
     LockGuard lock(mutex_);
     fd_active_ = false;
-    initialized_ = platform::can_init();
+    initialized_ = platform::can_init(want_fd, device);
     if (initialized_) {
       fd_active_ = platform::can_fd_active();
     }

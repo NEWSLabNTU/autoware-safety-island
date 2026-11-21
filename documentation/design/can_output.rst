@@ -28,17 +28,23 @@ An image binds it in its ``[image.<id>] args`` row of ``system.toml``; no
 image does today, so every image runs ``DDS_ONLY``. An unknown value falls
 back to ``DDS_ONLY``.
 
-Whether an image can send CAN at all is a build fact,
-``CONFIG_CONTROL_CMD_CAN_OUTPUT``:
+The CAN output goes through nano-ros's platform CAN frame driver
+(``<nros/platform_can.h>``, RFC-0132) behind one island wrapper,
+``common/can/can_platform.hpp``. The board selects the backend and the image
+names the device; the island keeps the frame ids, the payload layout and the
+classic / FD choice. Whether an image can send CAN at all:
 
-- ``zephyr-fvp``: not built. The tap network's ``--can-output-test``
-  program builds it over the UDP tunnel.
-- ``zephyr-s32z``: built (native CAN).
-- ``freertos-posix``: built, on the CAN stub (no SocketCAN in the image).
-  SocketCAN runs in the ``--can-output-test`` host program
-  ``can_vcan_sender`` with ``SAFETY_ISLAND_CAN_IFACE``. The in-memory mock
-  is test-only.
-- ``freertos-s32z2``: the CAN stub; CAN is not part of this stack there.
+- ``zephyr-fvp``: not built (``CONFIG_CONTROL_CMD_CAN_OUTPUT`` off). The tap
+  network's ``--can-output-test`` program builds it over the UDP tunnel, the
+  island's own driver (``asi_common/src/zephyr/can_udp_tunnel_driver.cpp``).
+- ``zephyr-s32z``: built (native CAN, nano-ros's Zephyr backend).
+- ``freertos-posix``: built, on nano-ros's SocketCAN backend. The image names
+  its device, ``[image.freertos-posix.can] device = "vcan0"`` in
+  ``controller_bringup/system.toml``.
+- ``freertos-an536``, ``freertos-s32z2``: built, on nano-ros's fail-loud
+  defaults: the CAN open returns "not supported", so a CAN mode fails at
+  start (``CAN_ONLY`` exits; ``DDS_AND_CAN`` keeps DDS).
+- The census's host build links nano-ros's CAN mock.
 
 ``build.sh`` has no ``--control-output`` option.
 
@@ -69,24 +75,25 @@ early bring-up. Each command produces three classic 8-byte CAN frames:
 Non-finite command values are rejected before any CAN frame is sent.
 
 ``freertos-posix`` can instead send the same three payloads as one 24-byte
-CAN-FD frame ``0x103`` when ``SAFETY_ISLAND_CAN_FORMAT=fd`` is set. That mode
+CAN-FD frame ``0x103`` when the launch arg ``can_format`` is ``fd``. That mode
 is opt-in and documented in :doc:`can_fd`; every other runtime stays classic.
 
 **********************
 Backends
 **********************
 
-Zephyr uses the selected ``zephyr,canbus`` device. On the S32Z270 RTU0 that is
-``&can0``, which Zephyr's own board devicetree
+Zephyr uses the ``nros,can`` chosen device, else ``zephyr,canbus``. On the
+S32Z270 RTU0 that is ``&can0``, which Zephyr's own board devicetree
 (``s32z2xxdc2_s32z270_rtu0.dts``) chooses.
 Real bus validation requires the board CAN pins to be connected to an external
 CAN transceiver and bus.
 
-``freertos-posix`` uses Linux SocketCAN when CAN output is enabled and
-``SAFETY_ISLAND_CAN_IFACE`` is set. The in-memory mock is compiled only
-into ``--can-output-test``. That test program
-(``actuation_module/test/can_output_test.cpp``) validates the encoder,
-output modes, and recorded mock frames.
+``freertos-posix`` uses Linux SocketCAN on the image's device
+(``[image.<id>.can] device``). To use another interface, change that row.
+The Zephyr test program ``--can-output-test``
+(``actuation_module/test/can_output_test.cpp``) validates the encoder and
+the output modes over the FVP's CAN loopback controller, or over the UDP
+tunnel on the tap network.
 
 Host SocketCAN (``vcan`` or a real adapter), the Zephyr FVP UDP tunnel, and
 the CARLA ego bridge are specified in :doc:`can_carla_integration` and
