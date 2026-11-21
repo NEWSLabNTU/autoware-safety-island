@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 1866c0594f (2026-11-20)
+On branch `nano-ros-next` nano-ros is pinned at main 14be463e27 (2026-11-21)
 and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -68,7 +68,49 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 1866c0594f (2026-11-20, 2b6fe0c). Over 011a9c4c5b it adds PR
+nano-ros main 14be463e27 (2026-11-21). Over 1866c0594f it adds PR 4444
+(the AN536 LAN9118 RX drain), 4452, 4457 and 4491 (the platform CAN frame
+driver `<nros/platform_can.h>`, an image's CAN device, the `board` backend's
+fail-loud weak defaults and the census CAN mock; issue 4012, see P7), 4451
+(a toolchain pin can name a commit; not used: the prebuilt nros11 launcher
+`scripts/nros-cli.sh` compares against cannot read it), 4460 (zenoh-pico
+split lock), 4472 (a transient-local subscription re-reads a publisher
+cache), 4478 and 4484 (issues 2774 and 2779: every TCP read reports
+end-of-stream, so a zenoh-pico client reopens after its router dies; the
+zenoh-pico pin moves to e9675d97), 4504 (issue 2786: a conf fragment that
+sets `CONFIG_NROS_CAPABILITY_{PARAM_SERVICES,ROSOUT,SIM_TIME}` is refused;
+`node_interfaces` owns them), 4507 (issue 2785: the Zephyr module refuses a
+socket service stack below `POLL_MAX * sizeof(k_poll_event)` plus a
+margin), 4517 (phase-581 W4: the knob naming rule is enforced by the catalog
+loader), 4518 (issue 2702: an image's own `features` / `node_interfaces`
+must equal `[system]`'s on a shared C/C++ configure), 4468 (phase-582
+`[knobs.clock]`; `CONFIG_NROS_SNTP_EPOCH` and `CONFIG_NROS_EPOCH_FROM_ZENOH`
+retired) and 4516 (phase-584 gate lanes). Cyclone is unchanged (05b3c9eda5,
+`nros-sdk.lock` as it was).
+
+Two island changes came with it. The parameter store's value capacities are
+no longer defaulted (nano-ros issue 2768: the store is sized from what the
+code declares), and the first build stopped in `nros-params`' build script,
+"parameter `control_output` on node `/controller` is declared with a type
+that needs it, so the parameter store needs NROS_MAX_STRING_VALUE_LEN, and
+NROS_MAX_STRING_VALUE_LEN is stated nowhere". `[image_defaults]` now states
+`knobs.params.max_string_value_len = 256` and `max_array_len = 32`, the
+sizes every image ran with before (read back from the generated
+`nros_params_config.rs`). And every image now serves the stock node
+interfaces (nano-ros 6229085857, phase-556 W13), so the FVP controller image
+has rosout and sim_time on besides the parameter services; its 4096-byte
+`net_socket_service` stack overflowed into `.bss` (zsock_poll keeps
+`POLL_MAX` = 256 `k_poll_event`s on it), the rosout dispatch guard read as
+held, and the image printed no nros log record after
+`nros: sched task priority set sched_task=\`control\` prio=9` (nano-ros
+issue 2785). `prj-actuation.conf` now sets
+`CONFIG_NET_SOCKETS_SERVICE_STACK_SIZE=16384` (13df09d), above the 13,312 B
+floor nano-ros enforces here; the image is Live at 1.28 s model time. The
+island sets no `CONFIG_NROS_CAPABILITY_*` in a conf fragment, no retired
+clock symbol, and no image row's `features` differs from `[system]`'s, so
+4504, 4468 and 4518 need nothing.
+
+Before that, nano-ros main 1866c0594f (2026-11-20, 2b6fe0c). Over 011a9c4c5b it adds PR
 4423 (issue 2758: the RMW ABI enums are pinned int-wide, so C and Rust agree
 on their layout on arm-none-eabi) and PR 4430 (issue 2761: every RTOS runner
 takes `nros_board_network_wait` as a weak reference). Cyclone is unchanged.

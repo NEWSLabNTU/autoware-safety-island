@@ -131,6 +131,12 @@ priority = 9
 # boot at the first declaration with no slot. Each slot costs ~8.9 KB of the
 # executor backing.
 knobs.params.max_parameters = 164
+# The parameter store's value capacities are a board fact nano-ros no longer
+# defaults (issue 2768): the controller declares string parameters
+# (control_output, supervision_mode, ...) and double arrays (the MPC
+# steer-rate limits). These are the sizes every image ran with before.
+knobs.params.max_string_value_len = 256
+knobs.params.max_array_len = 32
 # max_cbs = 16: 7 subscriptions, a timer and the parameter services; the
 # default 4 fails at boot. subscription_buffer_size = 16384: /planning
 # trajectories run 9-14 KiB, and an undersized buffer drops the sample after

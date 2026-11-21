@@ -45,7 +45,21 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-20: 1866c0594f, past PRs 4423 (issue 2758: the RMW ABI
+    # ON main, 2026-11-21: 14be463e27, past PRs 4444 (the AN536 LAN9118 RX
+    # drain), 4452, 4457 and 4491 (the platform CAN frame driver
+    # <nros/platform_can.h>, the image's CAN device, fail-loud weak defaults
+    # and the census CAN mock), 4472 (a transient-local subscription re-reads
+    # a publisher cache), issue 2768 (the parameter store's value capacities
+    # are no longer defaulted; system.toml states them), 4507 (issue 2785: a
+    # Zephyr configure refuses a socket service stack below POLL_MAX *
+    # sizeof(k_poll_event) + margin), 4504 (issue 2786: a conf fragment may
+    # not set CONFIG_NROS_CAPABILITY_*), 4478 and 4484 (issues 2774, 2779: a
+    # zenoh-pico client reopens when its router's TCP closes), 4517 (the
+    # knob naming rule is enforced by the catalog loader) and 4518 (issue
+    # 2702: an image's own features must equal [system]'s on a shared
+    # configure). Cyclone is unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-20: 1866c0594f, past PRs 4423 (issue 2758: the RMW ABI
     # enums are int-wide on every target, so C and Rust agree on arm-none-eabi)
     # and 4430 (issue 2761: every RTOS runner takes nros_board_network_wait as
     # a weak reference, so a hand-written entry that never includes
@@ -158,7 +172,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 1866c0594fc31054b6bc502f32e82d04f8d6fc83
+      revision: 14be463e27e2e7ae9f09aa4c4df34f692956ef83
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
