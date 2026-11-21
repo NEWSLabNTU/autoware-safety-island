@@ -109,6 +109,18 @@ floor nano-ros enforces here; the image is Live at 1.28 s model time. The
 island sets no `CONFIG_NROS_CAPABILITY_*` in a conf fragment, no retired
 clock symbol, and no image row's `features` differs from `[system]`'s, so
 4504, 4468 and 4518 need nothing.
+A third came with PR 4462 (nano-ros issue 2766): nano-ros's own Zephyr patch
+set now adds the CTF `app_marker` event (id 0x70, same name and fields) and
+the `k_thread_priority_set` CTF mapping, so the island's
+`patches/zephyr/0001` and `0002` no longer applied after it and the FVP lane
+stopped at Phase 1 (CI run 44889894023, ef5198d). They are removed (2c9cfca);
+`0003` (out-of-tree tracing backend selection) stays. Local POSIX lane exit 0
+on ef5198d. CI run 44892025658 (2c9cfca) green on all three lanes: the FVP
+controller prints "Starting Controller Node", "Controller Node Started" and
+"Actuation Safety Island is Live" at 1.28 s model time; AN536 Live at 8.74 s.
+The FreeRTOS POSIX test programs' owned-entry census still cannot be taken
+(warn only, as at 1866c0594f; it now stops compiling, not configuring: the
+host census build generates no `safety_island_msgs` or `visionpilot_msgs`).
 
 Before that, nano-ros main 1866c0594f (2026-11-20, 2b6fe0c). Over 011a9c4c5b it adds PR
 4423 (issue 2758: the RMW ABI enums are pinned int-wide, so C and Rust agree
