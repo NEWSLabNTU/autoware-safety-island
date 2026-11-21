@@ -498,11 +498,11 @@ function build_zephyr_test() {
   # environment, the same values (an exported value wins over a row).
   export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
-  export NROS_SUBSCRIPTION_BUFFER_SIZE="${NROS_SUBSCRIPTION_BUFFER_SIZE:-16384}"
+  export NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES="${NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES:-16384}"
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then
-    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-2097152}"
+    export NROS_MEMORY_HEAP_BYTES="${NROS_MEMORY_HEAP_BYTES:-2097152}"
   else
-    export NROS_ZEPHYR_HEAP_SIZE="${NROS_ZEPHYR_HEAP_SIZE:-8388608}"
+    export NROS_MEMORY_HEAP_BYTES="${NROS_MEMORY_HEAP_BYTES:-8388608}"
   fi
 
   # The FVP model parameters. A test program is no bringup image, so it has

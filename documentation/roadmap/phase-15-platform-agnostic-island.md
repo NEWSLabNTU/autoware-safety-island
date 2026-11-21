@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main ee02c58931 (2026-11-22)
+On branch `nano-ros-next` nano-ros is pinned at main dc97616723 (2026-11-22)
 and the CLI is built from source; there P4 is done too, P8 in part (the census
 is on; `PLATFORM_*` waits on P5-P7), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
@@ -69,7 +69,30 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
+nano-ros main dc97616723 (2026-11-22). Over ee02c58931 it adds PR 4577
+(issues 2787, 2788: the metadata probe links the census CAN mock through
+`nros_link_can_census_mock`, and every non-host, non-Zephyr board gets
+fail-loud weak CAN defaults from one place, so the AN536 links with the CAN
+output on and `nros_platform_can_open` returns ENOTSUP at run time; see P7),
+4578 (issue 2690, RFC-0136: a top-level `[image_alternatives]` table lets
+images that never run together share a static address or MAC; see P6), 4585
+and 4580 (phase-583: an owned entry's programs' censuses fold, stack floors
+per program), 4575 (`nros run --exec`), 4573 (phase-581 W5 knob renames
+batch 1), 4526 (issue 2792), 4488 (issue 2777), 4549, 4561, 4574 and 4581.
+Cyclone is unchanged (`nros-sdk.lock` as it was).
+
+PR 4573 refuses the old spellings, so the first CI run on the bare bump
+(44950138759, ec91a83) stopped at every lane's configure: "`[image.fvp.knobs.executor]
+subscription_buffer_size` is retired: write `... subscription_buffer_bytes`
+instead", the same for `params.max_string_value_len` (now
+`max_string_value_bytes`) and `zephyr.heap_size` (now `memory.heap_bytes`).
+The bump renames the island's rows in the three `system.toml` files, and the
+environment `build.sh` exports for the Zephyr test programs
+(`NROS_SUBSCRIPTION_BUFFER_SIZE` is now `NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES`,
+`NROS_ZEPHYR_HEAP_SIZE` is now `NROS_MEMORY_HEAP_BYTES`); the values are
+unchanged.
+
+Before that, nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
 (phase-583 W1: a registered component's carrier is named for its
 `EXECUTABLE`, and an owned entry's census refuses a package that builds
 several programs), 4552 (issue 2805: the owned entry's host census build puts
@@ -742,8 +765,8 @@ What remains of P9 and P11 after this:
     controller's 164 and the tests' 16; nano-ros sizes the store from the
     declarations, 149 + `use_sim_time` = 150 slots on the controller) and
     `knobs.executor.max_cbs` (16; derived 11). Still stated:
-    `max_string_value_len`, `max_array_len` (nano-ros derives only whether
-    they are needed) and `subscription_buffer_size` (the take buffer keeps
+    `max_string_value_bytes`, `max_array_len` (nano-ros derives only whether
+    they are needed) and `subscription_buffer_bytes` (the take buffer keeps
     its configured value). `check-param-seeds.py` no longer checks the store
     size.
   - On the `linux` board the component registration also builds a native

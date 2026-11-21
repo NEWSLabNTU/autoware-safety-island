@@ -37,7 +37,7 @@ domain_id = 0
 [image_defaults]
 # The parameter store and the callback slots come from the program's census;
 # the take buffer is not derived.
-knobs.executor.subscription_buffer_size = 16384
+knobs.executor.subscription_buffer_bytes = 16384
 
 # The FreeRTOS POSIX simulator, over host Cyclone DDS.
 [image.freertos-posix]

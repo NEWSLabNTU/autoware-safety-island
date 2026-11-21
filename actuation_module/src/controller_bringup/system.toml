@@ -127,10 +127,10 @@ priority = 9
 #
 # The sizing knobs every image shares ([image_defaults] below); an image
 # block states only what differs from them. The FVP images also state
-# zephyr.heap_size = 8 MiB (the nros allocator funnel, z_malloc and
+# memory.heap_bytes = 8 MiB (the nros allocator funnel, z_malloc and
 # __rust_alloc, holds Cyclone and the controller). It cannot be a default:
 # [image_defaults] reaches every image, and on the S32Z270 it would override
-# its board package's [knobs.zephyr] heap_size (2 MiB).
+# its board package's heap (2 MiB).
 
 [image_defaults]
 # No knobs.params.max_parameters: nano-ros derives the store from what the
@@ -141,15 +141,15 @@ priority = 9
 # defaults (issue 2768): the controller declares string parameters
 # (control_output, supervision_mode, ...) and double arrays (the MPC
 # steer-rate limits). These are the sizes every image ran with before.
-knobs.params.max_string_value_len = 256
+knobs.params.max_string_value_bytes = 256
 knobs.params.max_array_len = 32
 # No knobs.executor.max_cbs: nano-ros derives the callback slots from the
 # contract the census checks (9 subscriptions, the control timer and the
-# node interfaces). subscription_buffer_size = 16384: /planning
+# node interfaces). subscription_buffer_bytes = 16384: /planning
 # trajectories run 9-14 KiB, and an undersized buffer drops the sample after
 # Cyclone ACKed it (nano-ros issue 0749); nano-ros keeps the take buffer at
 # its configured value. The two ARMv8-R FreeRTOS images take 64 KiB.
-knobs.executor.subscription_buffer_size = 16384
+knobs.executor.subscription_buffer_bytes = 16384
 
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
@@ -159,7 +159,7 @@ os_config = [
   "zephyr/prj-actuation.conf",
   "zephyr/prj-fvp.conf",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 
 # Layer 1 of the real-time evaluation (documentation/design/rt_evaluation_zephyr.rst):
 # thread runtime statistics, no CTF (build.sh --trace-stats).
@@ -171,7 +171,7 @@ os_config = [
   "zephyr/prj-fvp.conf",
   "zephyr/prj-trace-stats.conf",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 
 # CTF tracing streamed to uart1, plus the Layer 1 statistics (build.sh --trace).
 [image.fvp-trace]
@@ -184,7 +184,7 @@ os_config = [
   "zephyr/prj-trace.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
@@ -200,7 +200,7 @@ os_config = [
   "zephyr/prj-trace-ring.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # The FVP image on the TAP network (build.sh --network tap), for the demo
@@ -213,7 +213,7 @@ os_config = [
   "zephyr/prj-fvp.conf",
   "zephyr/prj-fvp-tap.conf",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.nic = { tap = "tap0" }
 
 # [image.fvp-stats] on the TAP network.
@@ -226,7 +226,7 @@ os_config = [
   "zephyr/prj-fvp-tap.conf",
   "zephyr/prj-trace-stats.conf",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.nic = { tap = "tap0" }
 
 # [image.fvp-trace] on the TAP network.
@@ -241,7 +241,7 @@ os_config = [
   "zephyr/prj-trace.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
@@ -258,7 +258,7 @@ os_config = [
   "zephyr/prj-trace-ring.conf",
   "zephyr/fvp-trace.overlay",
 ]
-knobs.zephyr.heap_size = 8388608
+knobs.memory.heap_bytes = 8388608
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
@@ -320,7 +320,7 @@ profile = "RelWithDebInfo"
 # 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
-knobs.executor.subscription_buffer_size = 65536
+knobs.executor.subscription_buffer_bytes = 65536
 
 # phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
 # phase-385). Same CPU and kernel port as [image.s32z2] above, but nothing
@@ -339,4 +339,4 @@ profile   = "RelWithDebInfo"
 # 64 KiB. A real Autoware trajectory serialises to ~13 KiB, and an undersized
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
-knobs.executor.subscription_buffer_size = 65536
+knobs.executor.subscription_buffer_bytes = 65536
