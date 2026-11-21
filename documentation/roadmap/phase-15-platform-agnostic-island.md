@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 14be463e27 (2026-11-21)
+On branch `nano-ros-next` nano-ros is pinned at main ee02c58931 (2026-11-22)
 and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -68,7 +68,20 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 14be463e27 (2026-11-21). Over 1866c0594f it adds PR 4444
+nano-ros main ee02c58931 (2026-11-22). Over 14be463e27 it adds PR 4505
+(phase-583 W1: a registered component's carrier is named for its
+`EXECUTABLE`, and an owned entry's census refuses a package that builds
+several programs), 4552 (issue 2805: the owned entry's host census build puts
+the workspace's `src/` first on `NROS_INTERFACE_SEARCH_PATH`, so the test
+programs' census generates `safety_island_msgs` and `visionpilot_msgs`),
+4540 and 4553 (issues 2802, 2808: the Arm FVP is user-provided; the island's
+CI already downloads it and exports `ARMFVP_BIN_PATH`), 4520 (issue 2771:
+`nros doctor` compares the toolchain pin with `west.yml`'s nano-ros), 4521
+(issue 2793: Zephyr DTCM stacks in a section `--gc-sections` can trim), 4560
+(issue 2780), 4554, 4564, 4571 and 4572 (the stack floor walk), and 4532 /
+4538 (issues 2779, 2799). Cyclone is unchanged (`nros-sdk.lock` as it was).
+
+Before that, nano-ros main 14be463e27 (2026-11-21). Over 1866c0594f it adds PR 4444
 (the AN536 LAN9118 RX drain), 4452, 4457 and 4491 (the platform CAN frame
 driver `<nros/platform_can.h>`, an image's CAN device, the `board` backend's
 fail-loud weak defaults and the census CAN mock; issue 4012, see P7), 4451

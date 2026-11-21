@@ -45,7 +45,17 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-21: 14be463e27, past PRs 4444 (the AN536 LAN9118 RX
+    # ON main, 2026-11-22: ee02c58931, past PRs 4505 (phase-583 W1: one
+    # carrier per EXECUTABLE; an owned entry's census refuses several
+    # programs), 4552 (issue 2805: the owned-entry host census build finds the
+    # workspace's own interface packages), 4540 and 4553 (issues 2802, 2808:
+    # the Arm FVP is user-provided), 4520 (issue 2771: doctor compares the
+    # toolchain pin with this revision), 4521 (issue 2793: DTCM stacks in a
+    # trimmable section), 4560 (issue 2780), 4554, 4564, 4571 and 4572
+    # (stack floor) and 4532/4538 (issue 2779, 2799). Cyclone is unchanged.
+    # Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-21: 14be463e27, past PRs 4444 (the AN536 LAN9118 RX
     # drain), 4452, 4457 and 4491 (the platform CAN frame driver
     # <nros/platform_can.h>, the image's CAN device, fail-loud weak defaults
     # and the census CAN mock), 4472 (a transient-local subscription re-reads
@@ -172,7 +182,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 14be463e27e2e7ae9f09aa4c4df34f692956ef83
+      revision: ee02c58931fca1a4380d58a974d603e0606a33e0
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
