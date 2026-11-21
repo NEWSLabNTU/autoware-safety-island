@@ -36,8 +36,9 @@ elseif(NROS_PLATFORM STREQUAL "freertos")
   endif()
 else()
   # A host configure (NROS_PLATFORM=posix): nano-ros's metadata probe, which
-  # compiles the controller's sources to count their entities. The headers
-  # take the FreeRTOS road there, as they did before this package existed.
+  # compiles the controller's sources to count their entities, and the
+  # census's `linux` images, which build and run them once. The headers take
+  # the FreeRTOS road there, as they did before this package existed.
   set(_asi_freertos TRUE)
 endif()
 

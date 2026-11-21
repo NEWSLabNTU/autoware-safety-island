@@ -31,18 +31,13 @@ rmw       = "cyclonedds"
 domain_id = 0
 
 # An image whose entry is a hand-written program is sized by that program's
-# census, a host build of its package alone. That host build stops in the
-# board-facts lookup (its interface generation asks for an image `linux`
-# that the package does not declare), so the images take the sizes stated
-# below instead.
-[census]
-on_missing = "warn"
+# census, a host build of its package alone, run once; a census that cannot
+# be taken refuses the build.
 
 [image_defaults]
-# A test node: a timer, a publisher, a subscription and the parameter
-# services.
-knobs.params.max_parameters = 16
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+# The parameter store and the callback slots come from the program's census;
+# the take buffer is not derived.
+knobs.executor.subscription_buffer_size = 16384
 
 # The FreeRTOS POSIX simulator, over host Cyclone DDS.
 [image.freertos-posix]

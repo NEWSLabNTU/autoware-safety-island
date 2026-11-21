@@ -53,13 +53,14 @@ echo "Phase 1c - nros check: bringup, workspace layout, S32Z270 Zephyr board pac
 
 # Every parameter the controller declares must be seeded by
 # controller_bringup/config/*.param.yaml or the launch file, with a value of
-# its declared type, and fit every image's parameter store.
+# its declared type. (nano-ros sizes each image's parameter store from the
+# declarations.)
 echo "Phase 1d - parameter seeds"
 # The image's resolved plan: the census metadata and the launch record, in
 # the configuration-hashed build directory `nros build` used.
 plan_dir="$(ls -td "${ROOT_DIR}"/actuation_module/build/freertos-cyclonedds-freertos-posix-cfg*-controller_bringup/cmake/nros-plan | head -1)"
 python3 "${ROOT_DIR}/.github/scripts/check-param-seeds.py" "${plan_dir}" \
-  "${ROOT_DIR}/actuation_module/src/controller_bringup" "${NROS_CLI}"
+  "${ROOT_DIR}/actuation_module/src/controller_bringup"
 
 # CycloneDDS on this lane links whatever the image supplies -- in the Autoware
 # devcontainer that includes iceoryx -- and the LINKER finding a library says

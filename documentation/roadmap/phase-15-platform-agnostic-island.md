@@ -6,7 +6,8 @@ released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main ee02c58931 (2026-11-22)
-and the CLI is built from source; there P4 is done too, and the P9 `fabsl` and
+and the CLI is built from source; there P4 is done too, P8 in part (the census
+is on; `PLATFORM_*` waits on P5-P7), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -133,7 +134,8 @@ controller prints "Starting Controller Node", "Controller Node Started" and
 "Actuation Safety Island is Live" at 1.28 s model time; AN536 Live at 8.74 s.
 The FreeRTOS POSIX test programs' owned-entry census still cannot be taken
 (warn only, as at 1866c0594f; it now stops compiling, not configuring: the
-host census build generates no `safety_island_msgs` or `visionpilot_msgs`).
+host census build generates no `safety_island_msgs` or `visionpilot_msgs`;
+nano-ros issue 2805, fixed at ee02c58931, and the census is on since P8).
 
 Before that, nano-ros main 1866c0594f (2026-11-20, 2b6fe0c). Over 011a9c4c5b it adds PR
 4423 (issue 2758: the RMW ABI enums are pinned int-wide, so C and Rust agree
@@ -714,6 +716,41 @@ What remains of P9 and P11 after this:
 - Depends on: P4-P7; 4018 for a derived or loud parameter capacity.
 - Done when: `nros build` with the census checks the contract against the
   code on every image, all lanes green.
+- Status on nano-ros-next (pin ee02c58931): the census is on; `asi_common`
+  still has `PLATFORM_*` (P5, P6 and P7 are not done).
+  - `controller_bringup` declares the census's host images,
+    `[image.linux] board = "linux"` and `[image.linux-carla]` (the CARLA
+    image's `args`: a census is taken from a host image resolved from the
+    same launch file and arguments), and no `[census]` table, so a missing or
+    stale census refuses the build. In a workspace bringup no `entities` key
+    is needed: `entities = "census"` is the leaf (standalone `system.toml`)
+    spelling. The test bringups drop `[census] on_missing = "warn"` too;
+    nano-ros issue 2805 (PR 4552) generates the workspace's own message
+    packages in the owned entry's host census build, so `asi_unit_test` (1
+    node, 1 sub, 1 pub, 1 timer, 2 parameters) and `asi_dds_loopback_test`
+    (1 node, 1 sub, 1 pub) are counted.
+  - The controller's census (7 sub, 5 pub, 6 service servers, 1 timer)
+    confirms 12 contract rows. The two VisionPilot subscriptions are
+    `phantom` (created only in the VP modes; the census boots the default
+    ones) and carry a `[census.waive."controller:sub:<topic>"]` with that
+    reason; the contract keeps them so a VP boot is sized for them.
+  - Derived, no longer stated: `knobs.params.max_parameters` (the
+    controller's 164 and the tests' 16; nano-ros sizes the store from the
+    declarations, 149 + `use_sim_time` = 150 slots on the controller) and
+    `knobs.executor.max_cbs` (16; derived 11). Still stated:
+    `max_string_value_len`, `max_array_len` (nano-ros derives only whether
+    they are needed) and `subscription_buffer_size` (the take buffer keeps
+    its configured value). `check-param-seeds.py` no longer checks the store
+    size.
+  - On the `linux` board the component registration also builds a native
+    carrier (`controller_pkg__controller`, nano-ros PR 4505) from
+    `controller_lib`'s sources without its include directories or links;
+    `controller_pkg/CMakeLists.txt` states them on it.
+  - Not removed: the `asi_common` platform detection and the `CONFIG_*`
+    mirror. Twenty `include/platform/*` headers still dispatch on
+    `PLATFORM_*` (clock P5, network P6, CAN P7, threading), so they go with
+    those steps. The census's host images take the FreeRTOS road there, as
+    the metadata probe does.
 
 ### P9. Packages and API shape - M
 
@@ -835,9 +872,7 @@ What remains of P9 and P11 after this:
     AN536 green (21 min); Zephyr FVP red before any build, at the lockstep
     check: `west.yml` still pins 9afb5c8a19 while the submodule is
     93368ca929 (5b600fe moved only the submodule), as on `nano-ros-next`.
-  - Workarounds, each to drop when nano-ros covers it: `[census] on_missing
-    = "warn"` in both test bringups (the owned entry's host census stops in
-    board facts, `--deploy linux`); the bringup guards in `controller_pkg`,
+  - Workarounds, each to drop when nano-ros covers it: the bringup guards in `controller_pkg`,
     the seven Autoware packages and the test packages (a workspace configure
     adds every package; the controller's component executable does not
     build in another bringup's root); the `--plan` step above.

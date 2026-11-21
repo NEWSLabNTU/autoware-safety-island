@@ -38,14 +38,21 @@ default_images = ["fvp", "freertos-posix", "an536"]
 #           rule `<pkg-dir>::<UserClass>` == controller_pkg::Controller.
 #   name  — instance / node name (I2). The launch <node name=> mirrors it;
 #           it overrides node_identity.hpp's DEFAULT_NODE_NAME = "controller".
-# The census (a host build of the same components, run to count the entities
-# the code really creates) is how nano-ros checks launch/system.contract.yaml
-# against the code. It needs a native `linux` image of the controller, which
-# this workspace cannot build yet: the controller still takes its platform
-# glue from the hand-written FreeRTOS and Zephyr builds. Until it can, a
-# missing census warns instead of refusing (phase-14 roadmap).
-[census]
-on_missing = "warn"
+# The census (a host build of the same launch file for the `linux` board,
+# run once to count the entities the code really creates) is how nano-ros
+# checks launch/system.contract.yaml against the code; a missing or stale
+# census refuses the build. Its host image is [image.linux], below.
+#
+# The census boots the launch file's startup modes (neither
+# trajectory_source nor supervision_mode is `vp`), so the two VisionPilot
+# inputs, which the controller creates only in the VP modes, are not in it.
+# The contract lists them so an image booted in a VP mode is sized for them;
+# these waive the census's `phantom` rows for exactly those two.
+[census.waive."controller:sub:/vehicle/driving_command"]
+reason = "created only in supervision_mode=vp (VP_CONTROL); the census boots the launch file's default mode, and the contract sizes a VP boot"
+
+[census.waive."controller:sub:/vehicle/driving_reference"]
+reason = "created only with trajectory_source=vp; the census boots the launch file's default source, and the contract sizes a VP boot"
 
 [[component]]
 pkg   = "controller_pkg"
@@ -126,23 +133,23 @@ priority = 9
 # its board package's [knobs.zephyr] heap_size (2 MiB).
 
 [image_defaults]
-# The controller declares 149 parameters (trajectory follower + MPC lateral +
-# PID longitudinal + vehicle info), plus a 10 % margin. Too few stops the
-# boot at the first declaration with no slot. Each slot costs ~8.9 KB of the
-# executor backing.
-knobs.params.max_parameters = 164
+# No knobs.params.max_parameters: nano-ros derives the store from what the
+# controller declares (149 parameters, trajectory follower + MPC lateral +
+# PID longitudinal + vehicle info, plus use_sim_time: 150 slots). A stated
+# value would win over the derived one.
 # The parameter store's value capacities are a board fact nano-ros no longer
 # defaults (issue 2768): the controller declares string parameters
 # (control_output, supervision_mode, ...) and double arrays (the MPC
 # steer-rate limits). These are the sizes every image ran with before.
 knobs.params.max_string_value_len = 256
 knobs.params.max_array_len = 32
-# max_cbs = 16: 7 subscriptions, a timer and the parameter services; the
-# default 4 fails at boot. subscription_buffer_size = 16384: /planning
+# No knobs.executor.max_cbs: nano-ros derives the callback slots from the
+# contract the census checks (9 subscriptions, the control timer and the
+# node interfaces). subscription_buffer_size = 16384: /planning
 # trajectories run 9-14 KiB, and an undersized buffer drops the sample after
-# Cyclone ACKed it (nano-ros issue 0749). The two ARMv8-R FreeRTOS images
-# take 64 KiB.
-knobs.executor = { max_cbs = 16, subscription_buffer_size = 16384 }
+# Cyclone ACKed it (nano-ros issue 0749); nano-ros keeps the take buffer at
+# its configured value. The two ARMv8-R FreeRTOS images take 64 KiB.
+knobs.executor.subscription_buffer_size = 16384
 
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
@@ -277,6 +284,11 @@ board = "freertos-posix"
 # with; the CMake road defaults to Release (-O3, ~130 KB more text on an536).
 profile = "RelWithDebInfo"
 
+# The host image the census builds and runs for every cross image that
+# states no `args`: the same launch file, on nano-ros's `linux` board.
+[image.linux]
+board = "linux"
+
 # The binding variant the CARLA image resolves (nano-ros: a launch resolved
 # with arguments must be declared here).
 [[model]]
@@ -291,6 +303,12 @@ args   = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
 board   = "freertos-posix"
 profile = "RelWithDebInfo"
 args    = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
+
+# The census's host image for [image.freertos-posix-carla]: a census is taken
+# from a host image resolved from the same launch file and arguments.
+[image.linux-carla]
+board = "linux"
+args  = { wheel_base = "3.005", max_pitch_rad = "0.2", min_pitch_rad = "-0.2" }
 
 # Phase 4 W5.b -- NXP S32Z270 RTU (Cortex-R52) on FreeRTOS via the nano-ros
 # phase-372 board bundle. Cross target: link-complete with the in-tree

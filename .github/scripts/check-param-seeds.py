@@ -8,31 +8,25 @@ and the launch file's inline <param>s. Its C++ declare_parameter() defaults
 state the same values only for nano-ros's metadata probe, which constructs
 the node with no launch values. Three mistakes are silent at run time on
 nano-ros, so this refuses them at build time, from what the build already
-produced:
+produced (the parameter store needs no check: nano-ros sizes it from the
+declarations):
 
 1. A declared parameter that no param file or inline <param> seeds runs on
    its C++ default, which nothing checks against the deployment.
-2. More parameters than an image's parameter store holds
-   (knobs.params.max_parameters): nano-ros stops the boot at the first
-   declaration with no slot; this says so at build time.
-3. A param file value of another type than the declaration (`kp: 1` for a
+2. A param file value of another type than the declaration (`kp: 1` for a
    double, `[1, 2]` for a double array). nano-ros is to refuse the boot for
    it, as upstream rclcpp does. Every double is a float literal.
 
 Inputs: the census metadata (every declare_parameter<T>() the code runs, with
-T), the launch record (the seeds), the param files, and each image's store
-size as `nros dev image leaf-system` renders it.
+T), the launch record (the seeds) and the param files.
 
-usage: check-param-seeds.py <nros-plan dir> <bringup dir> <nros CLI>
+usage: check-param-seeds.py <nros-plan dir> <bringup dir>
   <nros-plan dir>  an image build's cmake/nros-plan (metadata/controller.json,
                    record.json)
 """
 import json
 import pathlib
-import re
-import subprocess
 import sys
-import tempfile
 
 import yaml
 
@@ -59,28 +53,9 @@ def flatten(d, prefix=""):
             yield prefix + k, v
 
 
-def store_sizes(bringup, nros):
-    """max_parameters per image, as the image's build renders it."""
-    images = re.findall(r"^\[image\.([A-Za-z0-9_-]+)\]", (bringup / "system.toml").read_text(), re.M)
-    sizes = {}
-    with tempfile.TemporaryDirectory() as tmp:
-        for img in images:
-            kd = pathlib.Path(tmp, img + ".kd")
-            subprocess.run(
-                [nros, "dev", "image", "leaf-system", str(bringup), "--image", img,
-                 "--language", "cpp", "--kconfig-out", str(pathlib.Path(tmp, img + ".conf")),
-                 "--image-env-out", str(pathlib.Path(tmp, img + ".env")),
-                 "--kconfig-defaults-out", str(kd)],
-                check=True, stdout=subprocess.DEVNULL)
-            m = re.search(r"knobs params\.max_parameters = (\d+)", kd.read_text())
-            sizes[img] = int(m.group(1)) if m else None
-    return sizes
-
-
 def main():
     plan_dir = pathlib.Path(sys.argv[1])
     bringup = pathlib.Path(sys.argv[2])
-    nros = sys.argv[3]
     errors = []
 
     declared = {}
@@ -113,15 +88,8 @@ def main():
                     errors.append(f"{f.relative_to(bringup)}: {name}: {value!r} is not a {t} "
                                   "(write a double as a float literal, 1.0 not 1)")
 
-    sizes = store_sizes(bringup, nros)
-    for img, size in sorted(sizes.items()):
-        if size is None:
-            errors.append(f"[image.{img}] states no knobs.params.max_parameters")
-        elif size < len(declared):
-            errors.append(f"[image.{img}] stores {size} parameters, the controller declares {len(declared)}")
-
     print(f"parameters: {len(declared)} declared, {len(seeds)} seeded, "
-          f"{len(files)} param files; store sizes {sorted(set(sizes.values()), key=str)}")
+          f"{len(files)} param files")
     for e in errors:
         print("ERROR: " + e, file=sys.stderr)
     return 1 if errors else 0
