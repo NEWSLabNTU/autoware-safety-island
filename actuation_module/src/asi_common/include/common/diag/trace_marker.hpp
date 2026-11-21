@@ -18,9 +18,9 @@
 // preempted the cycle, and its UART write perturbs the very cycle it measures.
 //
 // Zephyr 3.7 has no user-event facility (upstream's named_event came later), so
-// the event is added out-of-tree by
-// patches/zephyr/0002-ctf-app-marker-event.patch, which declares `app_marker`
-// (id 0x70) in the TSDL and exports the function below. scripts/parse-zephyr-ctf.py
+// the event is added out-of-tree by nano-ros's Zephyr patch set
+// (scripts/zephyr/ctf-app-marker-patch.sh, once this repo's patch 0002), which
+// declares `app_marker` (id 0x70) in the TSDL and exports the function below. scripts/parse-zephyr-ctf.py
 // reads the TSDL directly, so it decodes the new event with no changes.
 //
 // Cost when tracing is off: nothing at all — the calls compile away.

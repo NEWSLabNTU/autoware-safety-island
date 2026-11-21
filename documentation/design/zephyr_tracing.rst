@@ -204,7 +204,10 @@ FVP models it and ``uart_poll_out`` returns in negligible model time; on
 silicon this pair is the 1.215 ms case above. **This configuration is not a
 hardware template.**
 
-Three out-of-tree patches under ``patches/zephyr/``:
+Three out-of-tree patches. nano-ros's Zephyr patch set carries the first
+two (``scripts/zephyr/ctf-priority-set-patch.sh`` and
+``ctf-app-marker-patch.sh``, nano-ros issue 2766); the third is under
+``patches/zephyr/``:
 
 ``0001-ctf-trace-k_thread_priority_set.patch``
    Adds a trace point upstream lacks, so a priority change is visible in the

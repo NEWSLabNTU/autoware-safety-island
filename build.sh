@@ -368,8 +368,8 @@ function run_zephyr_model() {
 function zephyr_env() {
   require_nros_checkout
   # This repo's Zephyr patches (patches/zephyr): a fresh checkout or a
-  # provisioning run leaves them out, and a trace image does not link
-  # without 0002. Idempotent; a conflicting patch stops the build.
+  # provisioning run leaves them out, and the ring trace image needs 0003.
+  # Idempotent; a conflicting patch stops the build.
   "${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
   nros_cli_select || exit 1
   NROS_CLI_BIN="${NROS_CLI}"

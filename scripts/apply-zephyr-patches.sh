@@ -8,8 +8,8 @@
 #
 # `nros setup board` rewrites zephyr/, and a fresh checkout has none of these
 # patches, so bootstrap-asi.sh and every build.sh Zephyr build run this.
-# Without patch 0002 a trace image fails to link (`sys_trace_app_marker`
-# undefined). See patches/zephyr/README.md.
+# The CTF app_marker event and the priority-set mapping (once 0001, 0002)
+# are nano-ros's patch set now. See patches/zephyr/README.md.
 #
 # Usage: scripts/apply-zephyr-patches.sh [zephyr-dir]
 # Exit 1 if a patch neither is applied nor applies.

@@ -13,13 +13,26 @@ silently.
 `scripts/apply-zephyr-patches.sh` applies them idempotently (a patch that
 reverse-applies is already in), and both `scripts/bootstrap-asi.sh` and every
 `build.sh` Zephyr build run it, so a fresh checkout builds the trace images
-with no manual step (without 0002 they fail to link on
-`sys_trace_app_marker`). A patch that neither is applied nor applies stops
-the build. By hand:
+with no manual step. A patch that neither is applied nor applies stops the
+build. By hand:
 
     scripts/apply-zephyr-patches.sh
 
-## 0001-ctf-trace-k_thread_priority_set.patch
+## 0001 and 0002 moved to nano-ros
+
+Since nano-ros 14be463e27 (PR 4462, nano-ros issue 2766) nano-ros's own
+Zephyr patch set carries both: `scripts/zephyr/ctf-priority-set-patch.sh`
+is 0001's one-line `sys_port_trace_k_thread_sched_priority_set` mapping, and
+`scripts/zephyr/ctf-app-marker-patch.sh` adds 0002's `app_marker` event
+(id 0x70 on 3.7, same name and fields: `sys_trace_app_marker(uint32_t
+marker_id, uint32_t arg)`, `ctf_top_app_marker()` and the TSDL entry). The
+nano-ros setup applies them to `zephyr/` before this script runs, so the
+island's copies no longer applied (CI run 44889894023: "zephyr patch
+0001-ctf-trace-k_thread_priority_set.patch neither is applied nor applies")
+and were removed. The sections below keep their history. Only 0003 is still
+the island's.
+
+## 0001-ctf-trace-k_thread_priority_set.patch (now nano-ros's)
 
 Makes `k_thread_priority_set()` emit its CTF event. Upstream declares the
 event in `subsys/tracing/ctf/tsdl/metadata` (id 0x12) and implements the hook
