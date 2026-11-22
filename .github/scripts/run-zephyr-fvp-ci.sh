@@ -335,13 +335,18 @@ bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 # passes once every --expect line has appeared on the console (exit 1 when
 # the timeout passes first). Nothing here starts the model or greps its
 # output. The FVP is user-provided (ensure_fvp_available, ARMFVP_BIN_PATH).
+#
+# The west workspace is this checkout, for nros build and for the build
+# `nros run` starts when an image is stale (`nros run` takes no
+# --zephyr-workspace; it reads NROS_ZEPHYR_WORKSPACE).
+export NROS_ZEPHYR_WORKSPACE="${ROOT_DIR}"
 nros_fvp()
 {
   ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" "$@" )
 }
 
 echo "Phase 1 - Zephyr FVP controller image (nros run controller_bringup:fvp)"
-nros_fvp build controller_bringup:fvp --zephyr-workspace "${ROOT_DIR}"
+nros_fvp build controller_bringup:fvp
 # [tasks.control.zephyr] priority = 9 reached `main`, the boot sched task's
 # thread: nano-ros reads the priority back after k_thread_priority_set(), which
 # Zephyr 3.7 does not trace (nano-ros PR 3705).
@@ -355,12 +360,12 @@ nros_fvp run controller_bringup:fvp --timeout "${FVP_TIMEOUT_SECONDS}" \
 # (src/test_bringup) whose entry is a Zephyr west application over the same
 # source the FreeRTOS images build (src/asi_tests/asi_<program>_zephyr).
 echo "Phase 2 - Zephyr FVP unit test image (nros run unit_test_bringup:fvp-aemv8r-smp)"
-nros_fvp build unit_test_bringup:fvp-aemv8r-smp --zephyr-workspace "${ROOT_DIR}"
+nros_fvp build unit_test_bringup:fvp-aemv8r-smp
 nros_fvp run unit_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
     --expect "=== All Tests Passed ==="
 
 echo "Phase 3 - Zephyr FVP DDS loopback test image (nros run dds_loopback_test_bringup:fvp-aemv8r-smp)"
-nros_fvp build dds_loopback_test_bringup:fvp-aemv8r-smp --zephyr-workspace "${ROOT_DIR}"
+nros_fvp build dds_loopback_test_bringup:fvp-aemv8r-smp
 nros_fvp run dds_loopback_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
     --expect "Starting DDS loopback test" \
     --expect "STEERING REPORT" \
