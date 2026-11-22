@@ -227,14 +227,6 @@ int main(int /*argc*/, char ** /*argv*/)
     sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
 #endif
 
-#if defined(CONFIG_ENABLE_SNTP) && CONFIG_ENABLE_SNTP
-    if (Clock::init_clock_via_sntp() < 0) {
-        log_error("Failed to set time using SNTP\n");
-    } else {
-        log_info("Time set using SNTP\n");
-    }
-#endif
-
     if (!rclcpp::init_in().ok()) {
         log_error("rclcpp::init_in failed\n");
         std::exit(1);

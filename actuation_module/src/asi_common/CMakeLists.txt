@@ -9,7 +9,7 @@
 #                autoware/autoware_msgs/messages.hpp), the PLATFORM_* define, the
 #                FreeRTOS CONFIG_* mirror header, the newlib pthread shim on
 #                arm-none-eabi, and the support sources of each platform
-#                (Zephyr: network bring-up, SNTP resync, the entry's network
+#                (Zephyr: network bring-up, the entry's network
 #                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS: the
 #                wall clock).
 #
@@ -113,9 +113,12 @@ if(_asi_zephyr)
     target_sources(app PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/can_udp_tunnel_driver.cpp")
   endif()
+  # src/common/clock/clock_resync.cpp is not built since phase-15 P5: it
+  # stepped CLOCK_REALTIME, which no longer feeds the stamps (nano-ros's
+  # [knobs.clock] source does), and nano-ros phase-582 W3
+  # (sntp_resync_interval_ms) is what replaces it.
   if(ASI_COMMON_ENTRY_HOOK)
     target_sources(app PRIVATE
-      "${CMAKE_CURRENT_SOURCE_DIR}/src/common/clock/clock_resync.cpp"
       "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/board_network_hook.cpp")
   endif()
   # Real-time evaluation Layer 1: the periodic statistics reporter,

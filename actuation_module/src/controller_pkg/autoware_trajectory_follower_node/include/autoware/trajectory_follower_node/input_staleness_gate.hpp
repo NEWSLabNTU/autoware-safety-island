@@ -50,9 +50,10 @@ namespace autoware::motion::control::trajectory_follower_node
 /// duty, not a complete state history.
 ///
 /// Clock discipline: this class never reads a clock. The caller samples
-/// one clock for both noteInput() and update() readings (the controller
-/// passes Clock::now()). Both readings come from the same clock in the same
-/// process, so only monotonicity matters, not the epoch.
+/// one clock for both noteInput() and update() readings; it must be the
+/// age clock (Clock::steady_now()), never the stamp clock, which a late or
+/// stepping wall-clock source may move. Both readings come from the same
+/// clock in the same process, so only monotonicity matters, not the epoch.
 ///
 /// Threading: noteInput() may run on a different thread than
 /// update()/ageSec() (the subscriptions and the control timer sit in
@@ -157,8 +158,8 @@ private:
   double fresh_threshold_sec_;
   double min_edge_report_interval_sec_;
   // Arrival time of the most recent required input, in the caller's clock.
-  // Negative sentinel = nothing received yet. Clock::now() on every target
-  // is non-negative (time since boot / epoch), so the sentinel is
+  // Negative sentinel = nothing received yet. Clock::steady_now() on every
+  // target is non-negative (time since boot), so the sentinel is
   // unreachable as a real reading. Atomic — see the threading note above.
   std::atomic<double> last_input_sec_{-1.0};
   static_assert(

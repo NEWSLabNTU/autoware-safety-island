@@ -126,7 +126,8 @@ struct ReenableRequest
 
 /// Arrival-age freshness of one selected source.
 ///
-/// Ages are measured against Clock::now() at callback time, never against
+/// Ages are measured against Clock::steady_now() (the age clock, never the
+/// wall clock) at callback time, never against
 /// message stamps: the selected sources carry CARLA simulated time (and VP
 /// produced stamps in its own host clock), so a stamp must never be
 /// subtracted from SI's clock (vp_si_control_contract: "A CARLA episode time

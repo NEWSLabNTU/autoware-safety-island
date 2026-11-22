@@ -66,9 +66,8 @@ select_lane() {
     ISLAND_LOG="${LOG_DIR}/tap-demo-fvp.log"
     ISLAND_PID_FILE="${LOG_DIR}/tap-demo-fvp.pid"
     TAP_IF="tap0"
-    # Must match CONFIG_SNTP_SERVER_ADDRESS in
-    # actuation_module/src/controller_bringup/zephyr/prj-fvp-tap.conf (the
-    # [image.fvp-tap] fragment) -- without an epoch the
+    # Must match knobs.sntp.server of the [image.fvp-tap*] rows in
+    # actuation_module/src/controller_bringup/system.toml -- without an epoch the
     # island stamps from 1970 and vehicle_cmd_gate rejects the commands as
     # stale, so autonomous mode never actuates.
     TAP_HOST_IP="192.168.10.1"

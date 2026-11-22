@@ -3,6 +3,15 @@
 //
 // Periodic wall-clock re-sync.
 //
+// NOT BUILT since phase-15 P5. The Zephyr images take their wall clock from
+// nano-ros's [knobs.clock] source, an offset nano-ros keeps; this thread
+// stepped Zephyr's CLOCK_REALTIME, which no longer feeds any stamp, and the
+// asi_common Kconfig symbols it reads (ENABLE_SNTP, ASI_SNTP_RESYNC_*) are
+// gone. It was also off (interval 0) on the one profile that ran SNTP, the
+// tap images. It stays as the record of what nano-ros phase-582 W3
+// (sntp_resync_interval_ms, issue 0758's re-acquisition) must replace, and
+// goes when that lands.
+//
 // WHY THIS EXISTS. A one-shot epoch is unbounded-error by construction: SNTP
 // sets CLOCK_REALTIME once at boot, and from then on the epoch is advanced by
 // whatever the platform's tick happens to be. On real silicon that is an

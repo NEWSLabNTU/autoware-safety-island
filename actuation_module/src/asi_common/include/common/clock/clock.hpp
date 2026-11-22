@@ -6,8 +6,16 @@
 #include <cstdint>
 #include <ctime>
 
-#include "platform/platform_clock.h"
 #include "common/logger/logger.hpp"
+
+// nano-ros's clocks. The steady one is the port's monotonic clock on every
+// target. The Zephyr images also take their wall clock from it: the image
+// states its source in [knobs.clock] (controller_bringup/system.toml), and
+// nano-ros resolves it once at boot, after every component has registered and
+// before anything spins (nano-ros phase-582, RFC-0141). Its reading is an
+// offset from the monotonic clock kept by nano-ros; Zephyr's CLOCK_REALTIME
+// is never set on these images.
+#include <rclcpp/clock.hpp>
 using namespace common::logger;
 
 // nros-cpp generated builtin_interfaces (asi_common's package.xml <depend>).
@@ -20,20 +28,55 @@ class Clock {
 public:
 
     /**
-     * @brief Initialize the clock via SNTP
-     * @return 0 on success, negative value on failure
+     * @brief The stamp clock: wall-clock time in seconds.
+     *
+     * What every outgoing stamp carries, and what the vendored follower's
+     * own stamp arithmetic reads. On Zephyr it is nano-ros's wall clock
+     * (`rclcpp::Clock(RCL_SYSTEM_TIME)`); before that clock is synced (before
+     * boot resolution, or for the whole run when no source answered and the
+     * image's clock.epoch_failure is `unstamped`) nano-ros reads 0, and this
+     * answers the time since boot instead, so the follower's intervals keep
+     * advancing and the stamps are boot-relative, as they were on every
+     * image without SNTP. On FreeRTOS it is the C library's wall clock: the
+     * host's on the POSIX simulator, the island's SNTP epoch
+     * (src/platform/freertos/wall_clock.cpp) on bare metal.
+     *
+     * Not for ages and timeouts: a source that answers later may step it.
+     * Use steady_now() for those.
+     *
+     * @return current wall-clock time in seconds
      */
-    static int init_clock_via_sntp(void) {
-        return platform_init_clock_via_sntp();
+    static double now() {
+#if defined(PLATFORM_ZEPHYR)
+        if (rclcpp::Clock::wall_clock_state().synced) {
+            const int64_t ns = rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds();
+            if (ns > 0) {
+                return static_cast<double>(ns) * 1e-9;
+            }
+        }
+        return steady_now();
+#else
+        auto time_point = std::chrono::system_clock::now();
+        return std::chrono::duration<double>(time_point.time_since_epoch()).count();
+#endif
     }
 
     /**
-     * @brief Get current time in seconds
-     * @return current time in seconds
+     * @brief The age clock: monotonic time since boot, in seconds.
+     *
+     * For input ages, timeouts and re-enable windows. Never stepped, so a
+     * wall-clock source that answers late (or steps) can neither fire nor
+     * mask the staleness gate. Never subtract a stamp from it.
+     *
+     * @return monotonic time in seconds
      */
-    static double now() {
-        auto time_point = std::chrono::system_clock::now();
-        return std::chrono::duration<double>(time_point.time_since_epoch()).count();
+    static double steady_now() {
+        // nano-ros's monotonic clock, not std::chrono::steady_clock: on the
+        // bare-metal FreeRTOS lanes newlib's libstdc++ may answer
+        // steady_clock from gettimeofday, which there is the island's SNTP
+        // wall clock (src/platform/freertos/wall_clock.cpp).
+        const int64_t ns = rclcpp::Clock(RCL_STEADY_TIME).now().nanoseconds();
+        return static_cast<double>(ns) * 1e-9;
     }
 
     /**

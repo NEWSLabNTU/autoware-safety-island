@@ -152,6 +152,29 @@ knobs.params.max_array_len = 32
 # its configured value. The two ARMv8-R FreeRTOS images take 64 KiB.
 knobs.executor.subscription_buffer_bytes = 16384
 
+# The Zephyr images' wall clock (phase-15 P5). nano-ros resolves the
+# image's [knobs.clock] source once at boot, after the controller has
+# registered and before anything spins; the island no longer runs SNTP
+# itself. Every outgoing stamp reads it (common/clock/clock.hpp); input ages
+# and timeouts read the monotonic clock instead. Per network:
+#   - tap images (the demo stack): SNTP from scripts/sntp-server.py on the
+#     tap host, and `halt` when it never answers, as the island's network
+#     hook did (std::exit(1)): every command carries this clock, and
+#     vehicle_cmd_gate rejects a boot-relative stamp as stale, so an island
+#     that boots on would look alive and actuate nothing. 10 attempts of 60 s
+#     guest time each, the hook's retry count and timeout: the FVP races an
+#     idle guest's clock (~10x), so a shorter guest timeout expires before the
+#     reply and the late reply panicked the net stack (NET_ASSERT).
+#   - s32z: SNTP and `halt`, for the same reason; the server is the one the
+#     island's SNTP Kconfig named by default. A deployment states its own.
+#   - the user-mode FVP images (CI): SNTP through the model's NAT, falling
+#     back to `platform` (no wall clock on Zephyr: stamps boot-relative, the
+#     default `unstamped` policy). The lane's network is the host's, so a
+#     time server is not something it can promise; `halt` there would make
+#     CI depend on the internet. NOTE: on Zephyr `platform` always answers,
+#     so a fallback list that ends in it never halts; a `halt` image names
+#     sntp alone.
+
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
 board     = "fvp-aemv8r-smp"
@@ -161,6 +184,8 @@ os_config = [
   "zephyr/prj-fvp.conf",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp,platform"
+knobs.sntp.server = "time.google.com"
 
 # Layer 1 of the real-time evaluation (documentation/design/rt_evaluation_zephyr.rst):
 # thread runtime statistics, no CTF (build.sh --trace-stats).
@@ -173,6 +198,8 @@ os_config = [
   "zephyr/prj-trace-stats.conf",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp,platform"
+knobs.sntp.server = "time.google.com"
 
 # CTF tracing streamed to uart1, plus the Layer 1 statistics (build.sh --trace).
 [image.fvp-trace]
@@ -186,6 +213,8 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp,platform"
+knobs.sntp.server = "time.google.com"
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
@@ -202,6 +231,8 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp,platform"
+knobs.sntp.server = "time.google.com"
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # The four tap images are one host built four ways, never booted together:
@@ -221,6 +252,11 @@ os_config = [
   "zephyr/prj-fvp-tap.conf",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp"
+knobs.clock.epoch_failure = "halt"
+knobs.clock.sntp_attempts = 10
+knobs.sntp.server = "192.168.10.1:12123"
+knobs.sntp.timeout_ms = 60000
 run.nic = { tap = "tap0" }
 
 # [image.fvp-stats] on the TAP network.
@@ -235,6 +271,11 @@ os_config = [
   "zephyr/prj-trace-stats.conf",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp"
+knobs.clock.epoch_failure = "halt"
+knobs.clock.sntp_attempts = 10
+knobs.sntp.server = "192.168.10.1:12123"
+knobs.sntp.timeout_ms = 60000
 run.nic = { tap = "tap0" }
 
 # [image.fvp-trace] on the TAP network.
@@ -251,6 +292,11 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp"
+knobs.clock.epoch_failure = "halt"
+knobs.clock.sntp_attempts = 10
+knobs.sntp.server = "192.168.10.1:12123"
+knobs.sntp.timeout_ms = 60000
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
@@ -269,6 +315,11 @@ os_config = [
   "zephyr/fvp-trace.overlay",
 ]
 knobs.memory.heap_bytes = 8388608
+knobs.clock.source = "sntp"
+knobs.clock.epoch_failure = "halt"
+knobs.clock.sntp_attempts = 10
+knobs.sntp.server = "192.168.10.1:12123"
+knobs.sntp.timeout_ms = 60000
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
@@ -282,6 +333,10 @@ run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 [image.s32z]
 board     = "s32z270-rtu0-zephyr"
 os_config = ["zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
+knobs.clock.source = "sntp"
+knobs.clock.epoch_failure = "halt"
+knobs.clock.sntp_attempts = 10
+knobs.sntp.server = "time.nist.gov"
 
 # Phase 4 W5.a -- FreeRTOS POSIX simulator (nano-ros phase-370 board). The
 # controller runs as a FreeRTOS TASK under the scheduler the board's main()

@@ -83,8 +83,10 @@ Firmware appears hung for ~10 s at boot
 
 On Zephyr DHCP builds this is intentional. ``actuation_module/src/main.cpp``
 waits for ``CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX`` seconds before starting the
-Controller Node, giving DHCP time to acquire a lease and, if
-``CONFIG_ENABLE_SNTP`` is on, SNTP time to sync. The default Zephyr DHCP delay is
+Controller Node, giving DHCP time to acquire a lease. An image whose
+``[knobs.clock]`` source names ``sntp`` (``controller_bringup/system.toml``)
+then waits for nano-ros to take the wall clock from SNTP, up to
+``clock.sntp_attempts`` times ``sntp.timeout_ms``, before anything spins. The default Zephyr DHCP delay is
 10 seconds. This does not apply to ``freertos-posix`` or to Zephyr FVP TAP builds
 where DHCP is disabled.
 

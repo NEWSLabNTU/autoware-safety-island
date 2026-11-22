@@ -125,12 +125,10 @@ Controller::Controller(rclcpp::NodeHandle handle)
     config.operation_mode_durability == StartupConfig::OpModeDurability::VOLATILE ?
     "volatile" : "transient_local");
 
-  // Output identity: a nonzero SI session for this process boot, written
-  // into every ApprovedRequest so the observer can tell SI restarts apart.
-  // The helper keeps the conversion defined: the epoch-millisecond value is
-  // out of uint32_t range, and the ARM targets' saturating conversion would
-  // otherwise collapse every boot to the same constant.
-  si_session_ = supervision::siSessionFromClock(Clock::now());
+  // Output identity: si_session_ is taken from the wall clock at the first
+  // ApprovedRequest (publishApprovedRequest), not here. On Zephyr the
+  // image's wall-clock source resolves after the components are constructed
+  // and before the first spin, so a reading here would be boot-relative.
 
   const auto lateral_controller_mode =
     getLateralControllerMode(declare_parameter<std::string>("lateral_controller_mode", "mpc"));
@@ -346,7 +344,7 @@ void Controller::on_steering_status(const SteeringReportMsg& msg_ref)
   // Put data into state pointers
   controller->current_steering_ = *msg;
   controller->has_steering_ = true;
-  controller->watch_steering_.note(Clock::now());
+  controller->watch_steering_.note(Clock::steady_now());
 }
 
 void Controller::on_operation_mode_state(const OperationModeStateMsg& msg_ref)
@@ -368,7 +366,7 @@ void Controller::on_operation_mode_state(const OperationModeStateMsg& msg_ref)
   // Put data into state pointers
   controller->current_operation_mode_ = *msg;
   controller->has_operation_mode_ = true;
-  controller->watch_opmode_.note(Clock::now());
+  controller->watch_opmode_.note(Clock::steady_now());
 }
 
 void Controller::on_odometry(const OdometryMsg& msg_ref)
@@ -394,7 +392,7 @@ void Controller::on_odometry(const OdometryMsg& msg_ref)
   controller->current_odometry_.header.frame_id = nullptr;
   controller->current_odometry_.child_frame_id = nullptr;
   controller->has_odometry_ = true;
-  controller->watch_odom_.note(Clock::now());
+  controller->watch_odom_.note(Clock::steady_now());
   if (controller->supervision_mode_ == supervision::Mode::SI_CONTROL &&
     controller->startup_config_.trajectory_source == StartupConfig::TrajectorySource::VP)
   {
@@ -427,7 +425,7 @@ void Controller::on_acceleration(const AccelWithCovarianceStampedMsg& msg_ref)
   // numeric accel fields are consumed.
   controller->current_accel_.header.frame_id = nullptr;
   controller->has_accel_ = true;
-  controller->watch_accel_.note(Clock::now());
+  controller->watch_accel_.note(Clock::steady_now());
 }
 
 void Controller::on_trajectory(const TrajectoryMsg_Raw& msg_ref)
@@ -491,7 +489,7 @@ void Controller::on_trajectory(const TrajectoryMsg_Raw& msg_ref)
   controller->current_trajectory_.header.frame_id = nullptr;
   controller->has_trajectory_ = true;
   controller->autoware_trajectory_identity_.note(stamp);
-  controller->watch_candidate_.note(Clock::now());
+  controller->watch_candidate_.note(Clock::steady_now());
 }
 
 void Controller::on_driving_reference(const DrivingReferenceMsg& msg_ref)
@@ -589,7 +587,7 @@ void Controller::on_driving_reference(const DrivingReferenceMsg& msg_ref)
   controller->vp_candidate_identity_.note(msg->session, msg->cycle, stamp);
   controller->accepted_source_session_ = msg->session;
   controller->accepted_source_cycle_ = msg->cycle;
-  controller->watch_candidate_.note(Clock::now());
+  controller->watch_candidate_.note(Clock::steady_now());
 }
 
 void Controller::on_driving_command(const DrivingCommandMsg& msg_ref)
@@ -599,7 +597,8 @@ void Controller::on_driving_command(const DrivingCommandMsg& msg_ref)
   // the upstream body below verbatim.
   const DrivingCommandMsg* msg = &msg_ref;
   Controller* controller = this;
-  const double now = Clock::now();
+  // Arrival time, on the age clock (never a stamp).
+  const double now = Clock::steady_now();
   const DrivingCommandMsg in = *msg;  // scalar fields only: safe plain copy
 
   // 'valid=false' means VP produced no usable plan this cycle. That is a
@@ -686,7 +685,7 @@ void Controller::on_reenable(const BoolMsg& msg_ref)
   const BoolMsg* msg = &msg_ref;
   Controller* controller = this;
   if (msg->data) {
-    controller->reenable_.request(Clock::now());
+    controller->reenable_.request(Clock::steady_now());
     log_info(
       "Operator re-enable requested (takes effect when all sources are fresh, within %.1f s)",
       controller->reenable_window_s_);
@@ -701,7 +700,7 @@ void Controller::on_heartbeat(const Float64StampedMsg& msg_ref)
   const Float64StampedMsg* msg = &msg_ref;
   Controller* controller = this;
   (void)msg;  // only the arrival counts; the value is VisionPilot's own command
-  controller->watch_heartbeat_.note(Clock::now());
+  controller->watch_heartbeat_.note(Clock::steady_now());
 }
 
 Controller::LateralControllerMode Controller::getLateralControllerMode(
@@ -756,6 +755,9 @@ bool Controller::isTimeOut(
   const trajectory_follower::LongitudinalOutput & lon_out,
   const trajectory_follower::LateralOutput & lat_out)
 {
+  // Stamp arithmetic, so the stamp clock: the follower stamped both outputs
+  // with Clock::now() this cycle. Not an input age (those are on the age
+  // clock, see the supervision checks in the control timer).
   const auto now = Clock::now();
   if ((now - Clock::toDouble(lat_out.control_cmd.stamp)) > timeout_thr_sec_) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Lateral control command too old, control_cmd will not be published.");
@@ -808,7 +810,11 @@ void Controller::callbackTimerControl()
         common::diag::Marker::control_cycle_exit, static_cast<uint32_t>(outcome));
     };
 
-  const double now = Clock::now();
+  // The age clock: every arrival above was noted on it, so the staleness
+  // gate below never reads the wall clock (a wall-clock source that answers
+  // late or steps can neither fire nor mask it). Stamps are taken where they
+  // are written (Clock::now()).
+  const double now = Clock::steady_now();
 
   // 1. Supervision: selected-source + feedback arrival checks. This runs
   // before anything else and is independent of controller readiness — a
@@ -851,7 +857,7 @@ void Controller::callbackTimerControl()
           get_logger(), *get_clock(), 3000,
           "Re-enable requested but not all sources are fresh; staying in SI_STOP");
       }
-      publishSiStop(now);
+      publishSiStop();
 
       PROFILE_POINT(cyc_t_end);
       PROFILE_LOG(
@@ -1025,7 +1031,7 @@ void Controller::publishControlCommand(
       why, static_cast<double>(out.lateral.steering_tire_angle),
       static_cast<double>(out.longitudinal.velocity),
       static_cast<double>(out.longitudinal.acceleration));
-    publishSiStop(Clock::now());
+    publishSiStop();
     return;
   }
 
@@ -1044,7 +1050,7 @@ void Controller::latchFault(const std::string & why)
     // guard: a heartbeat fault can latch before odometry is initialized.
     stop_ramp_.start(
       has_odometry_ ? current_odometry_.twist.twist.linear.x : 0.0,
-      watch_odom_, Clock::now(), source_timeout_ego_, supervision::StopRamp::Clock::now());
+      watch_odom_, Clock::steady_now(), source_timeout_ego_, supervision::StopRamp::Clock::now());
     log_warn("SI_STOP latched: %s (fault_id %u)", why.c_str(), supervision_.fault_id);
     reenable_.clear();  // a fault invalidates an earlier re-enable request
   } else if (supervision_.reason != why) {
@@ -1186,6 +1192,14 @@ void Controller::publishApprovedRequest(
   // The supervised output: SI-only authoring with identity and decision.
   ApprovedRequestMsg approved{};
   approved.stamp = approved_stamp;
+  if (si_session_ == 0) {
+    // A nonzero SI session for this process boot, written into every
+    // ApprovedRequest so the observer can tell SI restarts apart. The helper
+    // keeps the conversion defined: the epoch-millisecond value is out of
+    // uint32_t range, and the ARM targets' saturating conversion would
+    // otherwise collapse every boot to the same constant.
+    si_session_ = supervision::siSessionFromClock(Clock::now());
+  }
   approved.session = si_session_;
   approved.output_sequence = ++out_seq_;
   approved.decision = static_cast<uint8_t>(decision);
@@ -1206,7 +1220,7 @@ void Controller::publishApprovedRequest(
   }
 }
 
-ControlMsg Controller::stoppedPayload(double now) const
+ControlMsg Controller::stoppedPayload() const
 {
   // Never command a steer reset: hold the last approved steering, and before
   // any command was approved the vehicle's own steering report.
@@ -1224,7 +1238,7 @@ ControlMsg Controller::stoppedPayload(double now) const
       stop_ramp_.velocity(
         stop_decel_mps2_, max_abs_velocity_mps_, supervision::StopRamp::Clock::now()));
   }
-  out.stamp = Clock::toRosTime(now);
+  out.stamp = Clock::toRosTime(Clock::now());
   out.lateral.stamp = out.stamp;
   out.longitudinal.stamp = out.stamp;
   return out;
@@ -1236,13 +1250,13 @@ bool Controller::feedbackSeen() const
          watch_opmode_.ever();
 }
 
-void Controller::publishSiStop(double now)
+void Controller::publishSiStop()
 {
   publishApprovedRequest(
     supervision::Decision::SI_STOP,
     supervision_mode_ == supervision::Mode::VP_CONTROL ?
     supervision::SelectedSource::VP_COMMAND : supervision::SelectedSource::FOLLOWER,
-    stoppedPayload(now));
+    stoppedPayload());
 }
 
 void Controller::publishHold()
@@ -1257,7 +1271,7 @@ void Controller::publishHold()
     supervision::Decision::HOLD,
     supervision_mode_ == supervision::Mode::VP_CONTROL ?
     supervision::SelectedSource::VP_COMMAND : supervision::SelectedSource::FOLLOWER,
-    stoppedPayload(Clock::now()));
+    stoppedPayload());
 }
 
 void Controller::publishProcessingTime(

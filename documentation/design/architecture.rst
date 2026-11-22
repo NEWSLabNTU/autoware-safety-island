@@ -77,8 +77,8 @@ interface. The key tunables are shared across the domains:
 Controller node
 **********************
 
-The entry point is ``actuation_module/src/main.cpp``. It brings up DHCP,
-optionally syncs time via SNTP (``CONFIG_ENABLE_SNTP``), and instantiates
+The entry point is ``actuation_module/src/main.cpp``. It brings up DHCP
+and instantiates
 a single ``Controller`` node. The controller is defined in
 ``actuation_module/src/controller_pkg/autoware_trajectory_follower_node/src/controller_node.cpp``.
 

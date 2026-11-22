@@ -6,7 +6,8 @@
 The Zephyr island has no RTC and no internet route on tap0; without a
 wall-clock epoch it stamps control commands from 1970 and Autoware's
 vehicle_cmd_gate rejects them as stale, so autonomous mode never actuates.
-The tap image points CONFIG_SNTP_SERVER_ADDRESS at this responder
+The tap images point knobs.sntp.server (controller_bringup/system.toml) at
+this responder
 (default 192.168.10.1:12123 — an unprivileged port, so no root needed).
 
     scripts/sntp-server.py [--bind 192.168.10.1] [--port 12123]
