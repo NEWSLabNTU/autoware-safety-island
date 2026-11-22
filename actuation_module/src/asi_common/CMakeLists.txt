@@ -6,9 +6,10 @@
 # toolchain, so that no node package has to name one:
 #
 #   asi_common   headers (common/, platform/, and the message umbrella
-#                autoware/autoware_msgs/messages.hpp), the PLATFORM_* define, the
-#                FreeRTOS CONFIG_* mirror header, the newlib pthread shim on
-#                arm-none-eabi, and the support sources of each platform
+#                autoware/autoware_msgs/messages.hpp), the PLATFORM_* define
+#                (read only by the clock and network headers and sources), the
+#                newlib pthread shim on arm-none-eabi, and the support sources
+#                of each platform
 #                (Zephyr: network bring-up, the entry's network
 #                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS: the
 #                wall clock).
@@ -23,45 +24,37 @@ cmake_minimum_required(VERSION 3.22.1)
 project(asi_common LANGUAGES C CXX)
 
 set(_asi_zephyr FALSE)
-set(_asi_freertos FALSE)
 set(_asi_newlib_cross FALSE)
 if(TARGET zephyr_interface)
   set(_asi_zephyr TRUE)
 elseif(NROS_PLATFORM STREQUAL "freertos")
-  set(_asi_freertos TRUE)
   # Bare-metal FreeRTOS on a Cortex-R52 (mps3-an536, S32Z270): newlib, no
   # pthreads, no wall clock. The POSIX simulator is a host build.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "cortex-r52")
     set(_asi_newlib_cross TRUE)
   endif()
-else()
-  # A host configure (NROS_PLATFORM=posix): nano-ros's metadata probe, which
-  # compiles the controller's sources to count their entities, and the
-  # census's `linux` images, which build and run them once. The headers take
-  # the FreeRTOS road there, as they did before this package existed.
-  set(_asi_freertos TRUE)
 endif()
+# Anything else is a host configure (NROS_PLATFORM=posix): nano-ros's metadata
+# probe, which compiles the controller's sources to count their entities, and
+# the census's `linux` images, which build and run them once. The clock and
+# network headers take the FreeRTOS road there, as they did before this
+# package existed.
 
 # --- asi_common: headers + platform defines ---------------------------------
 add_library(asi_common INTERFACE)
 target_include_directories(asi_common INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+# PLATFORM_ZEPHYR / PLATFORM_FREERTOS: what is left of the platform dispatch.
+# Its readers are the clock (common/clock/clock.hpp, platform/platform_clock.h,
+# src/common/clock/clock_resync.cpp; phase-15 P5's FreeRTOS half) and the
+# S32Z's interface set-up (platform/platform_network.h,
+# src/common/net/network_config.cpp; P6). Nothing else tests it: the logger's
+# level is its Kconfig symbol or that symbol's default (logger.hpp).
 if(_asi_zephyr)
   target_compile_definitions(asi_common INTERFACE PLATFORM_ZEPHYR=1)
 else()
   target_compile_definitions(asi_common INTERFACE PLATFORM_FREERTOS=1)
-  # platform_config.h reads a Kconfig-mirror header on FreeRTOS: the
-  # controller's FreeRTOS logger and network defaults.
-  set(CONFIG_LOG_LEVEL 1)
-  set(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX 0)
-  set(CONFIG_ENABLE_SNTP OFF)
-  configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos/freertos_config_generated.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/freertos_config_generated.h")
-  target_include_directories(asi_common INTERFACE
-    "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/platform/freertos")
 endif()
 
 # The CAN control-command output (common/can/can_platform.hpp over nano-ros's

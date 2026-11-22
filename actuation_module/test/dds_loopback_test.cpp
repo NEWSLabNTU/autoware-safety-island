@@ -13,8 +13,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-#include <unistd.h>  // sleep
-
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
 
@@ -49,23 +47,13 @@ public:
 
 alignas(LoopbackNode) static unsigned char g_node_buf[sizeof(LoopbackNode)];
 
-// The hosted signature: on a FreeRTOS board nano-ros renames main() and calls
-// it from the board's entry as main(int, char **) (test_bringup's images).
-// Zephyr declares `int main(void)` itself, so its test app keeps that one.
-#if defined(__ZEPHYR__)
-int main(void)
-#else
+// The hosted signature on every board: nano-ros renames main() and calls it
+// from the board's entry as main(int, char **) (test_bringup's images).
 int main(int /*argc*/, char ** /*argv*/)
-#endif
 {
   log_info("--------------------------------\n");
   log_info("Starting DDS loopback test\n");
   log_info("--------------------------------\n");
-#if defined(PLATFORM_ZEPHYR)
-  // Zephyr's DHCP client; a FreeRTOS board's network is up before main().
-  log_info("Waiting for DHCP to get IP address...\n");
-  sleep(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX);
-#endif
 
   if (!rclcpp::init_in().ok()) {
     log_error("rclcpp::init_in failed\n");

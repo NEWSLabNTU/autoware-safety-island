@@ -21,7 +21,13 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdarg>
-#include "platform/platform_config.h"
+
+// CONFIG_LOG_LEVEL is asi_common's Kconfig symbol (zephyr/Kconfig) where the
+// build has Kconfig: on Zephyr autoconf.h reaches every source. Elsewhere it
+// is that symbol's default, 1 (fatal, error, warning, config; no debug).
+#ifndef CONFIG_LOG_LEVEL
+#define CONFIG_LOG_LEVEL 1
+#endif
 
 #include <rclc/log.h>
 
