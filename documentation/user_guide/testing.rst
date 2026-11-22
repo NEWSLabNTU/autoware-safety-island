@@ -14,9 +14,10 @@ that exercises one subsystem in isolation.
 Pass at most one of the flags below; if more than one is passed, only the
 last takes effect.
 
-``zephyr-fvp`` and ``zephyr-s32z`` support all test flags. ``freertos-posix``
-supports unit, DDS publisher, DDS subscriber, and CAN output tests.
-``freertos-s32z2`` does not support test build flags.
+The unit and DDS loopback tests are images, run with ``nros run`` (below).
+``zephyr-fvp`` and ``zephyr-s32z`` support the other test flags.
+``freertos-posix`` supports the CAN output test. ``freertos-s32z2`` does not
+support test build flags.
 
 **********************************
 Unit test (node + DDS round-trip)
@@ -24,9 +25,14 @@ Unit test (node + DDS round-trip)
 
 .. code-block:: console
 
-  $ ./build.sh --unit-test
+  $ cd actuation_module
+  $ nros run unit_test_bringup:fvp-aemv8r-smp --expect "=== All Tests Passed ===" --timeout 200
 
-Builds ``actuation_module/test/unit_test.cpp``. The test creates a DDS
+Runs ``actuation_module/test/unit_test.cpp`` as an image of its own
+(``src/test_bringup/unit_test``) on every board that runs it: the FVP
+(``fvp-aemv8r-smp``), the FreeRTOS POSIX simulator (``freertos-posix``) and
+QEMU's ``mps3-an536-freertos``. ``nros run`` builds the image when it is
+stale and passes once the line has appeared. The test creates a DDS
 publisher and subscriber on the same topic, drives a node timer, and checks
 that messages arrive and callbacks fire as expected. Useful as a smoke test
 after changes to ``include/common/node/`` or ``include/common/dds/``.
@@ -132,9 +138,14 @@ DDS loopback
 
 .. code-block:: console
 
-  $ ./build.sh --dds-loopback-test
+  $ cd actuation_module
+  $ nros run dds_loopback_test_bringup:fvp-aemv8r-smp --expect "DDS loopback test passed" --timeout 200
 
-Builds ``actuation_module/test/dds_loopback_test.cpp`` for Zephyr targets.
+Runs ``actuation_module/test/dds_loopback_test.cpp`` as an image of its own
+(``src/test_bringup/dds_loopback_test``), on the same boards as the unit
+test. ``./build.sh --dds-loopback-test`` still builds it as a Zephyr test
+program, for the real-time evaluation's ``--trace-stats`` / ``--trace``
+builds.
 
 **********************
 Running tests

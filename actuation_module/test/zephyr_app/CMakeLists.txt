@@ -71,3 +71,13 @@ nros_find_interfaces(
 target_include_directories(app PRIVATE "${CMAKE_BINARY_DIR}/cyclonedds-ts/_genroot")
 
 target_sources(app PRIVATE "${_asi_ws}/test/${ASI_TEST}.cpp")
+
+# The DDS loopback test is also an image (src/test_bringup), so its main() is
+# the hosted signature nano-ros's ROS2_MAIN calls on every board. Here, with
+# no ROS2_MAIN, it is renamed and called from Zephyr's main(void), as
+# ROS2_MAIN does.
+if(ASI_TEST STREQUAL "dds_loopback_test")
+  set_source_files_properties("${_asi_ws}/test/${ASI_TEST}.cpp"
+    PROPERTIES COMPILE_DEFINITIONS "main=asi_hosted_main")
+  target_sources(app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/hosted_main.cpp")
+endif()
