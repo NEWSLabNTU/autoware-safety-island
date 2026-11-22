@@ -45,7 +45,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-23: 7a17fe7395, past PR 4622 (phase-582 W1d: the
+    # ON main, 2026-11-23: 9e9deb715f, past PR 4639 (issue 2865: bare-metal
+    # FreeRTOS resolves the wall clock at a boot point after the network is
+    # up and the log writer is registered, so the `board` source answers
+    # inside fallback_settle_ms and its verdict line prints), 4637 (issue
+    # 2702: every C/C++ workspace image gets its own cmake configure, build
+    # dir build/<...>-<bringup>-<image>/cmake), 4634 (phase-554 W6: a managed
+    # node's publishers follow its state), 4592 (nros image show --nodes /
+    # --topics) and 4626 (issue 2814, CI gate lock). Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-23: 7a17fe7395, past PR 4622 (phase-582 W1d: the
     # `board` wall-clock source and its hook, nros_board_wall_clock_ns, asked
     # within clock.fallback_settle_ms and resolved lazily on POSIX and
     # FreeRTOS; the bare-metal FreeRTOS images take their SNTP epoch from it,
@@ -230,7 +239,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 7a17fe7395e88da6498f627cd9fe9e78bfdee209
+      revision: 9e9deb715fde11c4348bfc807e3a977a6c7f4b14
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

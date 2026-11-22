@@ -56,8 +56,9 @@ echo "Phase 1c - nros check: bringup, workspace layout, S32Z270 Zephyr board pac
 # declarations.)
 echo "Phase 1d - parameter seeds"
 # The image's resolved plan: the census metadata and the launch record, in
-# the configuration-hashed build directory `nros build` used.
-plan_dir="$(ls -td "${ROOT_DIR}"/actuation_module/build/freertos-cyclonedds-freertos-posix-cfg*-controller_bringup/cmake/nros-plan | head -1)"
+# the configuration-hashed, per-image build directory `nros build` used
+# (nano-ros issue 2702: <...>-<bringup>-<image>/cmake).
+plan_dir="$(ls -td "${ROOT_DIR}"/actuation_module/build/freertos-cyclonedds-freertos-posix-cfg*-controller_bringup-freertos-posix/cmake/nros-plan | head -1)"
 python3 "${ROOT_DIR}/.github/scripts/check-param-seeds.py" "${plan_dir}" \
   "${ROOT_DIR}/actuation_module/src/controller_bringup"
 
