@@ -10,6 +10,7 @@
 #   kill_with_timeout <pid> [grace_seconds]
 #   nros_run_program <bringup>:<image> <program> <timeout_seconds> <line>...
 #   ensure_fvp_available   (sets ARMFVP_BIN_PATH; uses ROOT_DIR)
+#   source_ament_env       (AMENT_PREFIX_PATH from the devcontainer's Autoware)
 
 set -euo pipefail
 
@@ -63,6 +64,18 @@ with open(dst, "w") as f:
     json.dump(plan, f, indent=2)
 PY
   ( cd "${ws}" && "${NROS_CLI}" run --plan "${plan}" "${expects[@]}" --timeout "${secs}" )
+}
+
+# The message sources nano-ros generates the bindings from (AMENT_PREFIX_PATH):
+# the devcontainer's Autoware install, whose setup.bash chains ROS 2 Humble.
+# An environment the caller already sourced is kept.
+source_ament_env() {
+  if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
+    set +u
+    # shellcheck disable=SC1091
+    . /opt/autoware/setup.bash
+    set -u
+  fi
 }
 
 # Put the image's ROS / Autoware library directories on LD_LIBRARY_PATH.

@@ -59,14 +59,15 @@ function usage() {
   echo -e "${GREEN}    -h                 ${NC}Display the usage and exit."
   echo ""
   echo -e "${GREEN}    Optional arguments to build test programs:${NC}"
-  echo -e "${GREEN}    --unit-test        ${NC}Build unit test program."
+  echo -e "${GREEN}    --unit-test        ${NC}(retired: an image on every board, nros run unit_test_bringup:<board>)"
   echo -e "${GREEN}    --dds-publisher    ${NC}Build DDS publisher test program."
   echo -e "${GREEN}    --dds-subscriber   ${NC}Build DDS subscriber test program."
   echo -e "${GREEN}    --can-output-test  ${NC}Build CAN output test program (freertos-posix: the"
   echo -e "${GREEN}                       ${NC}controller image plus the can_vcan_sender host program)."
-  echo -e "${GREEN}    --dds-loopback-test${NC}Build Zephyr DDS loopback test program."
-  echo -e "${GREEN}                       ${NC}On FreeRTOS the test programs are images: see"
-  echo -e "${GREEN}                       ${NC}actuation_module/src/test_bringup (nros run)."
+  echo -e "${GREEN}    --dds-loopback-test${NC}Build the Zephyr DDS loopback test program (for the"
+  echo -e "${GREEN}                       ${NC}--trace* / --trace-stats variants)."
+  echo -e "${GREEN}                       ${NC}The unit and DDS loopback tests are images on every board:"
+  echo -e "${GREEN}                       ${NC}actuation_module/src/test_bringup (nros run <program>_bringup:<board>)."
   echo ""
   echo -e "${GREEN}    Runtime target matrix:${NC}"
   echo -e "    zephyr-fvp       Zephyr on Arm FVP for local validation / AVH."
@@ -298,22 +299,21 @@ function require_nros_checkout() {
   fi
 }
 
-# Phase 5 W1 — messages resolve from the AMENT environment (the vendored
-# msg_ros/ copies are gone). A sourced ROS 2 + Autoware env wins; otherwise
-# compose existence-gated defaults (/opt/ros/humble + the newest
-# /opt/autoware/<ver>, which is the devcontainer layout too), then verify the
-# packages the codegen needs actually resolve so the failure is one clear
-# message here instead of a cmake FATAL_ERROR four levels down.
 # The nros CLI: the released one actuation_module/nros-toolchain.toml pins,
 # or (NROS_DEV_CLI=1) one built from modules/nros. See scripts/nros-cli.sh.
 # shellcheck source=scripts/nros-cli.sh
 . "${ROOT_DIR}/scripts/nros-cli.sh"
 
-# Message-source resolution (AMENT_PREFIX_PATH). Sourced rather than inline so
-# the FVP CI script resolves the SAME prefixes before `west build --target run`
-# re-enters cmake.
-# shellcheck source=scripts/ament-env.sh
-. "${ROOT_DIR}/scripts/ament-env.sh"
+# The message sources (AMENT_PREFIX_PATH): the caller's sourced ROS 2 and
+# Autoware environment, as for any ROS build (`. /opt/autoware/setup.bash` in
+# the devcontainer). nano-ros generates the bindings from it and names a
+# missing package itself.
+function require_ament_env() {
+  if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
+    echo -e "${RED}AMENT_PREFIX_PATH is empty: source your ROS 2 Humble + Autoware setup.bash (devcontainer: . /opt/autoware/setup.bash).${NC}" 1>&2
+    exit 1
+  fi
+}
 
 # --run: start the model for an ALREADY-BUILT -d directory. Needs only the
 # build dir and ARMFVP_BIN_PATH, so it runs BEFORE anything that touches
@@ -382,7 +382,7 @@ function zephyr_env() {
   # CMAKE_PREFIX_PATH stays cleared (host ROS cmake packages must not leak
   # into the cross build); AMENT_PREFIX_PATH resolves the messages.
   export CMAKE_PREFIX_PATH=""
-  resolve_ament_env
+  require_ament_env
   # The Zephyr module resolves the codegen tool and the SDK store through the
   # CLI on PATH, and nano-ros's checkout through NROS_REPO_DIR.
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
@@ -443,14 +443,14 @@ function build_zephyr_controller() {
       "${NROS_CLI_BIN}" build "controller_bringup:${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
 }
 
-# The Zephyr test programs (--unit-test, --dds-publisher, --dds-subscriber,
+# The Zephyr test programs (--dds-publisher, --dds-subscriber,
 # --can-output-test, --dds-loopback-test): hand-written main()s, built by
 # their own west application, actuation_module/test/zephyr_app (nano-ros's
 # "A Zephyr app you build with west": no bringup image, no generated entry),
 # one program per build. They take the controller images' Kconfig
 # fragments, so a test runs on the configuration the controller ships with.
 function build_zephyr_test() {
-  local tests=("" unit_test dds_pub dds_sub can_output_test dds_loopback_test)
+  local tests=("" "" dds_pub dds_sub can_output_test dds_loopback_test)
   local test="${tests[${BUILD_TEST_FLAG}]}"
   echo -e "${GREEN}Building Zephyr test program ${test}...${NC}"
   local app="${ROOT_DIR}/actuation_module/test/zephyr_app"
@@ -547,6 +547,10 @@ function build_zephyr_actuation_module() {
     run_zephyr_model
     return
   fi
+  if [ "${BUILD_TEST_FLAG}" = "1" ]; then
+    echo -e "${RED}the unit test is an image: nros run unit_test_bringup:fvp-aemv8r-smp --expect '=== All Tests Passed ===' (actuation_module/src/test_bringup/unit_test).${NC}" 1>&2
+    exit 1
+  fi
   zephyr_env
   if [ "${BUILD_TEST_FLAG}" = "0" ]; then
     build_zephyr_controller
@@ -613,7 +617,7 @@ function build_freertos_nros() {
         "${nros_cli_bin}" setup "${board}" --rmw cyclonedds ) || exit 1
   fi
   export CMAKE_PREFIX_PATH=""
-  resolve_ament_env
+  require_ament_env
   export NROS_REPO_DIR="${ROOT_DIR}/modules/nros"
 
   # The cross toolchain (the ARMv8-R boards) is the SDK store's pinned

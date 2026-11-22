@@ -58,8 +58,7 @@ done
 
 # The image's build environment: message sources from the ROS / Autoware
 # install (AMENT_PREFIX_PATH), and the nano-ros checkout the CMake road reads.
-source "${ROOT_DIR}/scripts/ament-env.sh"
-resolve_ament_env
+source_ament_env
 export CMAKE_PREFIX_PATH=""
 export NROS_REPO_DIR="${NROS}"
 if [ "${NROS_CLI_MODE}" = "release" ]; then

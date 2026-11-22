@@ -4,8 +4,11 @@
 # The Zephyr test programs, a west application of their own (nano-ros's
 # "A Zephyr app you build with west"): each is a hand-written main() over the
 # platform layer and nros-cpp, with no bringup image and no generated entry.
-# build.sh builds one per run (--unit-test, --dds-publisher, --dds-subscriber,
-# --can-output-test, --dds-loopback-test), naming it with -DASI_TEST.
+# build.sh builds one per run (--dds-publisher, --dds-subscriber,
+# --can-output-test, --dds-loopback-test), naming it with -DASI_TEST. The unit
+# test and the DDS loopback test are also images of their own on every board
+# (src/test_bringup, `nros run`); the loopback test stays here for the
+# real-time evaluation's statistics and trace builds.
 #
 # Its Kconfig settings are the controller images' own fragments
 # (../../src/controller_bringup/zephyr/), so a test runs on the configuration
@@ -16,7 +19,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 get_filename_component(_asi_ws "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-set(_asi_tests unit_test dds_pub dds_sub can_output_test dds_loopback_test)
+set(_asi_tests dds_pub dds_sub can_output_test dds_loopback_test)
 if(NOT ASI_TEST IN_LIST _asi_tests)
   message(FATAL_ERROR "test/zephyr_app: -DASI_TEST=<one of ${_asi_tests}>, got '${ASI_TEST}'")
 endif()

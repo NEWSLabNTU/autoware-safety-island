@@ -155,7 +155,9 @@ jobs:
       - name: Build for S32Z
         if: matrix.platform == 'zephyr-s32z'
         shell: bash
-        run: ./build.sh --platform zephyr-s32z
+        run: |
+          set +u; . /opt/autoware/setup.bash; set -u
+          ./build.sh --platform zephyr-s32z
 
       - name: Collect artifact
         shell: bash

@@ -20,16 +20,12 @@ source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 # cannot execute, and misleading about why.
 add_ros_lib_paths
 
-# ...and the message prefixes, for the same reconfigure. Without them it dies on
-# the first .msg it looks for: "nros_generate_interfaces(): cannot find
-# 'msg/Odometry.msg' for package 'nav_msgs'".
-#
-# Three separate variables now, all one shape: `west build --target run`
-# re-enters cmake, so whatever build.sh resolves, this script has to resolve
-# identically. Each is defined once and sourced by both.
-# shellcheck source=../../scripts/ament-env.sh
-source "${ROOT_DIR}/scripts/ament-env.sh"
-resolve_ament_env
+# ...and the message prefixes (the devcontainer's Autoware install). Without
+# them a configure dies on the first .msg it looks for: "nros_generate_interfaces():
+# cannot find 'msg/Odometry.msg' for package 'nav_msgs'". `nros run` and the
+# model-run phases re-enter the build (`west build -t run_armfvp`), so the
+# environment is set once here, for every build and every run.
+source_ament_env
 
 # The rest of what build.sh puts around a Zephyr configure, for the same reason:
 #   * CMAKE_PREFIX_PATH is CLEARED. Resolving the messages above may source a
@@ -328,36 +324,53 @@ nros_cli_select
 # cached workspace is fine.
 bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 
-echo "Phase 1 - Zephyr FVP full controller build + runtime smoke"
-build_variant full
-run_fvp_variant full "${LOG_DIR}/controller.log" "${FVP_TIMEOUT_SECONDS}" \
-    "Starting Controller Node" "Controller Node Started" \
-    "Actuation Safety Island is Live" "nros: sched task priority set sched_task="
-require_marker "${LOG_DIR}/controller.log" "Starting Controller Node"
-require_marker "${LOG_DIR}/controller.log" "Controller Node Started"
-require_marker "${LOG_DIR}/controller.log" "Actuation Safety Island is Live"
+# This repo's Zephyr patches (patches/zephyr), as build.sh applies them before
+# every Zephyr build; the images below are built by nros directly.
+"${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
+
+# The controller image and the test program images run with
+# `nros run <image> --expect <line>... --timeout N`: nros builds the image if
+# stale and boots it on the board's runner (the FVP model through Zephyr's
+# run_armfvp target, with the board's and the image's model parameters), and
+# passes once every --expect line has appeared on the console (exit 1 when
+# the timeout passes first). Nothing here starts the model or greps its
+# output. The FVP is user-provided (ensure_fvp_available, ARMFVP_BIN_PATH).
+nros_fvp()
+{
+  ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" "$@" )
+}
+
+echo "Phase 1 - Zephyr FVP controller image (nros run controller_bringup:fvp)"
+nros_fvp build controller_bringup:fvp --zephyr-workspace "${ROOT_DIR}"
 # [tasks.control.zephyr] priority = 9 reached `main`, the boot sched task's
 # thread: nano-ros reads the priority back after k_thread_priority_set(), which
 # Zephyr 3.7 does not trace (nano-ros PR 3705).
-require_marker "${LOG_DIR}/controller.log" "nros: sched task priority set sched_task=\`control\` prio=9"
-forbid_marker "${LOG_DIR}/controller.log" "ZEPHYR FATAL ERROR"
+nros_fvp run controller_bringup:fvp --timeout "${FVP_TIMEOUT_SECONDS}" \
+    --expect "Starting Controller Node" \
+    --expect "Controller Node Started" \
+    --expect "Actuation Safety Island is Live" \
+    --expect "nros: sched task priority set sched_task=\`control\` prio=9"
 
-echo "Phase 2 - Zephyr FVP unit_test build + run"
-build_variant unit --unit-test
-run_fvp_variant unit "${LOG_DIR}/unit.log" "${FVP_TIMEOUT_SECONDS}" \
-    "=== All Tests Passed ==="
-require_marker "${LOG_DIR}/unit.log" "=== All Tests Passed ==="
-forbid_marker "${LOG_DIR}/unit.log" "ZEPHYR FATAL ERROR"
+# The test programs (actuation_module/test), each an image of its own
+# (src/test_bringup) whose entry is a Zephyr west application over the same
+# source the FreeRTOS images build (src/asi_tests/asi_<program>_zephyr).
+echo "Phase 2 - Zephyr FVP unit test image (nros run unit_test_bringup:fvp-aemv8r-smp)"
+nros_fvp build unit_test_bringup:fvp-aemv8r-smp --zephyr-workspace "${ROOT_DIR}"
+nros_fvp run unit_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
+    --expect "=== All Tests Passed ==="
 
-echo "Phase 3 - Zephyr FVP DDS loopback build + run"
-build_variant dds-loopback --dds-loopback-test
-run_fvp_variant dds-loopback "${LOG_DIR}/dds-loopback.log" "${FVP_TIMEOUT_SECONDS}" \
-    "Starting DDS loopback test" "STEERING REPORT" "DDS loopback test passed"
-require_marker "${LOG_DIR}/dds-loopback.log" "Starting DDS loopback test"
-require_marker "${LOG_DIR}/dds-loopback.log" "STEERING REPORT"
-require_marker "${LOG_DIR}/dds-loopback.log" "DDS loopback test passed"
-forbid_marker "${LOG_DIR}/dds-loopback.log" "ZEPHYR FATAL ERROR"
+echo "Phase 3 - Zephyr FVP DDS loopback test image (nros run dds_loopback_test_bringup:fvp-aemv8r-smp)"
+nros_fvp build dds_loopback_test_bringup:fvp-aemv8r-smp --zephyr-workspace "${ROOT_DIR}"
+nros_fvp run dds_loopback_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
+    --expect "Starting DDS loopback test" \
+    --expect "STEERING REPORT" \
+    --expect "DDS loopback test passed"
 
+# Phases 4 and 6 are still build.sh's test programs (test/zephyr_app), run by
+# run_fvp_variant and graded by grepping the console: the CAN loopback test
+# is a Zephyr-only program on the CAN loopback device, and the statistics
+# phase asserts on the whole thread-analyzer report (require_stack_headroom),
+# which `nros run --expect` stops before (phase-15 P10, remaining).
 echo "Phase 4 - Zephyr FVP CAN loopback build + run"
 build_variant can --can-output-test
 run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}" \

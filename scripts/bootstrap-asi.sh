@@ -7,24 +7,32 @@
 #
 # Mirrors the devcontainer Dockerfile (.devcontainer/Dockerfile) as a host
 # script. Policy (per nano-ros CLAUDE.md "never sudo"): the no-root steps run
-# automatically (rustup, pip --user, the Zephyr SDK into your home, `west
-# update`, the nros CLI build); for system packages that need root it DETECTS
-# what is missing and PRINTS the exact `sudo apt install …` line for you to run
-# — it never invokes sudo itself.
+# automatically (rustup, pip --user, `west update`, the nros CLI build); for
+# system packages that need root it DETECTS what is missing and PRINTS the
+# exact `sudo apt install …` line for you to run — it never invokes sudo
+# itself.
+#
+# What nano-ros provisions is nano-ros's: `nros setup --workspace` reads every
+# image's board and RMW from the bringups' system.toml and fetches their
+# toolchains and sources into ~/.nros (the Zephyr SDK, arm-none-eabi-gcc,
+# QEMU, the FreeRTOS kernel, lwIP, Cyclone DDS), `nros setup board` prepares
+# the west workspace for the FVP board, and `nros doctor` checks the result.
+# This script keeps only the steps nano-ros does not cover: the system
+# packages west and Zephyr need, foreign-owned paths, rustup, the west
+# workspace (this repo is its manifest), this repo's own Zephyr patches, and
+# activate-asi.sh.
 #
 # After a successful run:  source ./activate-asi.sh  &&  ./build.sh
 #
 # What it does NOT do: install ARM FVP (license-gated, x86-only) — that is for
 # the *runtime* FVP smoke only and stays opt-in (see the FVP note at the end).
 #
-# Usage: scripts/bootstrap-asi.sh [--no-sdk] [--no-update]
+# Usage: scripts/bootstrap-asi.sh [--no-update]
 set -euo pipefail
 
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-ZSDK_VERSION="0.16.3"   # pinned to the devcontainer Dockerfile
-SDK_DIR="${ZEPHYR_SDK_INSTALL_DIR:-${HOME}/zephyr-sdk-${ZSDK_VERSION}}"
-DO_SDK=1; DO_UPDATE=1
-for a in "$@"; do case "$a" in --no-sdk) DO_SDK=0;; --no-update) DO_UPDATE=0;; esac; done
+DO_UPDATE=1
+for a in "$@"; do case "$a" in --no-update) DO_UPDATE=0;; esac; done
 
 say()  { echo -e "\033[0;32m[asi-bootstrap]\033[0m $*"; }
 warn() { echo -e "\033[0;33m[asi-bootstrap]\033[0m $*" >&2; }
@@ -152,27 +160,6 @@ say "ZEPHYR_BASE = ${ZEPHYR_BASE}"
 python3 -m pip install --user -r "${ZEPHYR_BASE}/scripts/requirements.txt" >/dev/null 2>&1 || \
   warn "could not install ${ZEPHYR_BASE}/scripts/requirements.txt — install manually if the build complains."
 
-# ---- 5. Zephyr SDK 0.16.3 (aarch64-zephyr-elf), into \$HOME — no root ----
-if ((DO_SDK)) && [[ ! -d "${SDK_DIR}" ]]; then
-  say "installing Zephyr SDK ${ZSDK_VERSION} → ${SDK_DIR} …"
-  case "$(uname -m)" in x86_64) A=x86_64;; aarch64|arm64) A=aarch64;; *) die "unsupported host arch $(uname -m) for the Zephyr SDK";; esac
-  TARBALL="zephyr-sdk-${ZSDK_VERSION}_linux-${A}.tar.xz"
-  URL="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZSDK_VERSION}/${TARBALL}"
-  tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
-  wget -q --show-progress -O "${tmp}/${TARBALL}" "${URL}"
-  # extract only the arm toolchains + setup (mirror the Dockerfile's slimming).
-  tar -xJf "${tmp}/${TARBALL}" -C "${HOME}" \
-      "zephyr-sdk-${ZSDK_VERSION}/arm-zephyr-eabi/" \
-      "zephyr-sdk-${ZSDK_VERSION}/aarch64-zephyr-elf/" \
-      "zephyr-sdk-${ZSDK_VERSION}/setup.sh" \
-      "zephyr-sdk-${ZSDK_VERSION}/cmake" \
-      "zephyr-sdk-${ZSDK_VERSION}/sdk_toolchains" \
-      "zephyr-sdk-${ZSDK_VERSION}/sdk_version"
-  "${SDK_DIR}/setup.sh" -c -t arm-zephyr-eabi
-  "${SDK_DIR}/setup.sh" -c -t aarch64-zephyr-elf
-fi
-[[ -d "${SDK_DIR}" ]] && say "Zephyr SDK: ${SDK_DIR}" || warn "Zephyr SDK skipped (--no-sdk); set ZEPHYR_SDK_INSTALL_DIR yourself."
-
 # ---- 6. the nano-ros `nros` CLI (the codegen tool) ----
 # The release actuation_module/nros-toolchain.toml pins (installed into
 # $NROS_HOME if missing), or modules/nros's with NROS_DEV_CLI=1; the same
@@ -204,30 +191,38 @@ say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
 "${ROOT}/scripts/apply-zephyr-patches.sh" ||
   warn "a zephyr patch needs a refresh against the current pin (above)."
 
-# Host idlc: the pin's cyclonedds cmake resolves idlc from the nros SDK store
-# (~/.nros/sdk/cyclonedds/<ver>/bin/idlc) before PATH. Provision the board's
-# tool ∪ rmw set (cyclonedds prebuilt + cyclonedds-src + rosidl; the gated
-# arm-fvp entry only prints its license hint).
-say "provisioning SDK store (cyclonedds idlc + rosidl)…"
-( cd "${ROOT}/actuation_module" \
-  && "${NROS_CLI}" setup fvp-aemv8r-smp --rmw cyclonedds )
-
-# ---- 6c. FreeRTOS POSIX lane (phase-4 W5.a) ----
-# Kernel source (nros-provisioned SSOT). The launch resolver `nros configure`
-# requires sits beside the nros binary: the release ships it, and the source
-# path builds it (nros_cli_select).
-say "provisioning FreeRTOS kernel…"
-( cd "${ROOT}/actuation_module" && "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --source freertos-kernel )
-rustup target add aarch64-unknown-none   # Zephyr FVP lane
-rustup target add armv8r-none-eabihf     # freertos-s32z2 lane (Cortex-R52 cross profile)
+# ---- 6c. every image's toolchains and sources (nros setup --workspace) ----
+# One plan over every bringup's [image.*] boards and RMWs: the Zephyr SDK
+# (the Zephyr boards), arm-none-eabi-gcc and QEMU (mps3-an536-freertos), the
+# FreeRTOS kernel and lwIP (the FreeRTOS boards) and Cyclone DDS. A system
+# package a tool needs is printed as the command to run, never installed. The
+# NXP-licensed S32Z2 packages are only checked; the Arm FVP is user-provided
+# (see the note at the end).
+say "provisioning every image's board and RMW (nros setup --workspace)…"
+( cd "${ROOT}/actuation_module" && "${NROS_CLI}" setup "${NROS_SETUP_INDEX_ARGS[@]}" --workspace . )
+# The freertos-s32z2 lane's Cortex-R52 cross profile (a link-only lane, whose
+# Rust target no board plan above adds).
+rustup target add armv8r-none-eabihf
 [[ -d "${ROOT}/modules/lang/rust" ]] || \
   die "zephyr-lang-rust module missing at modules/lang/rust — run west update."
+
+# ---- 6d. health check (nros doctor) ----
+# The controller's images, the toolchain pin against west.yml's nano-ros
+# revision, the SDK paths. A problem here is reported, not fatal: doctor also
+# names the license-gated packages a link-only lane cannot fetch.
+say "nros doctor (controller_bringup)…"
+( cd "${ROOT}/actuation_module" && "${NROS_CLI}" doctor --config src/controller_bringup ) ||
+  warn "nros doctor reported problems (above)."
+
+ZSDK_DIR="$(cd "${ROOT}/actuation_module" && "${NROS_CLI}" sdk-path zephyr-sdk 2>/dev/null || true)"
+[[ -d "${ZSDK_DIR}" ]] || die "no Zephyr SDK in the nros store after nros setup (nros sdk-path zephyr-sdk)."
+say "Zephyr SDK: ${ZSDK_DIR}"
 
 # ---- 7. write activate-asi.sh (source it before ./build.sh) ----
 cat > "${ROOT}/activate-asi.sh" <<EOF
 # Generated by scripts/bootstrap-asi.sh — source before ./build.sh
 export ZEPHYR_BASE="${ZEPHYR_BASE}"
-export ZEPHYR_SDK_INSTALL_DIR="${SDK_DIR}"
+export ZEPHYR_SDK_INSTALL_DIR="${ZSDK_DIR}"
 export PATH="\${HOME}/.cargo/bin:\${HOME}/.local/bin:$(dirname "${NROS_CLI}"):\${PATH}"
 export NROS_CLI="${NROS_CLI}"
 EOF

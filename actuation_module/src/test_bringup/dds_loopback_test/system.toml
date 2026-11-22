@@ -21,8 +21,16 @@
 # (`controller_bringup:freertos-posix`): `freertos-posix` alone is now an
 # image of three bringups.
 #
-# The Zephyr FVP builds of the test programs are still build.sh's (west,
-# test/zephyr_app) until `nros run` takes the model parameters they need.
+# On the FVP (Zephyr) the entry is asi_dds_loopback_test_zephyr instead, a west
+# application over the same source, and `nros run` alone runs it:
+#
+#   nros run dds_loopback_test_bringup:fvp-aemv8r-smp --expect ... --timeout N
+#
+# (the run target is the build dir's run_armfvp; the model parameters are
+# the board's). That image is not sized by a census: nano-ros derives
+# nothing for an owned west entry whose bringup is nested under src/ (it
+# reports the image's model as unresolved), so it runs on the configured
+# defaults, which the program fits.
 
 [system]
 name      = "dds_loopback_test_bringup"
@@ -50,3 +58,22 @@ profile = "RelWithDebInfo"
 board   = "mps3-an536-freertos"
 entry   = "asi_dds_loopback_test"
 profile = "RelWithDebInfo"
+
+# ARM FVP Base_RevC AEMv8-R, Zephyr, on the model's user-mode network. On
+# Zephyr an owned entry is the west application, so the entry is
+# asi_dds_loopback_test_zephyr, a package that finds Zephyr, over the same source. Its
+# Kconfig is the controller's FVP image's (controller_bringup's [image.fvp]):
+# the same fragments and board network file, so the test runs on the
+# configuration the controller ships with. The model parameters (the SMSC
+# NIC) are the board's ([board.run.fvp]); nros run starts the model.
+# The os_config paths resolve from the west application's directory
+# (src/asi_tests/asi_dds_loopback_test_zephyr); ../../ is src/ from there.
+[image.fvp-aemv8r-smp]
+board     = "fvp-aemv8r-smp"
+entry     = "asi_dds_loopback_test_zephyr"
+os_config = [
+  "../../controller_bringup/zephyr/net-fvp.toml",
+  "../../controller_bringup/zephyr/prj-actuation.conf",
+  "../../controller_bringup/zephyr/prj-fvp.conf",
+]
+knobs.memory.heap_bytes = 8388608

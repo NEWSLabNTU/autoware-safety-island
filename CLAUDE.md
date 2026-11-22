@@ -62,8 +62,12 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
 
 ## Build & test commands
 
-- `scripts/bootstrap-asi.sh` provisions a host; the devcontainer does the
-  same (`./launch-dev-container.sh`).
+- `scripts/bootstrap-asi.sh` provisions a host (west workspace, then
+  `nros setup --workspace` for every image's toolchains and `nros doctor`);
+  the devcontainer does the same (`./launch-dev-container.sh`).
+- Messages come from the ROS 2 + Autoware install: source its setup.bash
+  before building (`. /opt/autoware/setup.bash` in the devcontainer; CI's
+  `source_ament_env`).
 - The nros CLI is the released nano-ros that
   `actuation_module/nros-toolchain.toml` pins (installed into `~/.nros` on
   first use, `scripts/nros-cli.sh`); `modules/nros` and `west.yml` pin the
@@ -75,10 +79,14 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
   the FVP `--network tap`, `--trace-stats`, `--trace`, `--trace-ring` pick
   the `fvp-tap*` / `*-stats` / `*-trace*` image). Sizing is knob rows in
   system.toml, never exported variables (an exported one wins over a row).
-- `./build.sh --unit-test | --dds-publisher | --dds-subscriber |
-  --can-output-test | --dds-loopback-test` build one Zephyr test program with
-  `west build` of test/zephyr_app (the controller images' fragments plus its
-  own); use one `-d` per program.
+- The unit and DDS loopback tests are images on every board:
+  `nros run unit_test_bringup:<board> --expect ...` (and
+  `dds_loopback_test_bringup:<board>`; src/test_bringup; on Zephyr the
+  entry is src/asi_tests/asi_<program>_zephyr, a west application).
+- `./build.sh --dds-publisher | --dds-subscriber | --can-output-test |
+  --dds-loopback-test` build one Zephyr test program with `west build` of
+  test/zephyr_app (the controller images' fragments plus its own); use one
+  `-d` per program.
 - CI lanes run locally as `.github/scripts/run-freertos-posix-ci.sh`,
   `run-freertos-an536-ci.sh` and `run-zephyr-fvp-ci.sh` from the repo root.
   Unset `CYCLONEDDS_URI`, `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` first: an
@@ -96,8 +104,9 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
 - 2-space indentation in CMake and nearby C/C++.
 - `snake_case` for files, functions, locals. `PascalCase` only where matching
   existing Autoware or message types.
-- Platform-specific code behind `platform_*` interfaces; gate with
-  `PLATFORM_ZEPHYR` / FreeRTOS-specific paths.
+- Platform-specific code behind nano-ros or std facilities, or Kconfig /
+  board facts. `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS` remain only for the
+  clock and the S32Z network headers (phase-15 P5, P6); add no new user.
 - Keep SPDX copyright headers in new source + docs files.
 
 ## nano-ros branch context

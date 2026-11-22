@@ -9,6 +9,7 @@ BUILD_ROOT="${ROOT_DIR}/build/freertos-posix-can"
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
 
 cd "${ROOT_DIR}"
+source_ament_env
 
 echo "FreeRTOS POSIX SocketCAN vcan roundtrip (classic + CAN-FD)"
 # --can-output-test on this lane builds the controller image and, beside it,
