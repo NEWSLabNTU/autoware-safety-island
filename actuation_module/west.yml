@@ -45,7 +45,15 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-22: 118cfd3f09, past PRs 4588 (issue 2822: the CAN
+    # ON main, 2026-11-22: 4406b7f4e5, past phase-582 W1c-2 (the Zephyr wiring
+    # of the [knobs.clock] wall-clock source: resolved after registration and
+    # before the first spin; the controller's Zephyr images take their SNTP
+    # epoch from it, phase-15 P5), the Zephyr log sink's own buffers
+    # (issue 2738), the Zephyr heap peak line (2780), the launch seeds counted
+    # in the parameter store (2768) and nros pin --rev (2770). Cyclone is
+    # unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-22: 118cfd3f09, past PRs 4588 (issue 2822: the CAN
     # backend archive goes on each component archive's link interface, so a
     # component that calls the platform CAN driver links in a census host
     # build and a host image with a CAN device), 4582 (issue 2817: an
@@ -204,7 +212,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 118cfd3f09153592ec727b22362145889cbf43dd
+      revision: 4406b7f4e515da53ea12c5bcece00469abe973a6
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
