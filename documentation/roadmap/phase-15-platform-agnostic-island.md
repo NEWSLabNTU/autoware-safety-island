@@ -5,11 +5,11 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 4406b7f4e5 (2026-11-22)
-and the CLI is built from source; there P4 and P7 are done too, P5 for the
-Zephyr images, P6 for the FVP images, P8 in part (the census is on; the
-threading and config dispatch is gone; `PLATFORM_*` waits on P5's FreeRTOS
-half and P6), P10 in part (every lane runs the controller and the unit and
+On branch `nano-ros-next` nano-ros is pinned at main 9e9deb715f (2026-11-23)
+and the CLI is built from source; there P4 and P7 are done too, P5 except
+the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
+config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
+alone), P10 in part (every lane runs the controller and the unit and
 loopback tests on `nros run`; the FVP CAN and statistics phases remain),
 and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
@@ -73,7 +73,51 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 4406b7f4e5 (2026-11-22). Over 118cfd3f09 it adds phase-582
+nano-ros main 9e9deb715f (2026-11-23). Over 7a17fe7395 it adds PR 4639
+(issue 2865: bare-metal FreeRTOS resolves the wall clock at a boot point in
+the app task, after the network is up and the log writer is registered; a
+read before it reads 0 and spends no window; see P5), 4637 (issue 2702:
+every C/C++ workspace image gets its own cmake configure, so the build dir
+is `build/<...>-<bringup>-<image>/cmake`; the FreeRTOS POSIX lane's
+parameter-seed check follows it), 4634 (phase-554 W6: a managed node's
+publishers follow its state; the island runs no managed node), 4592
+(`nros image show --nodes / --topics`) and 4626 (issue 2814, the CI gate
+lock). Cyclone is unchanged, `nros-sdk.lock` as it was. The bump (b819b1d)
+changes `west.yml`, the `modules/nros` pointer and that one glob. CI:
+run 45075448610 (5daee05) green on all three lanes. FVP "nros:
+wall clock from sntp", "clock resolution took 39 ms", Live; AN536 "nros:
+wall clock from board" 18 ms after "Network ready", then "Stamp clock:
+absolute (1795386102 s); nano-ros wall clock synced, source 3" (22:21:42
+UTC, logged at 22:21:41.72); POSIX "Stamp clock: absolute (1795385753 s);
+nano-ros wall clock synced, source 0".
+
+Before that, nano-ros main 7a17fe7395 (2026-11-23). Over 61ce897f21 it adds PR 4622
+(phase-582 W1d: the `board` wall-clock source and its hook
+`nros_board_wall_clock_ns`, asked every 10 ms within
+`clock.fallback_settle_ms` and resolved lazily, on the first wall-clock
+read, on POSIX and FreeRTOS; the freertos-posix board's `platform` is the
+host's `CLOCK_REALTIME`; see P5), 4605 (every node a `/parameter_events`
+publisher; the island has one node), 4607, 4612, 4620, 4621, 4624 and 4625
+(issue 2819: a Cyclone client holds a request only until it matches; the
+Cyclone source is unchanged, `nros-sdk.lock` as it was). The bump alone
+(bcfdedf) changes only `west.yml` and the `modules/nros` pointer. CI:
+run 45064631438 (16356fc, window 0) green on all three lanes. Its
+clock lines: FVP "nros: wall clock from platform" (three SNTP attempts to
+216.239.35.0 failed, rc -22, on that runner); POSIX "Stamp clock: absolute
+(1795378733 s); nano-ros wall clock synced, source 0"; AN536 no "nros: wall
+clock from" line and "Stamp clock: boot-relative (3 s); nano-ros wall clock
+unsynced, source 3" (the ordering gap in P5). Throwaway run 45067445572,
+pinned at PR 4639's head 449011acb9 with the window at 6000, then logged
+FVP "nros: wall clock from sntp", AN536 "nros: wall clock from board"
+15 ms after "Network ready" (3.1 s from QEMU start, 12.3 s before) and
+"Stamp clock: absolute ... synced, source 3".
+
+Before that, nano-ros main 61ce897f21 (2026-11-22), past PRs 4604
+(phase-582 W2, the FreeRTOS libc time shims) and 4609 (phase-582 W3,
+`clock.sntp_resync_interval_ms`); held on branch `p5-clock-freertos`
+until the `board` source merged, and folded into the bump above.
+
+Before that, nano-ros main 4406b7f4e5 (2026-11-22). Over 118cfd3f09 it adds phase-582
 W1c-2 (the Zephyr wiring of the `[knobs.clock]` wall-clock source: resolved
 after every component has registered and before anything spins, timers
 restarted when the wait ends; see P5), issue 2738 (the Zephyr log sink
@@ -747,10 +791,75 @@ What remains of P9 and P11 after this:
     `CLOCK_REALTIME`, which no longer feeds a stamp, and it was off
     (interval 0) on the tap images, the one profile that ran SNTP.
     Phase-582 W3 (`sntp_resync_interval_ms`, not on main) replaces it.
-  - Remaining: the CARLA run (no stale-stamp rejection at
-    `vehicle_cmd_gate`); W3; the FreeRTOS half (`wall_clock.cpp`,
-    `freertos_clock.h`, `platform_clock.h`, `ASI_FREERTOS_WALL_CLOCK`), with
-    the bump past PR 4604 (W2).
+  - Remaining (as of pin 4406b7f4e5): the CARLA run (no stale-stamp
+    rejection at `vehicle_cmd_gate`); W3; the FreeRTOS half.
+- Status on nano-ros-next (pin 9e9deb715f): the FreeRTOS half is done; the
+  CARLA run (no stale-stamp rejection at `vehicle_cmd_gate`) remains.
+  - Pin 9e9deb715f (PR 4639, issue 2865): nano-ros resolves the FreeRTOS
+    wall clock at a boot point after the network is up, so an536 and s32z2
+    state `fallback_settle_ms = 6000` again (the old task's bounded boot
+    wait, 60 x 100 ms). The AN536 lane expects "nros: wall clock from
+    board", "Stamp clock: absolute" and "nano-ros wall clock synced, source
+    3". CI run 45075448610 (5daee05): AN536
+    "nros: wall clock from board" 18 ms after "Network ready", the first
+    cycle "Stamp clock: absolute (1795386102 s); nano-ros wall clock
+    synced, source 3", within 1 s of the runner's clock.
+  - What follows is the interim state at pin 7a17fe7395.
+  - Gone: `wall_clock.cpp` (its strong `_gettimeofday` and its
+    `nros_board_network_wait` override), `freertos_clock.h`,
+    `platform_clock.h`, `ASI_FREERTOS_WALL_CLOCK`, `clock_resync.*` and the
+    `CONFIG_ENABLE_SNTP` mirror row. nano-ros owns `_gettimeofday` and
+    libstdc++'s clocks on bare-metal FreeRTOS (PR 4604, W2).
+  - The island's SNTP task is nano-ros's `board` hook now
+    (`asi_common/src/platform/freertos/board_wall_clock.cpp`): cheap and
+    non-blocking, false until the task has an epoch. The first ask starts
+    the task (a 16 KiB lwIP thread, priority 2), which waits for the default
+    netif, queries the image's gateway on port 12123 (`ASI_SNTP_SERVER_IP`
+    overrides) every second, and ends once it has an epoch or nano-ros has
+    stopped asking. It is an object library whose objects ride
+    `asi_common`'s interface link, so the hook is an object of the image
+    (RFC-0141 D2's link rule) without a component TU or a hook override.
+    `controller_bringup:s32z2` links it (local build, `nros_board_wall_clock_ns`
+    and `nros_clock_board_try__set_by__knobs_clock_source` in the image).
+  - an536 and s32z2: `source = "board"`, `epoch_failure = "unstamped"` (the
+    old task booted on with boot-relative stamps when no epoch came; the
+    S32Z Zephyr image keeps `halt`), and, until pin 9e9deb715f,
+    `fallback_settle_ms = 0`.
+  - Why 0 then: nano-ros resolves the FreeRTOS wall clock on the first read from
+    a task, and that read is Cyclone's static constructor (`ddsrt_ctor` ->
+    `ddsrt_random_init` -> `dds_time`), which the board's app task runs
+    before it brings the network up. The window stalls that very task, so
+    no SNTP exchange can happen inside it; it runs out, `unstamped` applies,
+    and `board` is never asked again. CI run 45062069569 (6db71d5, window
+    6000) measured it on the AN536: "Network ready" 6 s late, the responder
+    answering right after it, the first control cycle "Stamp clock:
+    boot-relative (10 s); nano-ros wall clock unsynced, source 3", and no
+    verdict line (the board's log writer is registered after the
+    constructors). 0 asked once and cost no boot time. nano-ros issue 2865
+    (PR 4639) moved the resolution after the network.
+  - The AN536 lane serves `scripts/sntp-server.py` on 127.0.0.1:12123
+    (QEMU's user network forwards the gateway 10.0.2.2 there); at pin
+    7a17fe7395 it expected the "Stamp clock:" line, not yet `absolute`.
+  - `Clock::now()` no longer tests the platform: the freertos-posix board's
+    `platform` answers the host's clock (PR 4622), so every target reads
+    `rclcpp::Clock(RCL_SYSTEM_TIME)` once `wall_clock_state().synced`, and
+    the monotonic clock before. `PLATFORM_*` is read by the S32Z network
+    set-up alone (P6).
+  - The island banner moved from the network hooks to the controller's
+    constructor, on every image (no CI step greps it).
+  - W3 (`clock.sntp_resync_interval_ms`) stays 0 on every image. Its thread
+    is paced by `k_msleep` (guest time, raced ~10x to ~100x by the FVP when
+    the guest idles, so a 10 s interval re-queries several times a real
+    second, as the island's own re-sync thread did) and runs on a fixed
+    2048-byte stack, while the same `sntp_simple` call measured 7024 bytes
+    on the FVP. nano-ros PR 4632 (the stack as a knob, issue 2846) is a
+    draft at the bump; the pacing has no issue yet (drafted). With 0, the
+    FVP log shows the one boot exchange and no "SNTP re-sync every" line:
+    in run 45075448610 the FVP controller logs "nros: wall clock from sntp"
+    and "clock resolution took 39 ms", with no "SNTP attempt" retry and no
+    "SNTP re-sync every" line (the `zephyr-fvp-logs` artifact holds only
+    `stats.log` and `can.log`; the controller's console is in the job
+    log).
 
 ### P6. Network - S-M
 
@@ -919,7 +1028,13 @@ What remains of P9 and P11 after this:
 - Depends on: P4-P7; 4018 for a derived or loud parameter capacity.
 - Done when: `nros build` with the census checks the contract against the
   code on every image, all lanes green.
-- Status on nano-ros-next (pin ee02c58931): the census is on; `asi_common`
+- Status on nano-ros-next (pin 9e9deb715f): the census is on; `asi_common`
+  still defines `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS`, and the S32Z
+  network set-up (`platform/platform_network.h`,
+  `src/common/net/network_config.cpp`, P6) is their only reader. P5's
+  FreeRTOS half removed the clock's (`platform_clock.h`,
+  `clock_resync.*`; `common/clock/clock.hpp` tests no platform).
+- Earlier status (pin ee02c58931): the census is on; `asi_common`
   still has `PLATFORM_*` (P5, P6 and P7 are not done).
   - `controller_bringup` declares the census's host images,
     `[image.linux] board = "linux"` and `[image.linux-carla]` (the CARLA
