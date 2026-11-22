@@ -64,9 +64,16 @@ class Controller final
     /// 5 subscriptions + 3 publishers + control timer, "Started"/"Live" once
     /// construction (entity creation) succeeded — a ctor throw ends the boot
     /// before the markers, which is exactly the failure CI should catch.
+    ///
+    /// The island's banner leads them, on every image: it used to be printed
+    /// by a board network hook (Zephyr's, and bare-metal FreeRTOS's until its
+    /// wall clock moved to nano-ros's `board` source, phase-15 P5).
     explicit Controller(rclcpp::NodeHandle handle)
         : ::autoware::motion::control::trajectory_follower_node::Controller(
-              (common::logger::log_info("Starting Controller Node...\n"), handle))
+              (common::logger::log_success("-----------------------------------------"),
+               common::logger::log_success("ARM - Autoware: Actuation Safety Island"),
+               common::logger::log_success("-----------------------------------------"),
+               common::logger::log_info("Starting Controller Node...\n"), handle))
     {
         common::logger::log_success("Controller Node Started\n");
         common::logger::log_success("Actuation Safety Island is Live\n");

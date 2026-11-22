@@ -15,7 +15,8 @@
 // [knobs.clock] (controller_bringup/system.toml), and nano-ros resolves it
 // after every component has registered and before anything spins, with the
 // retries (clock.sntp_attempts) and the failure policy (clock.epoch_failure,
-// `halt` where this hook used to std::exit(1)) it states (phase-15 P5).
+// `halt` where this hook used to std::exit(1)) it states (phase-15 P5). The
+// island's banner is the controller's (controller_pkg/controller.hpp).
 
 #include <unistd.h>
 
@@ -25,10 +26,6 @@ using namespace common::logger;
 
 extern "C" void nros_board_network_wait(void)
 {
-    log_success("-----------------------------------------");
-    log_success("ARM - Autoware: Actuation Safety Island");
-    log_success("-----------------------------------------");
-
     // An image that states its network in a board network file (the FVP
     // images) has Zephyr's net_config wait for the lease before the
     // application starts (CONFIG_NET_CONFIG_NEED_IPV4, nano-ros issue 2679);
