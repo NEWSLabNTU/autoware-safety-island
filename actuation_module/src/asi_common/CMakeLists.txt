@@ -11,8 +11,8 @@
 #                newlib pthread shim on arm-none-eabi, and the support sources
 #                of each platform
 #                (Zephyr: network bring-up, the entry's network
-#                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS: the
-#                wall clock).
+#                hook, the Kconfig-gated diagnostics). The wall clock is
+#                nano-ros's on every platform (phase-15 P5).
 #
 # Eigen is the `eigen` package's (src/eigen), not this one's.
 #
@@ -29,7 +29,7 @@ if(TARGET zephyr_interface)
   set(_asi_zephyr TRUE)
 elseif(NROS_PLATFORM STREQUAL "freertos")
   # Bare-metal FreeRTOS on a Cortex-R52 (mps3-an536, S32Z270): newlib, no
-  # pthreads, no wall clock. The POSIX simulator is a host build.
+  # pthreads. The POSIX simulator is a host build.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "cortex-r52")
     set(_asi_newlib_cross TRUE)
   endif()
@@ -106,10 +106,6 @@ if(_asi_zephyr)
     target_sources(app PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/can_udp_tunnel_driver.cpp")
   endif()
-  # src/common/clock/clock_resync.cpp is not built since phase-15 P5: it
-  # stepped CLOCK_REALTIME, which no longer feeds the stamps (nano-ros's
-  # [knobs.clock] source does), and nano-ros phase-582 W3
-  # (sntp_resync_interval_ms) is what replaces it.
   if(ASI_COMMON_ENTRY_HOOK)
     target_sources(app PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/board_network_hook.cpp")
@@ -129,17 +125,4 @@ if(_asi_zephyr)
     target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/tracing/include)
   endif()
   target_link_libraries(app PRIVATE asi_common)
-elseif(_asi_newlib_cross)
-  # No wall clock on bare-metal FreeRTOS: nano-ros reports none and newlib's
-  # _gettimeofday answers garbage, so every stamped command would be garbage.
-  # This supplies one (SNTP epoch + the monotonic platform clock). The POSIX
-  # simulator has the host clock.
-  add_library(asi_common_freertos STATIC src/platform/freertos/wall_clock.cpp)
-  target_link_libraries(asi_common_freertos PUBLIC asi_common)
-  # FreeRTOS and lwIP headers: the board's, carried by the nano-ros runtime
-  # a C++ component links.
-  nros_link_runtime_umbrella(asi_common_freertos PUBLIC CANDIDATES NanoRos::NanoRosCpp)
-  target_compile_features(asi_common_freertos PUBLIC cxx_std_17)
-  target_link_libraries(asi_common INTERFACE asi_common_freertos)
-  target_compile_definitions(asi_common INTERFACE ASI_FREERTOS_WALL_CLOCK=1)
 endif()

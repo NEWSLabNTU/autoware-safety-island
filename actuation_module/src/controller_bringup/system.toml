@@ -176,6 +176,22 @@ knobs.executor.subscription_buffer_bytes = 16384
 #     host name fails every attempt at once (rc -22, measured). NOTE: on Zephyr `platform` always answers,
 #     so a fallback list that ends in it never halts; a `halt` image names
 #     sntp alone.
+# No image re-queries the server (clock.sntp_resync_interval_ms stays at its
+# default 0, one exchange at boot), so the stamp clock advances on the
+# monotonic clock after it latches:
+#   - FVP images: nano-ros paces the re-query with k_msleep, guest time, and
+#     the model races an idle guest (measured ~10x to ~100x real). The
+#     island's own re-sync thread, paced the same way, ran 6184 re-syncs in
+#     nine real minutes and starved the boot; the tap images ran it off.
+#   - s32z: silicon drift is ppm-level, so the boot epoch is good for the
+#     length of a drive, and the image is link-only: a re-sync thread there
+#     (nano-ros's runs on a fixed 2048-byte stack; the island's own one,
+#     around the same sntp_simple call, measured 7024 bytes on the FVP)
+#     cannot be checked on it.
+# clock.upgrade stays `never` (the default): it decides whether a source
+# EARLIER in clock.source may replace the latched one after boot. The tap and
+# s32z images name one source; on the user-mode FVP images nothing re-queries
+# sntp after boot, so a latched `platform` has nothing to upgrade to.
 
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]

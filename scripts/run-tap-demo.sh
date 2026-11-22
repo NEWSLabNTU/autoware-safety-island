@@ -51,8 +51,9 @@ select_lane() {
     ISLAND_LOG="${LOG_DIR}/tap-demo-an536.log"
     ISLAND_PID_FILE="${LOG_DIR}/tap-demo-an536.pid"
     TAP_IF="tap1"
-    # Must match ASI_SNTP_SERVER_IP/PORT baked into the image
-    # (src/platform/freertos/wall_clock.cpp) — the image's gateway.
+    # The image's gateway. The an536 image takes no SNTP since phase-15 P5
+    # (nano-ros has no FreeRTOS wall-clock source yet; its stamps are
+    # boot-relative), so the responder started here goes unused by it.
     TAP_HOST_IP="192.0.3.1"
     SNTP_PORT="12123"
     # docker-compose.posix.yaml is misnamed for this use — what it actually

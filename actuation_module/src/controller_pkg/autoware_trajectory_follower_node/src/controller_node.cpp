@@ -39,12 +39,6 @@ using namespace common::logger;
 #include <utility>
 #include <vector>
 
-#if defined(ASI_FREERTOS_WALL_CLOCK)
-// src/asi_common/src/platform/freertos/wall_clock.cpp -- only linked on the bare-metal
-// FreeRTOS lanes, which are the ones with no wall clock to stamp with.
-extern "C" void asi_start_wall_clock_sync(void);
-#endif
-
 namespace autoware::motion::control::trajectory_follower_node
 {
 // RFC-0044 construct-with-handle ctor. The entry hands the executor-bound
@@ -56,16 +50,6 @@ Controller::Controller(rclcpp::NodeHandle handle)
 : rclcpp::Node(handle, controller_pkg::node_identity::DEFAULT_NODE_NAME),
   startup_config_(startupConfigFromParameters())
 {
-#if defined(ASI_FREERTOS_WALL_CLOCK)
-  // Bare-metal FreeRTOS has no wall clock, so every command we stamp would be
-  // garbage and no ROS peer would accept it. Start the SNTP epoch sync here:
-  // the board has brought the netif up before the app runs, and the generated
-  // entry uses `run_tiers`, which -- unlike `run_components` -- never calls the
-  // `nros_board_network_wait()` hook the Zephyr lane syncs from.
-  // Detail: src/asi_common/src/platform/freertos/wall_clock.cpp.
-  asi_start_wall_clock_sync();
-#endif
-
   const StartupConfig & config = startup_config_;
   if (config.build_default) {
     log_info("Safety Island startup: build default (supervision_mode/trajectory_source unset)");
@@ -815,6 +799,22 @@ void Controller::callbackTimerControl()
   // late or steps can neither fire nor mask it). Stamps are taken where they
   // are written (Clock::now()).
   const double now = Clock::steady_now();
+
+  // Which clock the stamps carry, said once, at the first cycle: on Zephyr
+  // the wall-clock source resolves after construction and before the first
+  // spin, so this is the earliest point the answer is final. Whole seconds
+  // only: the bare-metal newlib printf may lack floating point.
+  if (this_cycle == 1) {
+    const nros_wall_clock_state_t wall = rclcpp::Clock::wall_clock_state();
+    const double stamp_s = Clock::now();
+    log_info(
+      "Stamp clock: %s (%lu s); nano-ros wall clock %s, source %u, steps %lu",
+      stamp_s > 1.0e9 ? "absolute" : "boot-relative",
+      static_cast<unsigned long>(stamp_s),
+      wall.synced ? "synced" : "unsynced",
+      static_cast<unsigned>(wall.source),
+      static_cast<unsigned long>(wall.steps));
+  }
 
   // 1. Supervision: selected-source + feedback arrival checks. This runs
   // before anything else and is independent of controller readiness — a
