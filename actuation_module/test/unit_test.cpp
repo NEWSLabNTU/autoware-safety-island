@@ -20,6 +20,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <unistd.h>  // sleep
+
 #include "common/clock/clock.hpp"
 #include "common/logger/logger.hpp"
 #include "autoware/autoware_msgs/messages.hpp"

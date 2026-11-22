@@ -171,7 +171,9 @@ knobs.executor.subscription_buffer_bytes = 16384
 #     back to `platform` (no wall clock on Zephyr: stamps boot-relative, the
 #     default `unstamped` policy). The lane's network is the host's, so a
 #     time server is not something it can promise; `halt` there would make
-#     CI depend on the internet. NOTE: on Zephyr `platform` always answers,
+#     CI depend on the internet. The server is an address (time.google.com's
+#     216.239.35.0): the model's DHCP hands the guest no DNS server, so a
+#     host name fails every attempt at once (rc -22, measured). NOTE: on Zephyr `platform` always answers,
 #     so a fallback list that ends in it never halts; a `halt` image names
 #     sntp alone.
 
@@ -185,7 +187,7 @@ os_config = [
 ]
 knobs.memory.heap_bytes = 8388608
 knobs.clock.source = "sntp,platform"
-knobs.sntp.server = "time.google.com"
+knobs.sntp.server = "216.239.35.0"
 
 # Layer 1 of the real-time evaluation (documentation/design/rt_evaluation_zephyr.rst):
 # thread runtime statistics, no CTF (build.sh --trace-stats).
@@ -199,7 +201,7 @@ os_config = [
 ]
 knobs.memory.heap_bytes = 8388608
 knobs.clock.source = "sntp,platform"
-knobs.sntp.server = "time.google.com"
+knobs.sntp.server = "216.239.35.0"
 
 # CTF tracing streamed to uart1, plus the Layer 1 statistics (build.sh --trace).
 [image.fvp-trace]
@@ -214,7 +216,7 @@ os_config = [
 ]
 knobs.memory.heap_bytes = 8388608
 knobs.clock.source = "sntp,platform"
-knobs.sntp.server = "time.google.com"
+knobs.sntp.server = "216.239.35.0"
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # CTF into an overwrite-oldest RAM ring (build.sh --trace-ring). The ring
@@ -232,7 +234,7 @@ os_config = [
 ]
 knobs.memory.heap_bytes = 8388608
 knobs.clock.source = "sntp,platform"
-knobs.sntp.server = "time.google.com"
+knobs.sntp.server = "216.239.35.0"
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
 # The four tap images are one host built four ways, never booted together:
