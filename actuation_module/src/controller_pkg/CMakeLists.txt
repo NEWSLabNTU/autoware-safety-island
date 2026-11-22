@@ -75,20 +75,6 @@ if(DEFINED ENV{ASI_RX_COUNTERS} OR ASI_RX_COUNTERS)
 endif()
 target_compile_features(controller_lib PUBLIC cxx_std_17)
 
-# --- linux: the native carrier ---------------------------------------------
-# On the `linux` board (the census's host image) the registration also builds
-# a native carrier program, `controller_pkg__controller`, from controller_lib's
-# SOURCES but without its usage requirements: it sees only include/ and src/
-# of this package. State them on it. (nano-ros: the native carrier of an
-# EXISTING_TARGET registration does not inherit the library's include
-# directories or links.)
-if(TARGET controller_pkg__controller)
-  target_include_directories(controller_pkg__controller PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/autoware_trajectory_follower_node/include")
-  target_link_libraries(controller_pkg__controller PRIVATE ${_AUTOWARE_DEPS} asi_common)
-  target_compile_features(controller_pkg__controller PRIVATE cxx_std_17)
-endif()
-
 # --- Zephyr: the generated entry is compiled into `app` ----------------------
 # nano_ros_entry() appends a generated main TU to `app` that includes the
 # component HEADER and constructs the Controller, so `app` needs the same
