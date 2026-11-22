@@ -5,10 +5,10 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main dc97616723 (2026-11-22)
-and the CLI is built from source; there P4 is done too, P6 for the FVP
-images, P8 in part (the census is on; `PLATFORM_*` waits on P5-P7; P7 waits
-on a nano-ros link-order bug), and the P9 `fabsl` and
+On branch `nano-ros-next` nano-ros is pinned at main 118cfd3f09 (2026-11-22)
+and the CLI is built from source; there P4 and P7 are done too, P6 for the
+FVP images, P8 in part (the census is on; `PLATFORM_*` waits on P5, P6 and
+the threading headers), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -70,7 +70,27 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main dc97616723 (2026-11-22). Over ee02c58931 it adds PR 4577
+nano-ros main 118cfd3f09 (2026-11-22). Over dc97616723 it adds PR 4588
+(issue 2822: the CAN backend archive, `nros_can_census_mock` or
+`nros_can_socketcan`, goes on each component archive's link interface, so a
+component that calls the platform CAN driver links in a census host build,
+a metadata probe and a host image with a CAN device; see P7), 4582 (issue
+2817: the native carrier of an `EXISTING_TARGET` registration links its
+library and takes its usage requirements, instead of compiling its sources
+again bare; see P8), 4565 (issue 2811: `s32z270-rtu0-zephyr` reads Builds,
+and `nros build` finds an image's `boards/<board>/` fragments for a board id
+that carries a revision; the island has no `boards/` fragment dir, so nothing
+moves), 4589 (issue 2820: no Cyclone service path puts a 64 KiB buffer on the
+stack) and 4530 (phase-569 W7a: `nros image list` and `nros image show`).
+Cyclone is unchanged (`nros-sdk.lock` as it was). No consumer-facing rename
+in the range; the bump alone (cca06ff) changes only `west.yml` and the
+`modules/nros` pointer. CI run 44970533489 (3784ddc: the bump, P7 and the
+carrier workaround's removal) is green on all three lanes: Zephyr FVP 39 min
+(the controller "Actuation Safety Island is Live", the CAN loopback test
+and the tap build smoke pass, every census taken fresh, none "could not be
+taken"), FreeRTOS POSIX 19, FreeRTOS AN536 20.
+
+Before that, nano-ros main dc97616723 (2026-11-22). Over ee02c58931 it adds PR 4577
 (issues 2787, 2788: the metadata probe links the census CAN mock through
 `nros_link_can_census_mock`, and every non-host, non-Zephyr board gets
 fail-loud weak CAN defaults from one place, so the AN536 links with the CAN
@@ -424,8 +444,8 @@ What remains of P9 and P11 after this:
   (4006); the Zephyr patches and trace marker (4008, 4009). FVP model
   parameters come from the board and image rows (4007, see below), except
   for the test programs, which are no image.
-- P7 (CAN behind one interface) still waits on the board-owned CAN frame
-  driver (4012).
+- P7 (CAN behind one interface) is done on nano-ros-next (pin 118cfd3f09)
+  over the board-owned CAN frame driver (4012).
 
 ## Steps
 
@@ -768,9 +788,8 @@ What remains of P9 and P11 after this:
   and let a separate CAN gateway own the bus.
 - Done when: no `#if` backend chain, vcan roundtrip CI and the FVP tap
   tunnel pass, all lanes green.
-- Status on nano-ros-next (pin dc97616723): ready, not landed; blocked on
-  a nano-ros link-order bug. The change is commit 342ba67 on branch
-  `nros-next-p7` (over the pin bump):
+- Status on nano-ros-next (pin 118cfd3f09): done, commit b2c81f0 (the
+  draft 342ba67 replayed over P6 and the bump; tree as 9a4794c):
   - `platform/platform_can.h` and its five backends (`zephyr_can.h`,
     `zephyr_can_udp_tunnel.h`, `freertos_can_socketcan.h`,
     `freertos_can_mock.h`, `freertos_can_stub.h`, `freertos_can.h`) go;
@@ -787,8 +806,12 @@ What remains of P9 and P11 after this:
     `asi_common/src/zephyr/can_udp_tunnel_driver.cpp` (same datagram bytes).
   - `SAFETY_ISLAND_CAN_FORMAT` becomes the launch arg `can_format`
     (classic | fd), a controller parameter declared in every mode.
-  - CI run 44951633475 (9a4794c, P7 + P6 over the pin): red on all three
-    lanes at the controller's census. The host image `controller_bringup:linux`
+  - CI run 44970533489 (3784ddc, over pin 118cfd3f09): green on all three
+    lanes (see "Pin on nano-ros-next"). The CAN code has no `PLATFORM_*`
+    left: `can_platform.hpp`, the tunnel driver and `controller_node.cpp`
+    test only `CONFIG_CONTROL_CMD_CAN_*` and nano-ros's own macros.
+  - Earlier, CI run 44951633475 (9a4794c, P7 + P6 over pin dc97616723): red
+    on all three lanes at the controller's census. The host image `controller_bringup:linux`
     (`NROS_LEAF_CENSUS_HOST=1`) fails to link `linux_entry`: "undefined
     reference to `nros_platform_can_open`" (and `_close`, `_send`,
     `_fd_active`) from `libcontroller_lib.a(controller_node.cpp.o)`.
@@ -801,9 +824,12 @@ What remains of P9 and P11 after this:
     test (`tests/can-census-mock-tests.sh`) calls the driver from the entry's
     own source, so it does not see it. The `nros_can_socketcan` archive the
     freertos-posix image links goes the same way. A nano-ros issue is
-    drafted (not yet filed); the island does not work around it (that would
-    name nano-ros's internal targets).
-  - What the vcan roundtrip and the FVP tap tunnel need, which no CI lane
+    filed as nano-ros issue 2822 and fixed by PR 4588 (118cfd3f09); the
+    island never worked around it.
+  - Not in CI: the "vcan roundtrip CI and the FVP tap tunnel pass" part of
+    Done when. Neither has a CI lane, and none is added: both need
+    `CAP_NET_ADMIN`, `/dev/net/tun` and the `vcan` module on the runner,
+    which are not approved. What they need, which no CI lane
     has: the vcan roundtrip (`.github/scripts/run-freertos-vcan-ci.sh`) needs
     the `vcan` kernel module on the runner and `CAP_NET_ADMIN` over a vcan0
     (it falls back to an unprivileged user + network namespace, `unshare
@@ -850,9 +876,12 @@ What remains of P9 and P11 after this:
     its configured value). `check-param-seeds.py` no longer checks the store
     size.
   - On the `linux` board the component registration also builds a native
-    carrier (`controller_pkg__controller`, nano-ros PR 4505) from
-    `controller_lib`'s sources without its include directories or links;
-    `controller_pkg/CMakeLists.txt` states them on it.
+    carrier (`controller_pkg__controller`, nano-ros PR 4505). Up to pin
+    dc97616723 it compiled `controller_lib`'s sources without its include
+    directories or links, and `controller_pkg/CMakeLists.txt` stated them on
+    it (34ab106). nano-ros PR 4582 (issue 2817, pin 118cfd3f09) links the
+    library instead, so 3784ddc drops that block; CI run 44970533489 builds
+    the carrier without it.
   - Checks: local POSIX lane exit 0 (parameter store 150 slots, unit and
     loopback tests pass); `nros build` of `controller_bringup:an536`,
     `unit_test_bringup:mps3-an536-freertos` and `controller_bringup:fvp`
@@ -860,12 +889,16 @@ What remains of P9 and P11 after this:
     all three lanes: every lane takes the controller's census (and the CARLA
     variant's on POSIX and FVP) and the test programs', none warns that a
     census could not be taken, and the FVP controller is Live.
-  - Not removed (pin dc97616723): the `asi_common` platform detection and
-    the `CONFIG_*` mirror. The `PLATFORM_*` removal is still not possible:
-    P7 waits on the link-order bug (the CAN chain is still `PLATFORM_*`), and
-    `platform_clock.h` (P5), `platform_network.h` (the S32Z's
-    `network_config.cpp`, P6) and `platform_threading.h` still dispatch on
-    it. Even with P7 in, the clock and threading headers keep the switch.
+  - Not removed (pin 118cfd3f09): the `asi_common` platform detection and
+    the `CONFIG_*` mirror. For CAN the removal is now possible: with P7 in,
+    no CAN header or source tests `PLATFORM_*`. The removal as a whole is
+    still not possible: `platform_clock.h` (P5, and `clock_resync.cpp`),
+    `platform_network.h` (the S32Z's `network_config.cpp`, P6),
+    `platform_threading.h` and `platform_config.h` still dispatch on it,
+    and `asi_common/CMakeLists.txt` still defines `PLATFORM_ZEPHYR` /
+    `PLATFORM_FREERTOS` for them.
+    Earlier (pin dc97616723): P7 waited on the link-order bug (the CAN chain
+    was still `PLATFORM_*`).
     Earlier: the `asi_common` platform detection and the `CONFIG_*`
     mirror. Twenty `include/platform/*` headers still dispatch on
     `PLATFORM_*` (clock P5, network P6, CAN P7, threading), so they go with
