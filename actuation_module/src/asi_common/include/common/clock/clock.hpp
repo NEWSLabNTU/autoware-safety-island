@@ -47,7 +47,11 @@ public:
      * run when no source answered) nano-ros reads 0, and this answers the
      * time since boot instead, so the follower's intervals keep advancing and
      * the stamps are boot-relative, as they were on every image without SNTP.
-
+     *
+     * The platform test stays while the FreeRTOS POSIX simulator's nano-ros
+     * wall clock reads 0 (its port has no source, while glibc has the host's
+     * clock); once it answers, every target can read RCL_SYSTEM_TIME.
+     *
      * Not for ages and timeouts: a source that answers later may step it.
      * Use steady_now() for those.
      *
