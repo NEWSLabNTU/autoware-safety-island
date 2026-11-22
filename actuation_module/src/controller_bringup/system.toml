@@ -201,18 +201,25 @@ knobs.executor.subscription_buffer_bytes = 16384
 # never answers) and nano-ros has no SNTP client on lwIP, so these images
 # take `board`: nano-ros's board hook over the island's SNTP task
 # (asi_common/src/platform/freertos/board_wall_clock.cpp), which queries the
-# image's gateway on port 12123 (scripts/sntp-server.py). nano-ros resolves it
-# on the first wall-clock read, which waits for the answer, so no entity is
-# created on one clock and run on another. Both images state:
-#   - fallback_settle_ms = 6000: the old island task's bounded boot wait (60
-#     x 100 ms), room for two of its 2 s queries after a lost first one; a
-#     reachable responder answers the first query in well under a second.
-#   - epoch_failure = "unstamped" (the default, stated): the old task's
+# image's gateway on port 12123 (scripts/sntp-server.py). Both images state:
+#   - epoch_failure = "unstamped" (the default, stated): the old island task's
 #     failure policy. When no epoch came it logged and booted on, stamping
 #     boot-relative (Clock::now() still does: nano-ros reads 0 and it falls
-#     back to the monotonic clock). The AN536 CI lane serves the responder on
-#     its user network's gateway; the s32z2 image is link-only, and its
-#     server is the deployment's to state (ASI_SNTP_SERVER_IP).
+#     back to the monotonic clock).
+#   - fallback_settle_ms = 0, for now: `board` cannot answer yet. nano-ros
+#     resolves it on the FIRST wall-clock read from a task, and that read is
+#     Cyclone's static constructor (ddsrt_ctor -> ddsrt_random_init ->
+#     dds_time), which the board's app task runs before it brings the network
+#     up. The window then stalls that task, so no SNTP exchange can happen in
+#     it; it runs out, `unstamped` applies, and the board is never asked
+#     again. Measured on the AN536 (CI run 45062069569, window 6000): the
+#     responder answered right after "Network ready", which came 6 s late,
+#     and the first control cycle stamped boot-relative with source 3
+#     (board) unsynced; the verdict line was lost (the board's log writer is
+#     registered after the constructors). 0 asks once and costs no boot
+#     time. Once nano-ros resolves after the network is up, the window goes
+#     to 6000 (the old task's bounded boot wait, 60 x 100 ms, room for two of
+#     its 2 s queries).
 # `board` is asked only until it answers, so these images do not re-sync
 # either; their epoch advances on the monotonic clock, like the Zephyr ones.
 
@@ -440,7 +447,7 @@ profile = "RelWithDebInfo"
 knobs.executor.subscription_buffer_bytes = 65536
 # The wall clock: see the clock notes above [image.fvp].
 knobs.clock.source = "board"
-knobs.clock.fallback_settle_ms = 6000
+knobs.clock.fallback_settle_ms = 0
 knobs.clock.epoch_failure = "unstamped"
 
 # phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
@@ -463,5 +470,5 @@ profile   = "RelWithDebInfo"
 knobs.executor.subscription_buffer_bytes = 65536
 # The wall clock: see the clock notes above [image.fvp].
 knobs.clock.source = "board"
-knobs.clock.fallback_settle_ms = 6000
+knobs.clock.fallback_settle_ms = 0
 knobs.clock.epoch_failure = "unstamped"
