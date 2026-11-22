@@ -7,8 +7,11 @@ main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main 4406b7f4e5 (2026-11-22)
 and the CLI is built from source; there P4 and P7 are done too, P5 for the
-Zephyr images, P6 for the FVP images, P8 in part (the census is on;
-`PLATFORM_*` waits on P5's FreeRTOS half, P6 and the threading headers), and the P9 `fabsl` and
+Zephyr images, P6 for the FVP images, P8 in part (the census is on; the
+threading and config dispatch is gone; `PLATFORM_*` waits on P5's FreeRTOS
+half and P6), P10 in part (every lane runs the controller and the unit and
+loopback tests on `nros run`; the FVP CAN and statistics phases remain),
+and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -956,7 +959,34 @@ What remains of P9 and P11 after this:
     all three lanes: every lane takes the controller's census (and the CARLA
     variant's on POSIX and FVP) and the test programs', none warns that a
     census could not be taken, and the FVP controller is Live.
-  - Not removed (pin 118cfd3f09): the `asi_common` platform detection and
+  - Threading and config dispatch removed (pin 4406b7f4e5, no pin move;
+    f72d7bc, with 769c095's zephyr_app shim; CI run 45057376732 on f72d7bc
+    alone stopped at the FVP lane's old zephyr_app unit test build, `int
+    main(int, char**)` against Zephyr's `main(void)`, fixed by 769c095;
+    CI run 45061252458 green): `platform_threading.h` had no includer (the one
+    `K_THREAD_STACK_DEFINE` user, the Zephyr-only `clock_resync.cpp`, takes
+    Zephyr's own and is not built), so it and both backends are deleted.
+    `platform_config.h` served one macro, the logger's `CONFIG_LOG_LEVEL`:
+    on Zephyr it is asi_common's Kconfig symbol, elsewhere `logger.hpp`
+    defaults it to that symbol's default (1). The FreeRTOS `CONFIG_*`
+    mirror header (`freertos_config_generated.h.in`, its `configure_file`
+    and include directories) went with it; its `CONFIG_ENABLE_SNTP` and
+    `CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX` had no built reader. The unit and
+    loopback test sources no longer test `PLATFORM_ZEPHYR` (a DHCP sleep the
+    board network file's `NET_CONFIG_NEED_IPV4` already covers) or
+    `__ZEPHYR__` (`main(void)`): `main` is the hosted signature on every
+    board (ROS2_MAIN on the images; test/zephyr_app renames it for the
+    statistics build).
+  - Still defines `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS`
+    (`asi_common/CMakeLists.txt`, from `TARGET zephyr_interface`): its
+    readers are the clock (`common/clock/clock.hpp`,
+    `platform/platform_clock.h`, `src/common/clock/clock_resync.cpp`; P5's
+    FreeRTOS half, held with the pin) and the S32Z interface set-up
+    (`platform/platform_network.h`, `src/common/net/network_config.cpp`;
+    P6). The same detection also picks the Zephyr support sources (network
+    hook, CAN UDP tunnel, diagnostics) and the newlib pthread shim, which
+    are build facts, not dispatch.
+  - Earlier, not removed (pin 118cfd3f09): the `asi_common` platform detection and
     the `CONFIG_*` mirror. For CAN the removal is now possible: with P7 in,
     no CAN header or source tests `PLATFORM_*`. The removal as a whole is
     still not possible: `platform_clock.h` (P5's FreeRTOS half),
@@ -1061,7 +1091,10 @@ What remains of P9 and P11 after this:
   lanes.
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
-- Status on nano-ros-next (branch `nros-next-p10`, pin 93368ca929): the
+- Status on nano-ros-next (pin 4406b7f4e5): the FVP lane's controller,
+  unit and loopback phases are on `nros run` too (below); its CAN and
+  statistics phases are not.
+- Earlier status (branch `nros-next-p10`, pin 93368ca929): the
   FreeRTOS POSIX and AN536 lanes are done; the FVP lanes are unchanged
   (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test` and
   `test/zephyr_app`). 4007 is fixed at pin 1866c0594f and the controller
@@ -1109,7 +1142,67 @@ What remains of P9 and P11 after this:
     describe_parameters: Transport(Backend("rmw_ret error"))" after "is
     Live". The POSIX image creates them. Fixed at pin 011a9c4c5b (nano-ros
     issue 2755, see "Pin on nano-ros-next").
-  - Not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
+  - FVP lane on `nros run` (pin 4406b7f4e5, no pin move; de4746a, 74ce75e, 769c095; CI run 45061252458 green on all three lanes:
+    Zephyr FVP 33 min (`nros run` matched the controller in 4.7 s, Live;
+    unit test 4.2 s; loopback 4.4 s; the CAN, tap and statistics phases
+    pass), FreeRTOS AN536 19, FreeRTOS POSIX 17): the
+    controller (`controller_bringup:fvp`), the unit test and the DDS
+    loopback test are `nros build <image>` then `nros run <image> --expect
+    <line>... --timeout 200`; nothing in those phases starts the model or
+    greps its output. The test programs are
+    `unit_test_bringup:fvp-aemv8r-smp` and
+    `dds_loopback_test_bringup:fvp-aemv8r-smp`. On Zephyr an owned entry
+    is the west application itself, so each has a Zephyr entry package over
+    the same source, `src/asi_tests/asi_<program>_zephyr` (`find_package(Zephyr)`,
+    `nano_ros_add_executable(... ROS2_MAIN)`); the FreeRTOS images keep
+    `asi_<program>`. Their Kconfig is the controller FVP image's fragments
+    and board network file (`os_config`, resolved from the west
+    application's directory). The model parameters are the board's
+    (`[board.run.fvp]`, issue 4007); `nros run` runs the build dir's
+    `run_armfvp`. Workarounds the entry packages carry, each a nano-ros
+    gap (drafted issues in the report of this change): they state
+    `BOARD zephyr DEPLOY ${NROS_IMAGE}` (an owned west entry gets no
+    `NROS_DEPLOY`), append asi_common to the cached `ZEPHYR_EXTRA_MODULES`
+    (a generated application gets its workspace modules, an owned one does
+    not) and set `NROS_INTERFACE_SEARCH_PATH` for the workspace messages;
+    the images are not census-sized (nano-ros reports the nested bringup's
+    model as unresolved and keeps the configured defaults, which the tests
+    fit). The lane exports `NROS_ZEPHYR_WORKSPACE`: `nros run` rebuilds a
+    stale image and takes no `--zephyr-workspace`.
+    `build.sh --unit-test` on Zephyr now points at the image; `test/zephyr_app`
+    keeps `--dds-loopback-test` for the statistics and trace builds.
+    Local runs (2026-11-23): unit test passed at 5.4 s, loopback at 3.3 s,
+    controller matched every line at 3.7 s.
+  - Remaining for the FVP lane: phase 4 (the CAN loopback test, a
+    Zephyr-only program on the `zephyr,can-loopback` device) and phase 6
+    (the statistics build of the loopback test, whose assertion reads the
+    whole thread-analyzer report: `require_stack_headroom`) still build
+    with `build.sh` / `test/zephyr_app`, run through `run_fvp_variant` and
+    grep the console. `nros run --expect` stops on the line that completes
+    the set, so it cannot wait for the rest of a report or assert that a
+    fatal error never printed (drafted nano-ros issue: `--forbid` and a
+    settle window). The CAN test could become an image too; not done here.
+    The tap build smoke (phase 5) is a `build.sh` build with no output to
+    grade.
+  - `ament-env.sh` is gone: the lanes source the devcontainer's Autoware
+    `setup.bash` (`ci-helpers.sh` `source_ament_env`, and release.yml's
+    S32Z step), and `build.sh` asks for a sourced environment (one line in
+    CLAUDE.md and its error message). Before, it composed prefixes for
+    other layouts; a host without `/opt/autoware` now sources its own.
+  - `bootstrap-asi.sh` provisions with `nros setup --workspace .` (every
+    image's board and RMW: the Zephyr SDK, arm-none-eabi-gcc, QEMU, the
+    FreeRTOS kernel, lwIP, Cyclone DDS; checked with `--check` here, not
+    run on this host) and ends with `nros doctor --config
+    src/controller_bringup` (run here: every controller image OK, the FVP
+    reported user-provided). It writes the store's SDK
+    (`nros sdk-path zephyr-sdk`) into `activate-asi.sh`. Kept as its own:
+    the system packages west and Zephyr need, foreign-owned paths, rustup
+    and the armv8r target, `git submodule` + `west init/update`, Zephyr's
+    python requirements, `nros setup board fvp-aemv8r-smp` (patches), this
+    repo's Zephyr patches, `activate-asi.sh`. The FVP stays provisioned as
+    before (`ensure_fvp_available`, the devcontainer image): nothing
+    depends on nano-ros issue 2802's behaviour.
+  - Earlier, not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
     `ament-env.sh` to a doc line.
 
 ### P11. Pins and boards - M-L, parallel with P4-P10
