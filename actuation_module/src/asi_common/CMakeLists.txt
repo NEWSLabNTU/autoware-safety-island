@@ -11,8 +11,11 @@
 #                newlib pthread shim on arm-none-eabi, and the support sources
 #                of each platform
 #                (Zephyr: network bring-up, the entry's network
-#                hook, the Kconfig-gated diagnostics). The wall clock is
-#                nano-ros's on every platform (phase-15 P5).
+#                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS:
+#                the board wall-clock hook). The wall clock is nano-ros's on
+#                every platform (phase-15 P5); on bare-metal FreeRTOS its
+#                source is the island's SNTP task behind nano-ros's `board`
+#                hook.
 #
 # Eigen is the `eigen` package's (src/eigen), not this one's.
 #
@@ -46,11 +49,10 @@ target_include_directories(asi_common INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # PLATFORM_ZEPHYR / PLATFORM_FREERTOS: what is left of the platform dispatch.
-# Its readers are the clock (common/clock/clock.hpp, platform/platform_clock.h,
-# src/common/clock/clock_resync.cpp; phase-15 P5's FreeRTOS half) and the
-# S32Z's interface set-up (platform/platform_network.h,
-# src/common/net/network_config.cpp; P6). Nothing else tests it: the logger's
-# level is its Kconfig symbol or that symbol's default (logger.hpp).
+# Its one reader is the S32Z's interface set-up (platform/platform_network.h,
+# src/common/net/network_config.cpp; P6). Nothing else tests it: the clock is
+# nano-ros's on every target (phase-15 P5), and the logger's level is its
+# Kconfig symbol or that symbol's default (logger.hpp).
 if(_asi_zephyr)
   target_compile_definitions(asi_common INTERFACE PLATFORM_ZEPHYR=1)
 else()
@@ -125,4 +127,20 @@ if(_asi_zephyr)
     target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/tracing/include)
   endif()
   target_link_libraries(app PRIVATE asi_common)
+elseif(_asi_newlib_cross)
+  # nano-ros's `board` wall-clock hook (nros_board_wall_clock_ns), which the
+  # bare-metal images' [knobs.clock] source = "board" asks for: the island's
+  # SNTP task over lwIP. nano-ros ships no default, and the one reference is
+  # in a nano-ros archive, so the hook must be an object of the image
+  # (RFC-0141 D2's link rule): an object library whose objects ride
+  # asi_common's interface onto every executable linking it. An image that
+  # does not select `board` (the test programs) never calls it.
+  add_library(asi_common_board_clock OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/freertos/board_wall_clock.cpp")
+  # FreeRTOS and lwIP headers: the board's, carried by the nano-ros runtime a
+  # C++ component links.
+  nros_link_runtime_umbrella(asi_common_board_clock PRIVATE CANDIDATES NanoRos::NanoRosCpp)
+  target_compile_features(asi_common_board_clock PRIVATE cxx_std_17)
+  target_link_libraries(asi_common INTERFACE $<TARGET_OBJECTS:asi_common_board_clock>)
+  add_dependencies(asi_common asi_common_board_clock)
 endif()

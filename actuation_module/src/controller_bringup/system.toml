@@ -152,11 +152,15 @@ knobs.params.max_array_len = 32
 # its configured value. The two ARMv8-R FreeRTOS images take 64 KiB.
 knobs.executor.subscription_buffer_bytes = 16384
 
-# The Zephyr images' wall clock (phase-15 P5). nano-ros resolves the
-# image's [knobs.clock] source once at boot, after the controller has
-# registered and before anything spins; the island no longer runs SNTP
-# itself. Every outgoing stamp reads it (common/clock/clock.hpp); input ages
-# and timeouts read the monotonic clock instead. Per network:
+# The wall clock (phase-15 P5). nano-ros resolves the image's [knobs.clock]
+# source once and keeps it as an offset from the monotonic clock. Every
+# outgoing stamp reads it (common/clock/clock.hpp); input ages and timeouts
+# read the monotonic clock instead. Images that state no source take
+# `platform`: the host's clock on the FreeRTOS POSIX simulator and the
+# census's linux images.
+#
+# Zephyr resolves at boot, after the controller has registered and before
+# anything spins; the island runs no SNTP of its own there. Per network:
 #   - tap images (the demo stack): SNTP from scripts/sntp-server.py on the
 #     tap host, and `halt` when it never answers, as the island's network
 #     hook did (std::exit(1)): every command carries this clock, and
@@ -192,6 +196,25 @@ knobs.executor.subscription_buffer_bytes = 16384
 # EARLIER in clock.source may replace the latched one after boot. The tap and
 # s32z images name one source; on the user-mode FVP images nothing re-queries
 # sntp after boot, so a latched `platform` has nothing to upgrade to.
+#
+# Bare-metal FreeRTOS (an536, s32z2) has no clock of its own (its `platform`
+# never answers) and nano-ros has no SNTP client on lwIP, so these images
+# take `board`: nano-ros's board hook over the island's SNTP task
+# (asi_common/src/platform/freertos/board_wall_clock.cpp), which queries the
+# image's gateway on port 12123 (scripts/sntp-server.py). nano-ros resolves it
+# on the first wall-clock read, which waits for the answer, so no entity is
+# created on one clock and run on another. Both images state:
+#   - fallback_settle_ms = 6000: the old island task's bounded boot wait (60
+#     x 100 ms), room for two of its 2 s queries after a lost first one; a
+#     reachable responder answers the first query in well under a second.
+#   - epoch_failure = "unstamped" (the default, stated): the old task's
+#     failure policy. When no epoch came it logged and booted on, stamping
+#     boot-relative (Clock::now() still does: nano-ros reads 0 and it falls
+#     back to the monotonic clock). The AN536 CI lane serves the responder on
+#     its user network's gateway; the s32z2 image is link-only, and its
+#     server is the deployment's to state (ASI_SNTP_SERVER_IP).
+# `board` is asked only until it answers, so these images do not re-sync
+# either; their epoch advances on the monotonic clock, like the Zephyr ones.
 
 # The FVP image: ARM FVP Base_RevC AEMv8-R, Zephyr, user-mode networking.
 [image.fvp]
@@ -415,6 +438,10 @@ profile = "RelWithDebInfo"
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
 knobs.executor.subscription_buffer_bytes = 65536
+# The wall clock: see the clock notes above [image.fvp].
+knobs.clock.source = "board"
+knobs.clock.fallback_settle_ms = 6000
+knobs.clock.epoch_failure = "unstamped"
 
 # phase-6 A2 -- the EMULATED Cortex-R52 lane (QEMU mps3-an536, nano-ros
 # phase-385). Same CPU and kernel port as [image.s32z2] above, but nothing
@@ -434,3 +461,7 @@ profile   = "RelWithDebInfo"
 # subscription buffer drops the sample silently after Cyclone ACKed it
 # (nano-ros issue 0749).
 knobs.executor.subscription_buffer_bytes = 65536
+# The wall clock: see the clock notes above [image.fvp].
+knobs.clock.source = "board"
+knobs.clock.fallback_settle_ms = 6000
+knobs.clock.epoch_failure = "unstamped"

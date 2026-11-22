@@ -8,21 +8,20 @@
 
 #include "common/logger/logger.hpp"
 
-// nano-ros's clocks. The steady one is the port's monotonic clock on every
-// target. The wall clock is nano-ros's too (phase-15 P5):
-//   - Zephyr: the image states its source in [knobs.clock]
-//     (controller_bringup/system.toml), and nano-ros resolves it once at boot,
-//     after every component has registered and before anything spins
-//     (nano-ros phase-582, RFC-0141). Its reading is an offset from the
-//     monotonic clock kept by nano-ros; Zephyr's CLOCK_REALTIME is never set
-//     on these images.
-//   - bare-metal FreeRTOS (mps3-an536, S32Z270): newlib's gettimeofday and
-//     libstdc++'s system_clock are nano-ros's shims over
-//     nros_platform_time_now_ns (phase-582 W2), which reads 0 while no source
-//     is synced. FreeRTOS has no source to resolve yet (`platform` is "none"
-//     there; a board clock waits on phase-582 W1d), so these images stamp
-//     boot-relative.
-//   - the FreeRTOS POSIX simulator: glibc's clock, the host's.
+// nano-ros's clocks, on every target (phase-15 P5). The steady one is the
+// port's monotonic clock. The wall clock is the source the image states in
+// [knobs.clock] (controller_bringup/system.toml; nano-ros phase-582,
+// RFC-0141), resolved once by nano-ros and kept as an offset from the
+// monotonic clock:
+//   - Zephyr: sntp (the tap and s32z images), or sntp then platform (the
+//     user-mode FVP images), resolved at boot before anything spins.
+//   - bare-metal FreeRTOS (mps3-an536, S32Z270): `board`, the island's SNTP
+//     task behind nano-ros's board hook
+//     (src/platform/freertos/board_wall_clock.cpp), resolved on the first
+//     wall-clock read. newlib's gettimeofday and libstdc++'s system_clock are
+//     nano-ros's shims over the same clock.
+//   - the FreeRTOS POSIX simulator and the census's host images: `platform`,
+//     the host's CLOCK_REALTIME.
 #include <rclcpp/clock.hpp>
 using namespace common::logger;
 
@@ -39,18 +38,13 @@ public:
      * @brief The stamp clock: wall-clock time in seconds.
      *
      * What every outgoing stamp carries, and what the vendored follower's
-     * own stamp arithmetic reads. On Zephyr it is nano-ros's wall clock
-     * (`rclcpp::Clock(RCL_SYSTEM_TIME)`); elsewhere it is the C library's
-     * (`std::chrono::system_clock`), the host's on the POSIX simulator and
-     * nano-ros's shim over the same wall-clock symbol on bare-metal FreeRTOS.
-     * Before that clock is synced (before boot resolution, or for the whole
-     * run when no source answered) nano-ros reads 0, and this answers the
-     * time since boot instead, so the follower's intervals keep advancing and
-     * the stamps are boot-relative, as they were on every image without SNTP.
-     *
-     * The platform test stays while the FreeRTOS POSIX simulator's nano-ros
-     * wall clock reads 0 (its port has no source, while glibc has the host's
-     * clock); once it answers, every target can read RCL_SYSTEM_TIME.
+     * own stamp arithmetic reads: nano-ros's wall clock
+     * (`rclcpp::Clock(RCL_SYSTEM_TIME)`). Before it is synced (before
+     * resolution, or for the whole run when no source answered and
+     * clock.epoch_failure is `unstamped`) nano-ros reads 0, and this answers
+     * the time since boot instead, so the follower's intervals keep advancing
+     * and the stamps are boot-relative, as they were on every image without
+     * a time source.
      *
      * Not for ages and timeouts: a source that answers later may step it.
      * Use steady_now() for those.
@@ -58,7 +52,6 @@ public:
      * @return current wall-clock time in seconds
      */
     static double now() {
-#if defined(PLATFORM_ZEPHYR)
         if (rclcpp::Clock::wall_clock_state().synced) {
             const int64_t ns = rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds();
             if (ns > 0) {
@@ -66,14 +59,6 @@ public:
             }
         }
         return steady_now();
-#else
-        const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        if (ns > 0) {
-            return static_cast<double>(ns) * 1e-9;
-        }
-        return steady_now();
-#endif
     }
 
     /**
