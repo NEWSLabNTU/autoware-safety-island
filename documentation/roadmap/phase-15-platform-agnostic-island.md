@@ -5,10 +5,10 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 118cfd3f09 (2026-11-22)
-and the CLI is built from source; there P4 and P7 are done too, P6 for the
-FVP images, P8 in part (the census is on; `PLATFORM_*` waits on P5, P6 and
-the threading headers), and the P9 `fabsl` and
+On branch `nano-ros-next` nano-ros is pinned at main 4406b7f4e5 (2026-11-22)
+and the CLI is built from source; there P4 and P7 are done too, P5 for the
+Zephyr images, P6 for the FVP images, P8 in part (the census is on;
+`PLATFORM_*` waits on P5's FreeRTOS half, P6 and the threading headers), and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
 
@@ -70,7 +70,26 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 118cfd3f09 (2026-11-22). Over dc97616723 it adds PR 4588
+nano-ros main 4406b7f4e5 (2026-11-22). Over 118cfd3f09 it adds phase-582
+W1c-2 (the Zephyr wiring of the `[knobs.clock]` wall-clock source: resolved
+after every component has registered and before anything spins, timers
+restarted when the wait ends; see P5), issue 2738 (the Zephyr log sink
+formats into buffers it owns), 2780 (a Zephyr image prints its heap peak),
+2768 (launch seeds count in the parameter store), 2791 (single-thread zenoh
+refused), 2824 (zenoh source stamps on the wall clock), 2770 (`nros pin
+--rev`) and the Zephyr setup fixes 2764, 2804, 2821 and 2831. Cyclone is
+unchanged (`nros-sdk.lock` as it was), and no rename reaches the island: the
+bump alone (8c504f0) changes only `west.yml` and the `modules/nros`
+pointer. It is before PR 4604 (phase-582 W2, the FreeRTOS libc time shims,
+eacd7649c9), which takes the next bump with the FreeRTOS half of P5. CI run
+45014898003 (8671660: the bump and P5's Zephyr half) is green on all three
+lanes: Zephyr FVP 40 min (the controller "Actuation Safety Island is Live",
+"nros: wall clock from sntp" in 39 ms), FreeRTOS POSIX 17, FreeRTOS AN536
+18. The run before it, 45012644474 (258bc95), stopped at the unit test's
+build (`sleep` came through the removed `zephyr_clock.h`) after the
+controller phase passed.
+
+Before that, nano-ros main 118cfd3f09 (2026-11-22). Over dc97616723 it adds PR 4588
 (issue 2822: the CAN backend archive, `nros_can_census_mock` or
 `nros_can_socketcan`, goes on each component archive's link interface, so a
 component that calls the platform CAN driver links in a census host build,
@@ -681,6 +700,54 @@ What remains of P9 and P11 after this:
   4005. `clock_resync.cpp` and `wall_clock.cpp` stay until those close.
 - Done when: `zephyr_clock.h` and the hook's SNTP are gone, the CARLA run
   shows no stale-stamp rejection at `vehicle_cmd_gate`, all lanes green.
+- Status on nano-ros-next (pin 4406b7f4e5): the Zephyr half is done; the
+  CARLA run and the FreeRTOS half remain.
+  - The Zephyr images state their wall clock in `[knobs.clock]` (nano-ros
+    phase-582 W1, RFC-0141), and the island runs no SNTP of its own there.
+    `zephyr_clock.h` is gone, and so are the hook's SNTP retries and
+    `std::exit(1)`, asi_common's `ENABLE_SNTP`, `SNTP_SERVER_ADDRESS` and
+    `ASI_SNTP_RESYNC_*` symbols, `CONFIG_SNTP` in `prj-actuation.conf` (the
+    knob selects it) and the SNTP calls of the Zephyr test programs (they
+    have no knob rows and stamp boot-relative).
+  - Per image: the four tap images `source = "sntp"`, `epoch_failure =
+    "halt"`, `sntp.server = "192.168.10.1:12123"` (scripts/sntp-server.py),
+    10 attempts of `sntp.timeout_ms = 60000`: the hook's behaviour, retry
+    count and guest timeout (the FVP races an idle guest's clock, and a
+    shorter guest timeout expired before the reply). `s32z`: `sntp` with
+    `halt`, `sntp.server = "time.nist.gov"` (the old Kconfig default), 10
+    attempts; new there, since the S32Z ran no SNTP before and stamped
+    boot-relative, which `vehicle_cmd_gate` rejects; a deployment states its
+    own server. The four user-mode FVP images (CI): `sntp,platform`,
+    `unstamped` (the default), `sntp.server = "216.239.35.0"`: the lane's
+    network is the runner's, so `halt` would make CI depend on the
+    internet. The address, not a name: the model's DHCP gives the guest no
+    DNS server, and run 45012644474 showed three attempts to
+    `time.google.com` failing at once (rc -22), then "nros: wall clock from
+    platform". With the address, run 45014898003 logs "nros: wall clock
+    from sntp" and "clock resolution took 39 ms", after "Actuation Safety
+    Island is Live" (the node is constructed before the resolution).
+  - On Zephyr `platform` always answers, with no clock (stamps read 0), so
+    a list that ends in it never reaches `halt`: a `halt` image names `sntp`
+    alone (a nano-ros issue is drafted for it).
+  - Stamps: `Clock::now()` reads `rclcpp::Clock(RCL_SYSTEM_TIME)` on
+    Zephyr once `wall_clock_state().synced`, and the time since boot until
+    then, so the vendored follower's intervals keep advancing on an
+    `unstamped` image (nano-ros reads 0 there). `si_session` is taken at the
+    first ApprovedRequest, after the resolution, not in the constructor.
+  - Ages: the new `Clock::steady_now()` (`rclcpp::Clock(RCL_STEADY_TIME)`,
+    the port's monotonic clock on every target, also on bare-metal FreeRTOS
+    where newlib may answer `steady_clock` from `gettimeofday`) carries
+    every arrival note, the control cycle's staleness checks, the re-enable
+    window and the stop ramp's odometry age. `isTimeOut` stays on the stamp
+    clock: it compares the follower's stamps of this cycle.
+  - `clock_resync.cpp` stays in the tree but is not built: it stepped
+    `CLOCK_REALTIME`, which no longer feeds a stamp, and it was off
+    (interval 0) on the tap images, the one profile that ran SNTP.
+    Phase-582 W3 (`sntp_resync_interval_ms`, not on main) replaces it.
+  - Remaining: the CARLA run (no stale-stamp rejection at
+    `vehicle_cmd_gate`); W3; the FreeRTOS half (`wall_clock.cpp`,
+    `freertos_clock.h`, `platform_clock.h`, `ASI_FREERTOS_WALL_CLOCK`), with
+    the bump past PR 4604 (W2).
 
 ### P6. Network - S-M
 
@@ -892,7 +959,7 @@ What remains of P9 and P11 after this:
   - Not removed (pin 118cfd3f09): the `asi_common` platform detection and
     the `CONFIG_*` mirror. For CAN the removal is now possible: with P7 in,
     no CAN header or source tests `PLATFORM_*`. The removal as a whole is
-    still not possible: `platform_clock.h` (P5, and `clock_resync.cpp`),
+    still not possible: `platform_clock.h` (P5's FreeRTOS half),
     `platform_network.h` (the S32Z's `network_config.cpp`, P6),
     `platform_threading.h` and `platform_config.h` still dispatch on it,
     and `asi_common/CMakeLists.txt` still defines `PLATFORM_ZEPHYR` /
