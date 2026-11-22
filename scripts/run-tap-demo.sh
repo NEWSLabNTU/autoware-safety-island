@@ -53,10 +53,9 @@ select_lane() {
     TAP_IF="tap1"
     # The image's gateway. The an536 image takes its epoch from SNTP at its
     # gateway, port 12123 (nano-ros's `board` wall-clock source over the
-    # island's SNTP task, phase-15 P5), so the responder must listen on the
-    # gateway address the image was built with. It cannot latch yet (see
-    # the clock notes in controller_bringup/system.toml): its stamps are
-    # boot-relative for now.
+    # island's SNTP task, phase-15 P5), and stamps boot-relative when nothing
+    # answers within 6 s: the responder must listen on the gateway address
+    # the image was built with.
     TAP_HOST_IP="192.0.3.1"
     SNTP_PORT="12123"
     # docker-compose.posix.yaml is misnamed for this use — what it actually
