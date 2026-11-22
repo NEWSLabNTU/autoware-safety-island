@@ -45,7 +45,17 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-22: 61ce897f21, past PRs 4604 (phase-582 W2, issue
+    # ON main, 2026-11-23: 7a17fe7395, past PR 4622 (phase-582 W1d: the
+    # `board` wall-clock source and its hook, nros_board_wall_clock_ns, asked
+    # within clock.fallback_settle_ms and resolved lazily on POSIX and
+    # FreeRTOS; the bare-metal FreeRTOS images take their SNTP epoch from it,
+    # phase-15 P5; the freertos-posix board's `platform` is the host's
+    # CLOCK_REALTIME), 4625 (issue 2819: a Cyclone client holds a request
+    # only until it matches; the Cyclone source is unchanged), 4605 (every
+    # node a /parameter_events publisher), 4607, 4612, 4620, 4621 and 4624.
+    # Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-22: 61ce897f21, past PRs 4604 (phase-582 W2, issue
     # 2691: the FreeRTOS libc time shims answer from nros_platform_time_now_ns
     # and the monotonic clock; the board defines libstdc++'s steady_clock and
     # system_clock from them; the island's own bare-metal _gettimeofday goes,
@@ -220,7 +230,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 61ce897f21ff507a2b674e776f707762835bdf08
+      revision: 7a17fe7395e88da6498f627cd9fe9e78bfdee209
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
