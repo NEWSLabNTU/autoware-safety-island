@@ -542,6 +542,13 @@ What remains of P9 and P11 after this:
 nano-ros phase-478 T4: each workaround whose nano-ros fix is in the pin,
 one commit each on branch `t4-cleanups`, landed on `nano-ros-next`. Each
 fix was checked with `git merge-base --is-ancestor <fix> 7066a4c436`.
+CI run 45151249929 (ebb1924) green on all three lanes: FreeRTOS POSIX
+31 min (unit test 0.3 s, loopback 2.2 s), FreeRTOS AN536 33 min ("nros:
+wall clock from board"; unit test 3.8 s, loopback 6.0 s), Zephyr FVP 57
+min ("nros: wall clock from sntp"; unit test 6.1 s). freertos-an536
+controller text 1605928 -> 1606468 (+540: the seven markers are calls
+now, where `CONFIG_TRACING_CTF` compiled them away off Zephyr); data and
+bss unchanged.
 
 - 2d54310, controller_pkg and the seven `src/autoware/*/CMakeLists.txt`:
   the `add_subdirectory` fallbacks for `asi_common`, `eigen` and each
