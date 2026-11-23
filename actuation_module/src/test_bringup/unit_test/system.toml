@@ -27,10 +27,8 @@
 #   nros run unit_test_bringup:fvp-aemv8r-smp --expect ... --timeout N
 #
 # (the run target is the build dir's run_armfvp; the model parameters are
-# the board's). That image is not sized by a census: nano-ros derives
-# nothing for an owned west entry whose bringup is nested under src/ (it
-# reports the image's model as unresolved), so it runs on the configured
-# defaults, which the program fits.
+# the board's). That image is sized by the census of its program, as the
+# FreeRTOS images are.
 
 [system]
 name      = "unit_test_bringup"
