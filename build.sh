@@ -495,7 +495,7 @@ function build_zephyr_test() {
   # A test program is no bringup image, so it has no knob rows: the sizing
   # the controller images state in system.toml reaches it from the
   # environment, the same values (an exported value wins over a row).
-  export NROS_MAX_PARAMETERS="${NROS_MAX_PARAMETERS:-164}"
+  export NROS_PARAMS_MAX_PARAMETERS="${NROS_PARAMS_MAX_PARAMETERS:-164}"
   export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-16}"
   export NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES="${NROS_EXECUTOR_SUBSCRIPTION_BUFFER_BYTES:-16384}"
   if [ "${BUILD_PLATFORM}" = "zephyr-s32z" ]; then

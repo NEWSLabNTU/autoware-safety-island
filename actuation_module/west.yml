@@ -45,7 +45,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-23: 7066a4c436, past PR 4671 (issue 2871: an image
+    # ON main, 2026-11-23: 9c6b9aebdb, past PRs 4696 (issue 2876: `nros
+    # build` puts the workspace's src/ on an owned Zephyr west entry's
+    # NROS_INTERFACE_SEARCH_PATH) and 4698 (issue 2877: with no flag or env
+    # var, nros build and nros run take the nearest west workspace whose
+    # manifest lists zephyr, this checkout, before the store's), and
+    # phase-581 W6 (renames batch 2: NROS_PARAMS_MAX_PARAMETERS,
+    # CONFIG_NROS_PARAMS_STORE). Cyclone is unchanged. Branch nano-ros-next
+    # only.
+    #
+    # Before that, ON main, 2026-11-23: 7066a4c436, past PR 4671 (issue 2871: an image
     # whose owned entry never initialises nano-ros states
     # `[image.<id>] runs_nano_ros = false` and is sized for zero entities;
     # can_output_test_bringup uses it), 2810 and 2869 (a build refuses when a
@@ -256,7 +265,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 7066a4c436045c194e31df7b8f6f54ef668e77f8
+      revision: 9c6b9aebdb0d13c4006b7525ec12ce8bb703497b
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

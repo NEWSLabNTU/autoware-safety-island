@@ -49,7 +49,7 @@ list(APPEND ZEPHYR_EXTRA_MODULES "${_asi_ws}/src/asi_common")
 # application states them itself; the generated one gets them from the
 # bringup.
 set(CONFIG_NROS_CAPABILITY_PARAM_SERVICES y CACHE STRING "as controller_bringup" FORCE)
-set(CONFIG_NROS_PARAM_STORE y CACHE STRING "as controller_bringup" FORCE)
+set(CONFIG_NROS_PARAMS_STORE y CACHE STRING "as controller_bringup" FORCE)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(asi_zephyr_tests)
