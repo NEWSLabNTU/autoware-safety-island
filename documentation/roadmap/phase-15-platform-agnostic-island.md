@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 8d4e70a382 (2026-11-23)
+On branch `nano-ros-next` nano-ros is pinned at main 7066a4c436 (2026-11-23)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -74,7 +74,25 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 9e9deb715f (2026-11-23). Over 7a17fe7395 it adds PR 4639
+nano-ros main 7066a4c436 (2026-11-23). Over 8d4e70a382 it adds PR 4671
+(issue 2871: `[image.<id>] runs_nano_ros = false` states that an image's
+owned entry never initialises nano-ros; its configure records an empty
+census without a host build and sizes the image for zero entities).
+`can_output_test_bringup:fvp-aemv8r-smp` states it and drops
+`[census] on_missing = "warn"`, so no bringup on the branch has a
+`[census]` table. Also past it: issues 2810 and 2869 (a build refuses,
+naming the re-configure command, when a knob's environment variable or
+`NROS_CARGO_PROFILE` / `NROS_INTERFACE_SEARCH_PATH` /
+`NROS_PLATFORM_CFFI_INCLUDE` / `NROS_STACK_FLOOR` moved since its
+configure), 2815 (parameter-service registration frames), 2868 (`nros run`
+gives 3 s between SIGTERM and SIGKILL) and 2867 (Zephyr 4.4 patch scripts).
+No knob the island sets was renamed. Cyclone is unchanged, `nros-sdk.lock`
+as it was.
+
+Before that, nano-ros main 8d4e70a382 (2026-11-23), past PR 4646 (issues
+2861-2864; see P10).
+
+Before that, nano-ros main 9e9deb715f (2026-11-23). Over 7a17fe7395 it adds PR 4639
 (issue 2865: bare-metal FreeRTOS resolves the wall clock at a boot point in
 the app task, after the network is up and the log writer is registered; a
 read before it reads 0 and spends no window; see P5), 4637 (issue 2702:
@@ -1325,8 +1343,9 @@ What remains of P9 and P11 after this:
     `src/asi_tests/asi_can_output_test_zephyr`, os_config the controller's
     FVP fragments plus `test/zephyr_app`'s `can_loopback.conf` and
     `.overlay`; the program never starts nano-ros on the host, so its
-    census records nothing and the bringup states `[census] on_missing =
-    "warn"`). Phase 6 is `dds_loopback_test_bringup:fvp-aemv8r-smp-stats`
+    census records nothing; at that pin the bringup stated `[census]
+    on_missing = "warn"`, and from pin 7066a4c436 the image states
+    `runs_nano_ros = false`, nano-ros issue 2871). Phase 6 is `dds_loopback_test_bringup:fvp-aemv8r-smp-stats`
     (adds `prj-trace-stats.conf`), run with `--settle 15` so the console
     holds the whole thread-analyzer report; `require_stack_headroom` reads
     that console. `run_fvp_variant` and `build_variant` are gone. The test

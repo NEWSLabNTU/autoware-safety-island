@@ -19,13 +19,6 @@ features  = ["param_services"]
 rmw       = "cyclonedds"
 domain_id = 0
 
-# The program registers no ROS entity and never initialises nano-ros on the
-# host (its checks before the CAN send are middleware-independent, and the
-# send is Zephyr-only), so the census run exits 0 having recorded nothing:
-# there is no census to size the image by. It runs on the configured defaults.
-[census]
-on_missing = "warn"
-
 [image_defaults]
 knobs.executor.subscription_buffer_bytes = 16384
 
@@ -36,10 +29,17 @@ knobs.executor.subscription_buffer_bytes = 16384
 # controller chosen as `zephyr,canbus`. The os_config paths resolve from the
 # west application's directory (src/asi_tests/asi_can_output_test_zephyr);
 # ../../ is src/ from there.
+#
+# The program registers no ROS entity and never initialises nano-ros (its
+# checks before the CAN send are middleware-independent, and the send uses
+# the CAN frame driver alone), so `runs_nano_ros = false` states it: the
+# configure records an empty census without building the program for the
+# host, and the image is sized for zero entities (nano-ros issue 2871).
 [image.fvp-aemv8r-smp]
-board     = "fvp-aemv8r-smp"
-entry     = "asi_can_output_test_zephyr"
-os_config = [
+board         = "fvp-aemv8r-smp"
+entry         = "asi_can_output_test_zephyr"
+runs_nano_ros = false
+os_config     = [
   "../../controller_bringup/zephyr/net-fvp.toml",
   "../../controller_bringup/zephyr/prj-actuation.conf",
   "../../controller_bringup/zephyr/prj-fvp.conf",
