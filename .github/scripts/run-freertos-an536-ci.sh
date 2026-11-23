@@ -116,13 +116,20 @@ kill "${SNTP_PID}" 2>/dev/null || true
 echo "AN536 smoke OK: R52 boot + lwIP + controller markers + control-loop spin"
 
 # The test programs (actuation_module/test), each an image of its own
-# (src/test_bringup), on the same board.
+# (src/test_bringup), on the same board. Their entry is the program's own
+# package; nros run takes its executable from the build (nano-ros issue 2752).
 echo "Phase 3 - unit test on QEMU (nros run)"
-nros_run_program unit_test_bringup:mps3-an536-freertos asi_unit_test 120 \
-  "=== All Tests Passed ==="
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS_CLI}" build unit_test_bringup:mps3-an536-freertos && \
+    "${NROS_CLI}" run unit_test_bringup:mps3-an536-freertos --timeout 120 \
+      --expect "=== All Tests Passed ===" )
 
 echo "Phase 4 - DDS loopback test on QEMU (nros run)"
-nros_run_program dds_loopback_test_bringup:mps3-an536-freertos asi_dds_loopback_test 120 \
-  "Starting DDS loopback test" "STEERING REPORT" "DDS loopback test passed"
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS_CLI}" build dds_loopback_test_bringup:mps3-an536-freertos && \
+    "${NROS_CLI}" run dds_loopback_test_bringup:mps3-an536-freertos --timeout 120 \
+      --expect "Starting DDS loopback test" \
+      --expect "STEERING REPORT" \
+      --expect "DDS loopback test passed" )
 
 echo "FreeRTOS AN536 (emulated Cortex-R52) runtime validation OK"

@@ -4,14 +4,12 @@
 # program, so `nros build` builds that package rather than generating an
 # entry. The program prints "DDS loopback test passed" when every check passed
 # and exits non-zero on a failed one, so `nros run --expect` grades it. CI
-# runs it with .github/scripts/ci-helpers.sh's nros_run_program:
+# runs it as
 #
-#   nros_run_program dds_loopback_test_bringup:mps3-an536-freertos asi_dds_loopback_test 120 \
-#     "DDS loopback test passed"
+#   nros run dds_loopback_test_bringup:mps3-an536-freertos --timeout 120 \
+#     --expect "DDS loopback test passed"
 #
-# which is `nros run --plan` over the image's resolved plan plus its
-# executable: `nros run dds_loopback_test_bringup:<board>` alone resolves no artifact
-# for an image whose entry is a hand-written package.
+# nros run takes the executable from the build (nano-ros issue 2752).
 #
 # Each image is named after its board: the workspace configure of an image
 # whose entry is a hand-written package resolves the board's facts by the

@@ -119,14 +119,21 @@ forbid_marker "${nosuch_log}" "Actuation Safety Island is Live"
 echo "CYCLONEDDS_URI interface selection OK"
 
 # The test programs (actuation_module/test), each an image of its own
-# (src/test_bringup), on the same board.
+# (src/test_bringup), on the same board. Their entry is the program's own
+# package; nros run takes its executable from the build (nano-ros issue 2752).
 echo "Phase 2c - unit test (nros run)"
-nros_run_program unit_test_bringup:freertos-posix asi_unit_test 60 \
-  "=== All Tests Passed ==="
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS_CLI}" build unit_test_bringup:freertos-posix && \
+    "${NROS_CLI}" run unit_test_bringup:freertos-posix --timeout 60 \
+      --expect "=== All Tests Passed ===" )
 
 echo "Phase 2d - DDS loopback test (nros run)"
-nros_run_program dds_loopback_test_bringup:freertos-posix asi_dds_loopback_test 60 \
-  "Starting DDS loopback test" "STEERING REPORT" "DDS loopback test passed"
+( cd "${ROOT_DIR}/actuation_module" && \
+    "${NROS_CLI}" build dds_loopback_test_bringup:freertos-posix && \
+    "${NROS_CLI}" run dds_loopback_test_bringup:freertos-posix --timeout 60 \
+      --expect "Starting DDS loopback test" \
+      --expect "STEERING REPORT" \
+      --expect "DDS loopback test passed" )
 
 echo "Phase 3 - supervision / policy host unit tests (dependency-free)"
 cmake -S "${ROOT_DIR}/actuation_module/test/host" -B "${ROOT_DIR}/build/freertos-posix-host-tests"
