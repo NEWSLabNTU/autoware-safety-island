@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Privileged SocketCAN vcan roundtrip. Requires CAP_NET_ADMIN.
+# SocketCAN vcan roundtrip (phase-15 P7): the island's CAN output encoder,
+# through nano-ros's SocketCAN backend of <nros/platform_can.h>, sends classic
+# and CAN-FD frames on vcan0 and a SocketCAN receiver decodes them back; then
+# the host UDP tunnel gateway puts a tunnelled batch on vcan0 and the decoder
+# accepts it. The build runs here; the tests run in a network namespace of
+# their own (scripts/run-in-netns.sh): a docker container with NET_ADMIN on a
+# dev box, the job container on CI (ASI_NETNS_DIRECT=1). No sudo, no
+# password, and the host's own vcan0 is never touched.
 
 set -euo pipefail
 
@@ -17,36 +24,15 @@ echo "FreeRTOS POSIX SocketCAN vcan roundtrip (classic + CAN-FD)"
 "${ROOT_DIR}/build.sh" --platform freertos-posix -d "${BUILD_ROOT}" \
   --can-output-test
 
-set +e
-"${ROOT_DIR}/actuation_module/test/run-vcan-roundtrip.sh" \
-  "${BUILD_ROOT}/can_vcan_sender"
-vcan_rc=$?
-set -e
-if [ "${vcan_rc}" = "77" ]; then
-  if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "vcan roundtrip skipped on CI (vcan is required)" >&2
-    exit 1
-  fi
-  echo "vcan roundtrip skipped (no CAP_NET_ADMIN or vcan module)"
-  exit 0
-fi
-if [ "${vcan_rc}" != "0" ]; then
-  echo "vcan roundtrip failed: ${vcan_rc}" >&2
-  exit "${vcan_rc}"
-fi
-echo "vcan roundtrip OK"
-
-echo "UDP tunnel gateway → vcan roundtrip"
-set +e
-"${ROOT_DIR}/actuation_module/test/run-udp-tunnel-roundtrip.sh"
-udp_rc=$?
-set -e
-if [ "${udp_rc}" = "77" ]; then
-  echo "UDP tunnel vcan roundtrip skipped (no CAP_NET_ADMIN or vcan module)"
-  exit 0
-fi
-if [ "${udp_rc}" != "0" ]; then
-  echo "UDP tunnel vcan roundtrip failed: ${udp_rc}" >&2
-  exit "${udp_rc}"
-fi
-echo "UDP tunnel vcan roundtrip OK"
+# Both roundtrips run as root in a network namespace of their own with a
+# vcan0 made inside it (scripts/run-in-netns.sh): the vcan roundtrip changes
+# vcan0's MTU (the CAN-FD fail-closed check), which needs CAP_NET_ADMIN over
+# it.
+echo "SocketCAN vcan roundtrip + UDP tunnel gateway -> vcan roundtrip (vcan0 in a network namespace of its own)"
+"${ROOT_DIR}/scripts/run-in-netns.sh" --vcan --root -- bash -c '
+  set -e
+  actuation_module/test/run-vcan-roundtrip.sh "$1"
+  echo "vcan roundtrip OK"
+  actuation_module/test/run-udp-tunnel-roundtrip.sh
+  echo "UDP tunnel vcan roundtrip OK"
+' run-vcan "${BUILD_ROOT}/can_vcan_sender"

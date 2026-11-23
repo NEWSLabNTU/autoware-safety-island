@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # FVP TAP UDP -> gateway -> vcan0. Exit 77 if tap/vcan cannot be set up.
 #
+# Run it with no password through scripts/run-in-netns.sh, which makes tap0
+# and vcan0 in a container's own network namespace:
+#
+#   scripts/run-in-netns.sh --vcan --tap -- \
+#     actuation_module/test/run-fvp-tap-tunnel.sh build/zephyr-fvp-tap-can
+#
 # The network comes from, in order:
-#   1. a tap0 (and vcan0) already configured on the host: used as found, no
-#      CAP_NET_ADMIN needed (a persistent tap owned by this user, 192.168.10.1/24,
-#      up);
-#   2. creating them on the host (CAP_NET_ADMIN, e.g. CI);
+#   1. a tap0 (and vcan0) already configured: used as found, no
+#      CAP_NET_ADMIN needed (a tap owned by this user, 192.168.10.1/24, up;
+#      what run-in-netns.sh --tap makes);
+#   2. creating them (CAP_NET_ADMIN);
 #   3. a private network namespace (`unshare -rn`, unprivileged user
 #      namespaces): the script re-runs itself there with its own tap0 and
 #      vcan0, so nothing on the host changes. FVP_TAP_NETNS=0 disables it.
+#
+# The model is started from the build dir's recorded run_armfvp command
+# (`build.sh --run`), which needs neither west nor cmake.
 
 set -euo pipefail
 
@@ -17,7 +26,7 @@ BUILD_DIR="${1:-${ROOT_DIR}/build/zephyr-fvp-tap-can}"
 TAP="${FVP_TAP_INTERFACE:-tap0}"
 IFACE="${VCAN_IFACE:-vcan0}"
 TIMEOUT_SECONDS="${FVP_TAP_TIMEOUT_SECONDS:-120}"
-# The collector starts before `west build --target run`, so its deadline must
+# The collector starts before the model, so its deadline must
 # outlive the FVP timeout to count commands emitted after a slow build or boot.
 COLLECTOR_TIMEOUT_SECONDS=$((TIMEOUT_SECONDS + 30))
 
@@ -130,16 +139,36 @@ with open(out, "w", encoding="utf-8") as handle:
 PY
 collector_pid=$!
 
+# FVP_TAP_LOG_DIR keeps the model console and the gateway log (CI's artifact).
 cleanup() {
   kill "${gateway_pid}" "${collector_pid}" 2>/dev/null || true
   wait "${gateway_pid}" 2>/dev/null || true
   wait "${collector_pid}" 2>/dev/null || true
+  if [ -n "${FVP_TAP_LOG_DIR:-}" ]; then
+    mkdir -p "${FVP_TAP_LOG_DIR}"
+    cp -f "${fvp_log}" "${FVP_TAP_LOG_DIR}/fvp_tap_tunnel.log" 2>/dev/null || true
+    cp -f "${gateway_log}" "${FVP_TAP_LOG_DIR}/fvp_tap_gateway.log" 2>/dev/null || true
+  fi
   rm -f "${accepted_file}" "${gateway_log}" "${fvp_log}"
 }
 trap cleanup EXIT
 
+# The model does not exit after the test: stop it (timeout(1) leads its own
+# process group) once the console says the test passed and the collector has
+# its command, or let the timeout end it.
+timeout --kill-after=5s "${TIMEOUT_SECONDS}s" \
+  "${ROOT_DIR}/build.sh" --platform zephyr-fvp --run -d "${BUILD_DIR}" >"${fvp_log}" 2>&1 &
+fvp_pid=$!
+while kill -0 "${fvp_pid}" 2>/dev/null; do
+  if grep -q "CAN output tests passed" "${fvp_log}" &&
+     ! kill -0 "${collector_pid}" 2>/dev/null; then
+    kill -TERM -- "-${fvp_pid}" 2>/dev/null || kill -TERM "${fvp_pid}" 2>/dev/null || true
+    break
+  fi
+  sleep 1
+done
 set +e
-timeout --kill-after=5s "${TIMEOUT_SECONDS}s" west build -d "${BUILD_DIR}" --target run >"${fvp_log}" 2>&1
+wait "${fvp_pid}"
 fvp_rc=$?
 set -e
 wait "${collector_pid}" 2>/dev/null || true
@@ -160,8 +189,9 @@ if [ "${accepted}" -lt 1 ]; then
 fi
 
 echo "FVP TAP UDP tunnel roundtrip OK (${accepted} command(s))"
-# timeout 124 is expected if FVP does not exit after the test.
-if [ "${fvp_rc}" != "0" ] && [ "${fvp_rc}" != "124" ] && [ "${fvp_rc}" != "137" ]; then
+# 124/137: the timeout ended the model; 143: stopped above after the pass.
+if [ "${fvp_rc}" != "0" ] && [ "${fvp_rc}" != "124" ] && [ "${fvp_rc}" != "137" ] &&
+   [ "${fvp_rc}" != "143" ]; then
   echo "FVP exited ${fvp_rc}" >&2
   exit "${fvp_rc}"
 fi

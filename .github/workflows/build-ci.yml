@@ -27,7 +27,11 @@ jobs:
       # Image USER is `dev` (fixuid pattern for local dev). GHA needs root
       # inside the container so cache extraction + installs work and the
       # workspace bind-mount is freely writable. (nano-ros branch carry-over.)
-      options: --user 0:0 --entrypoint=
+      # NET_ADMIN + /dev/net/tun: the FVP tap tunnel step makes tap0 and vcan0
+      # in this container's own network namespace (scripts/run-in-netns.sh,
+      # ASI_NETNS_DIRECT=1), never on the runner. Not --privileged, not the
+      # host network.
+      options: --user 0:0 --entrypoint= --cap-add NET_ADMIN --device /dev/net/tun
 
     steps:
       - name: Checkout repository
@@ -122,6 +126,18 @@ jobs:
         shell: bash
         run: .github/scripts/run-zephyr-fvp-ci.sh
 
+      # phase-15 P7/P10: the CAN output test on the tap network, its frames
+      # over the FVP UDP tunnel to the host gateway and onto vcan0.
+      - name: Run Zephyr FVP tap tunnel (tap0 + vcan0 in the job's netns)
+        shell: bash
+        env:
+          ASI_NETNS_DIRECT: '1'
+        run: |
+          command -v ip >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq iproute2
+          }
+          .github/scripts/run-zephyr-fvp-tap-ci.sh
+
       - name: Upload Zephyr FVP logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -136,7 +152,9 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: ${{ inputs.devcontainer_image || 'ghcr.io/autowarefoundation/autoware-safety-island:devcontainer' }}
-      options: --user 0:0 --entrypoint=
+      # NET_ADMIN: the vcan roundtrip step makes vcan0 in this container's
+      # own network namespace (scripts/run-in-netns.sh, ASI_NETNS_DIRECT=1).
+      options: --user 0:0 --entrypoint= --cap-add NET_ADMIN --device /dev/net/tun
 
     steps:
       - name: Checkout repository
@@ -192,6 +210,19 @@ jobs:
       - name: Run FreeRTOS POSIX validation
         shell: bash
         run: .github/scripts/run-freertos-posix-ci.sh
+
+      # phase-15 P7: the CAN output encoder through nano-ros's SocketCAN
+      # backend on vcan0 (classic + CAN-FD + the low-MTU fail-closed check),
+      # and the UDP tunnel gateway onto vcan0.
+      - name: Run SocketCAN vcan roundtrip (vcan0 in the job's netns)
+        shell: bash
+        env:
+          ASI_NETNS_DIRECT: '1'
+        run: |
+          command -v ip >/dev/null 2>&1 || {
+            apt-get update -qq && apt-get install -y -qq iproute2
+          }
+          .github/scripts/run-freertos-vcan-ci.sh
 
   # Phase 6 — the EMULATED Cortex-R52 lane. This is the only job that RUNS the
   # ARMv8-R build of the controller: `freertos-s32z2` targets the same CPU but
