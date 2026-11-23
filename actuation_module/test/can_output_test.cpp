@@ -381,7 +381,9 @@ static void test_zephyr_can_udp_tunnel_send()
 }
 #endif
 
-int main()
+// The hosted signature: nano-ros's ROS2_MAIN renames main() and calls it from
+// the board's main(void) on the Zephyr image (can_output_test_bringup).
+int main(int /*argc*/, char ** /*argv*/)
 {
   log_info("=== Starting CAN output tests ===");
   test_output_mode_helpers();

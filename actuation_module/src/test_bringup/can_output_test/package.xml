@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <!--
+    Pure declarative, as controller_bringup: package.xml and system.toml
+    only. The image's entry is the test program's own package; see
+    system.toml.
+  -->
+  <name>can_output_test_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Bringup pkg for the can_output_test test program (actuation_module/test/can_output_test.cpp):
+    the control command CAN encoders and frames through nano-ros's CAN frame driver over
+    the FVP's CAN loopback device.
+  </description>
+  <maintainer email="d10922013@csie.ntu.edu.tw">NEWSLab NTU</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>asi_can_output_test_zephyr</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

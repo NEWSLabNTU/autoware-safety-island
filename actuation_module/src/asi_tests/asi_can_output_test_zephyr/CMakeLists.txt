@@ -1,0 +1,48 @@
+# Copyright (c) 2026, NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# asi_can_output_test_zephyr: the test program actuation_module/test/can_output_test.cpp
+# as a Zephyr image. It is the entry of can_output_test_bringup's Zephyr image
+# (`[image.fvp-aemv8r-smp] entry = "asi_can_output_test_zephyr"`): on Zephyr an
+# owned entry is the west application itself, so this package finds Zephyr
+# and `nros build` runs west on it. The program is Zephyr-only on the board:
+# its last check sends the control command through nano-ros's CAN frame
+# driver over the `zephyr,can-loopback` device and reads the frames back.
+#
+# Its Kconfig is the image's os_config fragments (the controller's own, so the
+# test runs on the configuration the controller ships with, plus the CAN
+# loopback fragment and overlay) and the board network file; the
+# capabilities and the RMW come from can_output_test_bringup.
+
+cmake_minimum_required(VERSION 3.22.1)
+
+get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+
+# asi_common's Kconfig symbols (CONFIG_CONTROL_CMD_CAN_OUTPUT and the rest it
+# reads) come from nros build: asi_common is a Zephyr module
+# (zephyr/module.yml) and a workspace dependency of this package, so it joins
+# ZEPHYR_EXTRA_MODULES on the west line, as for a generated application.
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(asi_can_output_test_zephyr LANGUAGES C CXX)
+
+find_package(nano_ros REQUIRED)
+
+# The platform layer, without the network hook a generated controller entry
+# calls.
+set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
+if(NOT TARGET asi_common)
+  add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
+endif()
+
+# The workspace's own message packages (safety_island_msgs,
+# visionpilot_msgs), which asi_common's message umbrella includes.
+set(NROS_INTERFACE_SEARCH_PATH "${_ACT_ROOT}/src")
+
+# ROS2_MAIN: the program keeps its own main(); nano-ros renames it and calls
+# it from the board's main(void). This is the west application's own
+# CMakeLists.txt, so the executable deploys where a generated entry does
+# (DEPLOY zephyr) with none stated; the census's host build of this package
+# takes the host deploy.
+nano_ros_add_executable(asi_can_output_test_zephyr "${_ACT_ROOT}/test/can_output_test.cpp" ROS2_MAIN)
+target_link_libraries(asi_can_output_test_zephyr PRIVATE asi_common)

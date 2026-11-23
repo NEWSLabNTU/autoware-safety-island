@@ -68,10 +68,16 @@ CAN output
 
 .. code-block:: console
 
-  $ ./build.sh --can-output-test
+  $ cd actuation_module
+  $ nros run can_output_test_bringup:fvp-aemv8r-smp --expect "CAN output tests passed" \
+      --forbid "ZEPHYR FATAL ERROR" --timeout 200
 
-Builds ``actuation_module/test/can_output_test.cpp``. The test validates the
-control-command encoder and the output modes on the Zephyr FVP. The
+Runs ``actuation_module/test/can_output_test.cpp`` as an image of its own
+(``src/test_bringup/can_output_test``) on the FVP. The test validates the
+control-command encoder and the output modes, then sends a command through
+nano-ros's CAN frame driver over ``zephyr,can-loopback`` and reads the frames
+back. ``./build.sh --can-output-test`` still builds it as a Zephyr test
+program (``test/zephyr_app``), for the tap network's UDP tunnel below. The
 ``freertos-posix`` controller image sends through nano-ros's SocketCAN backend
 on its ``[image.<id>.can] device`` (``vcan0``). See ``demo/can_carla_bridge/README.md``.
 
@@ -130,7 +136,7 @@ host setup and is the safe choice on a host whose LAN is already
 ``192.168.10.0/24``.
 
 Native FVP ``--can-output-test`` without ``--network tap`` stays on
-``zephyr,can-loopback``.
+``zephyr,can-loopback``, as the image does.
 
 ************
 DDS loopback
@@ -143,9 +149,11 @@ DDS loopback
 
 Runs ``actuation_module/test/dds_loopback_test.cpp`` as an image of its own
 (``src/test_bringup/dds_loopback_test``), on the same boards as the unit
-test. ``./build.sh --dds-loopback-test`` still builds it as a Zephyr test
-program, for the real-time evaluation's ``--trace-stats`` / ``--trace``
-builds.
+test. ``dds_loopback_test_bringup:fvp-aemv8r-smp-stats`` adds the thread
+runtime statistics; the FVP lane runs it with ``--settle`` so the console
+holds the whole thread-analyzer report for its stack check.
+``./build.sh --dds-loopback-test`` still builds it as a Zephyr test program,
+for the real-time evaluation's ``--trace`` builds.
 
 **********************
 Running tests

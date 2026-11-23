@@ -27,10 +27,8 @@
 #   nros run dds_loopback_test_bringup:fvp-aemv8r-smp --expect ... --timeout N
 #
 # (the run target is the build dir's run_armfvp; the model parameters are
-# the board's). That image is not sized by a census: nano-ros derives
-# nothing for an owned west entry whose bringup is nested under src/ (it
-# reports the image's model as unresolved), so it runs on the configured
-# defaults, which the program fits.
+# the board's). That image is sized by the census of its program, as the
+# FreeRTOS images are.
 
 [system]
 name      = "dds_loopback_test_bringup"
@@ -75,5 +73,20 @@ os_config = [
   "../../controller_bringup/zephyr/net-fvp.toml",
   "../../controller_bringup/zephyr/prj-actuation.conf",
   "../../controller_bringup/zephyr/prj-fvp.conf",
+]
+knobs.memory.heap_bytes = 8388608
+
+# [image.fvp-aemv8r-smp] with the thread runtime statistics (Layer 1 of the
+# real-time evaluation, documentation/design/rt_evaluation_zephyr.rst): the
+# controller's prj-trace-stats.conf, whose thread analyzer prints the
+# per-thread stack and CPU report the FVP lane's stack check reads.
+[image.fvp-aemv8r-smp-stats]
+board     = "fvp-aemv8r-smp"
+entry     = "asi_dds_loopback_test_zephyr"
+os_config = [
+  "../../controller_bringup/zephyr/net-fvp.toml",
+  "../../controller_bringup/zephyr/prj-actuation.conf",
+  "../../controller_bringup/zephyr/prj-fvp.conf",
+  "../../controller_bringup/zephyr/prj-trace-stats.conf",
 ]
 knobs.memory.heap_bytes = 8388608

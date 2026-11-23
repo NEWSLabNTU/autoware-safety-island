@@ -80,9 +80,12 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
   the `fvp-tap*` / `*-stats` / `*-trace*` image). Sizing is knob rows in
   system.toml, never exported variables (an exported one wins over a row).
 - The unit and DDS loopback tests are images on every board:
-  `nros run unit_test_bringup:<board> --expect ...` (and
-  `dds_loopback_test_bringup:<board>`; src/test_bringup; on Zephyr the
-  entry is src/asi_tests/asi_<program>_zephyr, a west application).
+  `nros run unit_test_bringup:<board> --expect ... --forbid ...` (and
+  `dds_loopback_test_bringup:<board>`, its `fvp-aemv8r-smp-stats` image,
+  and the FVP-only `can_output_test_bringup:fvp-aemv8r-smp`;
+  src/test_bringup; on Zephyr the entry is
+  src/asi_tests/asi_<program>_zephyr, a west application, whose
+  `nano_ros_add_executable` states no DEPLOY).
 - `./build.sh --dds-publisher | --dds-subscriber | --can-output-test |
   --dds-loopback-test` build one Zephyr test program with `west build` of
   test/zephyr_app (the controller images' fragments plus its own); use one

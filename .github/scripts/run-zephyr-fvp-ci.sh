@@ -111,55 +111,31 @@ ensure_fvp_available
 # one — the most expensive way to be wrong about this.
 FVP_TIMEOUT_SECONDS="${FVP_TIMEOUT_SECONDS:-200}"
 
-build_variant()
-{
-  local name="$1"
-  shift
-
-  "${ROOT_DIR}/build.sh" --platform zephyr-fvp -d "${BUILD_ROOT}/${name}" "$@"
-}
-
 # ---------------------------------------------------------------------------
 # Cleanup on ANY exit, including abort.
 #
-# Without this the script's own death leaks whatever it had started. That is
-# not hypothetical: a run killed mid-phase left an FVP running for ten hours
-# on a core, because `set -e` and an outside SIGTERM both bypass the per-phase
-# kill in run_fvp_variant.
+# `nros run` stops the model it started when it exits, but not when this
+# script is killed under it: a run killed mid-phase once left an FVP running
+# for ten hours on a core. Sweep what is left.
 #
 # The sweep matches on the build path AND the ELF name. Matching the path
-# alone would also select build.sh, west and cmake, and killing those is worse
-# than the orphan it is trying to remove. Matching the binary NAME instead --
+# alone would also select west and cmake, and killing those is worse than the
+# orphan it is trying to remove. Matching the binary NAME instead --
 # `pkill -f FVP_BaseR_AEMv8R` -- is worse still: `-f` matches whole command
 # lines, so it can select the very shell doing the killing.
 # ---------------------------------------------------------------------------
-CURRENT_FVP_PID=""
-
 ci_cleanup()
 {
   local rc=$?
 
-  if [ -n "${CURRENT_FVP_PID}" ]; then
-    kill -TERM -- "-${CURRENT_FVP_PID}" 2>/dev/null || true
-    sleep 1
-    kill -KILL -- "-${CURRENT_FVP_PID}" 2>/dev/null || true
-    CURRENT_FVP_PID=""
-  fi
-
-  if [ -n "${BG_PID}" ]; then
-    kill -TERM "${BG_PID}" 2>/dev/null || true
-    BG_PID=""
-  fi
-
   # `|| true` because FINDING NOTHING is the good case, and it is a failure
   # status: grep exits 1 on no match, `pipefail` promotes that over awk's 0, and
-  # `set -e` then aborts the trap -- which is the script's exit status. Every
-  # phase passed and the job still reported failure, one line after
-  # "Zephyr FVP runtime validation OK", because no stray FVP was left behind.
+  # `set -e` then aborts the trap -- which is the script's exit status.
   local stray
   stray="$(ps -eo pid,args 2>/dev/null \
-           | grep -F "${ROOT_DIR}/build/" \
+           | grep -F "${ROOT_DIR}/" \
            | grep -F 'zephyr.elf' \
+           | grep -F 'FVP_' \
            | grep -v ' grep ' \
            | awk '{print $1}')" || true
   if [ -n "${stray}" ]; then
@@ -172,128 +148,6 @@ ci_cleanup()
 }
 trap ci_cleanup EXIT INT TERM
 
-# There is no background build, and no cross-variant interleave.
-#
-# This lane used to build the NEXT variant while the CURRENT one ran, on the
-# stated premise that "only ever one build is in flight at a time". Two things
-# were wrong with that. `run_fvp_variant` starts the model with
-# `west build --target run`, which RE-ENTERS the build graph -- so a run
-# overlapped the background build. And serializing those builds did not fix it:
-#
-#   nros-cpp: .../nros_config_generated.h was written by another crate with
-#   DIFFERENT probed sizes ... NROS_EXECUTOR_SIZE: on-disk=477088 vs
-#   would-write=477336
-#
-# came back with the builds strictly ordered. The cause is not concurrency but
-# the INTERLEAVE: building a differently-configured variant between another
-# variant's build and its run leaves that variant's build.ninja stale, so the
-# run reconfigures and re-probes, and nano-ros's size-probe state under
-# modules/nros/build no longer matches the header the earlier build wrote.
-#
-# Each variant is now built immediately before it is run. Nothing is stale at
-# run time, so `--target run` has nothing to rebuild -- which also retires a
-# whole class of failure this lane kept hitting, where the reconfigure ran
-# without the environment build.sh had established.
-#
-# BG_PID stays only for the cleanup trap, which kills a build if the job is
-# interrupted mid-phase.
-BG_PID=""
-
-# Run FVP with the built ELF and capture output
-run_fvp_variant()
-{
-  local name="$1"
-  local log="$2"
-  local timeout_seconds="$3"
-  shift 3
-  # Remaining args are the markers that mean "this phase has done its work".
-  # With none given the run waits out the full timeout, which is the old
-  # behaviour.
-
-  local build_dir="${BUILD_ROOT}/${name}"
-  if [ ! -f "${build_dir}/zephyr/zephyr.elf" ]; then
-    echo "Missing ELF: ${build_dir}/zephyr/zephyr.elf" >&2
-    exit 1
-  fi
-
-  rm -f "${log}"
-  echo "Starting FVP for ${name}..."
-
-  # The image never exits on its own, so before this it was ALWAYS killed by
-  # the clock: measured, a success marker landed 72 lines into a 762-line log
-  # and the model then ran another ~190 s for nothing. Five runtime phases x
-  # 200 s was ~17 minutes of pure waiting.
-  #
-  # `setsid` so the model gets its own process group and can be killed as a
-  # group. Killing by name or by a path pattern is what leaked an FVP that
-  # then burned a core for ten hours.
-  # Through build.sh, NOT `west build --target run` directly: that command
-  # re-enters the build graph, and nano-ros's size-probe identity is every
-  # NROS_* variable in the environment plus $DOTCONFIG's CONFIG_NROS_* lines.
-  # Launched from here the numbers differed from the build's and the C/C++
-  # header guard stopped the run. Replicating the environment variable by
-  # variable cannot converge; running from the same place the build ran can.
-  setsid "${ROOT_DIR}/build.sh" --platform zephyr-fvp -t "${ZEPHYR_TARGET:-fvp_baser_aemv8r_smp}" \
-      -d "${build_dir}" --run >"${log}" 2>&1 &
-  local wpid=$!
-  CURRENT_FVP_PID="${wpid}"        # so ci_cleanup can reach it on abort
-
-  local grace="${CI_FVP_GRACE_SECONDS:-15}"
-  local waited=0
-  local seen=0
-
-  while [ "${waited}" -lt "${timeout_seconds}" ]; do
-    kill -0 "${wpid}" 2>/dev/null || break      # model exited by itself
-
-    if [ "$#" -gt 0 ]; then
-      seen=1
-      local m
-      for m in "$@"; do
-        grep -aqF -- "${m}" "${log}" 2>/dev/null || { seen=0; break; }
-      done
-      if [ "${seen}" = 1 ]; then
-        # NOT an immediate kill. `forbid_marker "ZEPHYR FATAL ERROR"` exists
-        # because a crash can land AFTER the success marker -- that is exactly
-        # how a net_socket_service stack overflow went unnoticed here. Keep
-        # watching for a grace window so the forbid checks still have
-        # something to find.
-        echo "  markers satisfied; ${grace}s grace, then stopping"
-        sleep "${grace}"
-        break
-      fi
-    fi
-
-    sleep 2
-    waited=$((waited + 2))
-  done
-
-  # `|| true` on the kills too: the loop above breaks when the model exits on
-  # its own, and killing an already-dead group is a non-zero status that would
-  # abort a phase that had just succeeded. The cleanup trap already guards its
-  # kills this way; these two were the odd ones out.
-  kill -TERM -- "-${wpid}" 2>/dev/null || true
-  sleep 1
-  kill -KILL -- "-${wpid}" 2>/dev/null || true
-  # `|| true` because we just killed it: `wait` reports 143/137 and this script
-  # runs under `set -e`, so the status of a kill WE issued would abort the phase
-  # the moment its markers were satisfied. Phase 1 got exactly that far and
-  # exited 1 immediately after printing "markers satisfied".
-  wait "${wpid}" 2>/dev/null || true
-  CURRENT_FVP_PID=""
-
-  if [ ! -s "${log}" ]; then
-    echo "FVP produced no output for ${name}" >&2
-    exit 1
-  fi
-
-  echo "FVP ${name} finished after ~${waited}s"
-}
-
-# Every runtime phase asserts the absence of a fatal error as well as the
-# presence of its markers. The images are long-lived and killed by timeout, so
-# a crash does not change the exit code: a require_marker-only phase stays
-# green straight through one, provided the marker printed first. That is
-# exactly how a net_socket_service stack overflow went unnoticed here.
 # Phase 0 - the launch resolver, which build.sh's bootstrap hook does NOT build.
 #
 # `nros codegen entry` resolves the bringup's SystemModel by shelling
@@ -329,20 +183,34 @@ bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 "${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
 
 # The controller image and the test program images run with
-# `nros run <image> --expect <line>... --timeout N`: nros builds the image if
-# stale and boots it on the board's runner (the FVP model through Zephyr's
-# run_armfvp target, with the board's and the image's model parameters), and
-# passes once every --expect line has appeared on the console (exit 1 when
-# the timeout passes first). Nothing here starts the model or greps its
-# output. The FVP is user-provided (ensure_fvp_available, ARMFVP_BIN_PATH).
+# `nros run <image> --expect <line>... --forbid <line> --timeout N`: nros
+# builds the image if stale and boots it on the board's runner (the FVP model
+# through Zephyr's run_armfvp target, with the board's and the image's model
+# parameters), passes once every --expect line has appeared on the console
+# (exit 1 when the timeout passes first) and fails on the first --forbid line,
+# before or after the expectation is met. Nothing here starts the model or
+# greps its output; each run's console is teed into ${LOG_DIR} for the job's
+# artifact. The FVP is user-provided (ensure_fvp_available,
+# ARMFVP_BIN_PATH).
+#
+# Every phase forbids "ZEPHYR FATAL ERROR": the images are long-lived, so a
+# crash after the success line changes nothing else. That is exactly how a
+# net_socket_service stack overflow went unnoticed here. --settle keeps
+# watching for that long after the last --expect line, for a crash or the
+# rest of a report.
 #
 # The west workspace is this checkout, for nros build and for the build
-# `nros run` starts when an image is stale (`nros run` takes no
-# --zephyr-workspace; it reads NROS_ZEPHYR_WORKSPACE).
-export NROS_ZEPHYR_WORKSPACE="${ROOT_DIR}"
+# `nros run` starts when an image is stale: both take --zephyr-workspace.
+# Without it nros falls back to the store's Zephyr workspace, which has
+# neither this repo's Zephyr patches nor, in CI, a checkout at all.
+FATAL="ZEPHYR FATAL ERROR"
+SETTLE_SECONDS="${SETTLE_SECONDS:-15}"
 nros_fvp()
 {
-  ( cd "${ROOT_DIR}/actuation_module" && "${NROS_CLI}" "$@" )
+  local verb="$1"
+  shift
+  ( cd "${ROOT_DIR}/actuation_module" && \
+      "${NROS_CLI}" "${verb}" --zephyr-workspace "${ROOT_DIR}" "$@" )
 }
 
 echo "Phase 1 - Zephyr FVP controller image (nros run controller_bringup:fvp)"
@@ -354,7 +222,8 @@ nros_fvp run controller_bringup:fvp --timeout "${FVP_TIMEOUT_SECONDS}" \
     --expect "Starting Controller Node" \
     --expect "Controller Node Started" \
     --expect "Actuation Safety Island is Live" \
-    --expect "nros: sched task priority set sched_task=\`control\` prio=9"
+    --expect "nros: sched task priority set sched_task=\`control\` prio=9" \
+    --forbid "${FATAL}" --settle "${SETTLE_SECONDS}" | tee "${LOG_DIR}/controller.log"
 
 # The test programs (actuation_module/test), each an image of its own
 # (src/test_bringup) whose entry is a Zephyr west application over the same
@@ -362,56 +231,46 @@ nros_fvp run controller_bringup:fvp --timeout "${FVP_TIMEOUT_SECONDS}" \
 echo "Phase 2 - Zephyr FVP unit test image (nros run unit_test_bringup:fvp-aemv8r-smp)"
 nros_fvp build unit_test_bringup:fvp-aemv8r-smp
 nros_fvp run unit_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
-    --expect "=== All Tests Passed ==="
+    --expect "=== All Tests Passed ===" \
+    --forbid "${FATAL}" | tee "${LOG_DIR}/unit_test.log"
 
 echo "Phase 3 - Zephyr FVP DDS loopback test image (nros run dds_loopback_test_bringup:fvp-aemv8r-smp)"
 nros_fvp build dds_loopback_test_bringup:fvp-aemv8r-smp
 nros_fvp run dds_loopback_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
     --expect "Starting DDS loopback test" \
     --expect "STEERING REPORT" \
-    --expect "DDS loopback test passed"
+    --expect "DDS loopback test passed" \
+    --forbid "${FATAL}" | tee "${LOG_DIR}/dds_loopback.log"
 
-# Phases 4 and 6 are still build.sh's test programs (test/zephyr_app), run by
-# run_fvp_variant and graded by grepping the console: the CAN loopback test
-# is a Zephyr-only program on the CAN loopback device, and the statistics
-# phase asserts on the whole thread-analyzer report (require_stack_headroom),
-# which `nros run --expect` stops before (phase-15 P10, remaining).
-echo "Phase 4 - Zephyr FVP CAN loopback build + run"
-build_variant can --can-output-test
-run_fvp_variant can "${LOG_DIR}/can.log" "${FVP_TIMEOUT_SECONDS}" \
-    "CAN output tests passed"
-require_marker "${LOG_DIR}/can.log" "CAN output tests passed"
-forbid_marker "${LOG_DIR}/can.log" "ZEPHYR FATAL ERROR"
+# The CAN output test on the CAN loopback device: a Zephyr-only image
+# (src/test_bringup/can_output_test).
+echo "Phase 4 - Zephyr FVP CAN output test image (nros run can_output_test_bringup:fvp-aemv8r-smp)"
+nros_fvp build can_output_test_bringup:fvp-aemv8r-smp
+nros_fvp run can_output_test_bringup:fvp-aemv8r-smp --timeout "${FVP_TIMEOUT_SECONDS}" \
+    --expect "CAN output tests passed" \
+    --forbid "${FATAL}" --settle "${SETTLE_SECONDS}" | tee "${LOG_DIR}/can.log"
 
 echo "Phase 5 - Zephyr FVP TAP network build smoke"
-# Build-only phase; the variant it does not run is built where it IS run.
 "${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap -d "${ROOT_DIR}/build/zephyr-fvp-tap"
 test -f "${ROOT_DIR}/build/zephyr-fvp-tap/zephyr/zephyr.elf"
 
 echo "Phase 6 - Zephyr FVP scheduling statistics (rt-eval Layer 1)"
 # Kept separate from phase 3 rather than folded into it: if the statistics
 # layer regresses, that should not be indistinguishable from a DDS-path
-# regression. See documentation/design/rt_evaluation_zephyr.rst.
-# The stats build was started during phase 4 and joined in phase 5, so this
-# is a no-op; kept so the phase reads correctly if phase 5 is ever removed.
-build_variant stats --trace-stats --dds-loopback-test
-run_fvp_variant stats "${LOG_DIR}/stats.log" "${FVP_TIMEOUT_SECONDS}" \
-    "DDS loopback test passed" "Thread analyze:" "Total CPU cycles used" \
-    "Longest Frame"
-# The workload must still pass with the statistics enabled — this phase is a
-# non-regression check as much as a reporting one.
-require_marker "${LOG_DIR}/stats.log" "DDS loopback test passed"
-# A fatal error does not fail the run on its own, because the image is killed
-# by timeout either way. Assert it explicitly: an overflowing stack in a
-# reporting thread is exactly what this phase should catch.
-forbid_marker "${LOG_DIR}/stats.log" "ZEPHYR FATAL ERROR"
-# The per-thread block itself, and the CONFIG_SCHED_THREAD_USAGE_ANALYSIS
-# fields that make it worth collecting.
-require_marker "${LOG_DIR}/stats.log" "Thread analyze:"
-require_marker "${LOG_DIR}/stats.log" "Total CPU cycles used"
-require_marker "${LOG_DIR}/stats.log" "Longest Frame"
+# regression. See documentation/design/rt_evaluation_zephyr.rst. The image is
+# the loopback test with the thread-analyzer fragment
+# (dds_loopback_test_bringup:fvp-aemv8r-smp-stats). The workload must still
+# pass with the statistics enabled, and the run settles after the last
+# --expect line so the console holds the whole report for the stack check.
+nros_fvp build dds_loopback_test_bringup:fvp-aemv8r-smp-stats
+nros_fvp run dds_loopback_test_bringup:fvp-aemv8r-smp-stats --timeout "${FVP_TIMEOUT_SECONDS}" \
+    --expect "DDS loopback test passed" \
+    --expect "Thread analyze:" \
+    --expect "Total CPU cycles used" \
+    --expect "Longest Frame" \
+    --forbid "${FATAL}" --settle "${SETTLE_SECONDS}" | tee "${LOG_DIR}/stats.log"
 # Three stack overflows were found in this repo by reading this very report by
-# eye — net_socket_service, main and asi_sntp_resync — and none of them printed
+# eye -- net_socket_service, main and asi_sntp_resync -- and none of them printed
 # a diagnostic. Assert on it so the fourth is caught without anyone looking.
 # 85% is chosen against the measured figures: the healthy image's worst thread
 # sits at 70%, and a thread reporting 100% is already overflowing (the analyzer

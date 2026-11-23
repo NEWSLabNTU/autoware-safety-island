@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 9e9deb715f (2026-11-23)
+On branch `nano-ros-next` nano-ros is pinned at main 8d4e70a382 (2026-11-23)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -1288,15 +1288,25 @@ What remains of P9 and P11 after this:
     keeps `--dds-loopback-test` for the statistics and trace builds.
     Local runs (2026-11-23): unit test passed at 5.4 s, loopback at 3.3 s,
     controller matched every line at 3.7 s.
-  - Remaining for the FVP lane: phase 4 (the CAN loopback test, a
-    Zephyr-only program on the `zephyr,can-loopback` device) and phase 6
-    (the statistics build of the loopback test, whose assertion reads the
-    whole thread-analyzer report: `require_stack_headroom`) still build
-    with `build.sh` / `test/zephyr_app`, run through `run_fvp_variant` and
-    grep the console. `nros run --expect` stops on the line that completes
-    the set, so it cannot wait for the rest of a report or assert that a
-    fatal error never printed (drafted nano-ros issue: `--forbid` and a
-    settle window). The CAN test could become an image too; not done here.
+  - Pin 8d4e70a382 (2026-11-23, nano-ros issues 2861-2864) finished the
+    FVP lane: every runtime phase is `nros run --expect ... --forbid
+    "ZEPHYR FATAL ERROR"`. Phase 4 is an image,
+    `can_output_test_bringup:fvp-aemv8r-smp` (entry
+    `src/asi_tests/asi_can_output_test_zephyr`, os_config the controller's
+    FVP fragments plus `test/zephyr_app`'s `can_loopback.conf` and
+    `.overlay`; the program never starts nano-ros on the host, so its
+    census records nothing and the bringup states `[census] on_missing =
+    "warn"`). Phase 6 is `dds_loopback_test_bringup:fvp-aemv8r-smp-stats`
+    (adds `prj-trace-stats.conf`), run with `--settle 15` so the console
+    holds the whole thread-analyzer report; `require_stack_headroom` reads
+    that console. `run_fvp_variant` and `build_variant` are gone. The test
+    entries state no `DEPLOY` and append no `ZEPHYR_EXTRA_MODULES` (issue
+    2861), and are census-sized (issue 2862). The lane passes
+    `--zephyr-workspace` to `nros build` and `nros run` instead of
+    exporting `NROS_ZEPHYR_WORKSPACE`: with neither, nros takes the store's
+    Zephyr workspace, which lacks this repo's Zephyr patches (measured: a
+    Kconfig abort on NET_SOCKETS_POLL_MAX). `build.sh --can-output-test`
+    stays for the tap network's UDP tunnel build.
     The tap build smoke (phase 5) is a `build.sh` build with no output to
     grade.
   - `ament-env.sh` is gone: the lanes source the devcontainer's Autoware

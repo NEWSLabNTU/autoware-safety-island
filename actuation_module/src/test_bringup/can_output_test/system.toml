@@ -1,0 +1,49 @@
+# The can_output_test test program (actuation_module/test/can_output_test.cpp)
+# as a nano-ros image on the FVP (Zephyr). The program checks the control
+# command encoders and the UDP tunnel datagram, then sends a command through
+# nano-ros's CAN frame driver over the `zephyr,can-loopback` device and reads
+# the three frames back. It prints "CAN output tests passed" when every check
+# passed. On Zephyr an owned entry is the west application itself, so the
+# entry is asi_can_output_test_zephyr, a package that finds Zephyr:
+#
+#   nros run can_output_test_bringup:fvp-aemv8r-smp --expect "CAN output tests passed" \
+#     --forbid "ZEPHYR FATAL ERROR" --timeout N
+#
+# (the run target is the build dir's run_armfvp; the model parameters are
+# the board's). The FreeRTOS POSIX simulator's CAN path is the vcan lane's
+# (build.sh --can-output-test, test/run-vcan-roundtrip.sh), not an image.
+
+[system]
+name      = "can_output_test_bringup"
+features  = ["param_services"]
+rmw       = "cyclonedds"
+domain_id = 0
+
+# The program registers no ROS entity and never initialises nano-ros on the
+# host (its checks before the CAN send are middleware-independent, and the
+# send is Zephyr-only), so the census run exits 0 having recorded nothing:
+# there is no census to size the image by. It runs on the configured defaults.
+[census]
+on_missing = "warn"
+
+[image_defaults]
+knobs.executor.subscription_buffer_bytes = 16384
+
+# ARM FVP Base_RevC AEMv8-R, Zephyr, on the model's user-mode network. Its
+# Kconfig is the controller's FVP image's (controller_bringup's [image.fvp])
+# plus the CAN loopback fragment and devicetree overlay of the Zephyr test
+# programs (test/zephyr_app): the CAN output on, over a `zephyr,can-loopback`
+# controller chosen as `zephyr,canbus`. The os_config paths resolve from the
+# west application's directory (src/asi_tests/asi_can_output_test_zephyr);
+# ../../ is src/ from there.
+[image.fvp-aemv8r-smp]
+board     = "fvp-aemv8r-smp"
+entry     = "asi_can_output_test_zephyr"
+os_config = [
+  "../../controller_bringup/zephyr/net-fvp.toml",
+  "../../controller_bringup/zephyr/prj-actuation.conf",
+  "../../controller_bringup/zephyr/prj-fvp.conf",
+  "../../../test/zephyr_app/can_loopback.conf",
+  "../../../test/zephyr_app/can_loopback.overlay",
+]
+knobs.memory.heap_bytes = 8388608
