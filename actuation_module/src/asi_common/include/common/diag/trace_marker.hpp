@@ -17,20 +17,28 @@
 // stopwatch (PROFILE_POINT in logger.hpp) gives a duration but cannot say what
 // preempted the cycle, and its UART write perturbs the very cycle it measures.
 //
-// Zephyr 3.7 has no user-event facility (upstream's named_event came later), so
-// the event is added out-of-tree by nano-ros's Zephyr patch set
-// (scripts/zephyr/ctf-app-marker-patch.sh, once this repo's patch 0002), which
-// declares `app_marker` (id 0x70) in the TSDL and exports the function below. scripts/parse-zephyr-ctf.py
-// reads the TSDL directly, so it decodes the new event with no changes.
+// The markers go through nano-ros's public application trace marker,
+// rclcpp::trace_marker (nano-ros issue 2641), on the same sink and clock as
+// the executor's callback events (ids 16-27). On Zephyr with
+// CONFIG_TRACING_CTF the sched-task entry installs the default sink, which
+// writes the CTF `app_marker` event (id 0x70, fields marker_id and arg) that
+// nano-ros's Zephyr patch set declares; scripts/parse-zephyr-ctf.py reads the
+// TSDL directly, so it decodes the event with no changes. Elsewhere the
+// markers reach whatever sink the application installs, if any.
 //
-// Cost when tracing is off: nothing at all — the calls compile away.
+// Cost: with nano-ros built without its `trace-callbacks` feature
+// (CONFIG_NROS_TRACE_CALLBACKS, on only in the trace images) or with no sink
+// installed, the call is an id range check and a branch.
 
 #include <cstdint>
+
+#include <rclcpp/rclcpp.hpp>
 
 namespace common::diag
 {
 
-/// Marker sites. Keep the values stable: they appear in captured traces, and a
+/// Marker sites, the application block 1..15 (rclcpp::kTraceAppMarkerFirst
+/// .. kTraceAppMarkerLast). Keep the values stable: they appear in captured traces, and a
 /// renumbering silently reinterprets every trace taken before it.
 enum class Marker : uint32_t
 {
@@ -63,20 +71,12 @@ enum class CycleOutcome : uint32_t
   not_ready = 2,      ///< controllers not ready yet
 };
 
-#if defined(CONFIG_TRACING_CTF)
-
-extern "C" void sys_trace_app_marker(uint32_t marker_id, uint32_t arg);
-
 inline void trace_marker(Marker marker, uint32_t arg = 0)
 {
-  sys_trace_app_marker(static_cast<uint32_t>(marker), arg);
+  // Every Marker value is an application id (1..15); the result is ignored
+  // as the hand-written call's was.
+  static_cast<void>(rclcpp::trace_marker(static_cast<uint32_t>(marker), arg));
 }
-
-#else
-
-inline void trace_marker(Marker, uint32_t = 0) {}
-
-#endif  // CONFIG_TRACING_CTF
 
 }  // namespace common::diag
 
