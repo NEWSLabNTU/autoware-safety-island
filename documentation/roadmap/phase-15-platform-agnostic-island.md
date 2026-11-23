@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 7066a4c436 (2026-11-23)
+On branch `nano-ros-next` nano-ros is pinned at main 9c6b9aebdb (2026-11-23)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -19,7 +19,9 @@ workaround whose fix is in the pin but two: the P9 dependency fallbacks,
 the P10 bringup guards and `--plan` step, the P11 trace marker went; the P3
 `declare_parameter()` defaults and the test entries' `asi_common` fallback
 stay (see "Dropped on nano-ros-next (pin
-7066a4c436, T4)").
+7066a4c436, T4)"). Pin 9c6b9aebdb dropped two more: the Zephyr test
+entries' `NROS_INTERFACE_SEARCH_PATH` and the `--zephyr-workspace` flags
+(see "Dropped on nano-ros-next (pin 9c6b9aebdb)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -79,7 +81,21 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 7066a4c436 (2026-11-23). Over 8d4e70a382 it adds PR 4671
+nano-ros main 9c6b9aebdb (2026-11-23). Over 7066a4c436 it adds PR 4696
+(issue 2876: `nros build` passes `-DNROS_INTERFACE_SEARCH_PATH=<workspace>/src`
+on an owned Zephyr west entry's line, the path the entry's census build
+uses), PR 4698 (issue 2877: with no `--zephyr-workspace`, `ZEPHYR_BASE` or
+`NROS_ZEPHYR_WORKSPACE`, `nros build` and `nros run` take the nearest
+`.west/` at or above the workspace root whose manifest lists a `zephyr`
+project, ahead of the store's Zephyr workspace; the build prints the tree it
+chose), phase-581 W6 (knob renames batch 2), and fixes for issues 2762,
+2815, 2825, 2846, 2890 and 2896. W6 refuses two spellings the island used:
+`build.sh` exports `NROS_PARAMS_MAX_PARAMETERS` (was `NROS_MAX_PARAMETERS`)
+for the Zephyr test programs and `test/zephyr_app` sets
+`CONFIG_NROS_PARAMS_STORE` (was `CONFIG_NROS_PARAM_STORE`); the values are
+unchanged. Cyclone is unchanged, `nros-sdk.lock` as it was.
+
+Before that, nano-ros main 7066a4c436 (2026-11-23). Over 8d4e70a382 it adds PR 4671
 (issue 2871: `[image.<id>] runs_nano_ros = false` states that an image's
 owned entry never initialises nano-ros; its configure records an empty
 census without a host build and sizes the image for zero entities).
@@ -604,6 +620,25 @@ bss unchanged.
   board's rows (nano-ros issue 2629); what is left of `test/zephyr_app`
   (the tap UDP tunnel CAN build the FVP tap lane runs, and the
   trace / statistics builds) is no image and still needs them.
+
+### Dropped on nano-ros-next (pin 9c6b9aebdb)
+
+Each fix is in the pin (`git merge-base --is-ancestor`).
+
+- `src/asi_tests/asi_*_zephyr/CMakeLists.txt`: the hand-set
+  `NROS_INTERFACE_SEARCH_PATH` (P10). `nros build` puts the workspace's
+  `src/` on an owned west entry's search path (nano-ros issue 2876, PR
+  4696). `test/zephyr_app` keeps its line: it is a plain west application
+  `build.sh` builds with `west build`, not an owned entry.
+- `.github/scripts/run-zephyr-fvp-ci.sh` (`nros_fvp`) and `build.sh`
+  (`build_zephyr_controller`): `--zephyr-workspace "${ROOT_DIR}"` on `nros
+  build` and `nros run` (P10). nros takes this checkout, the nearest
+  `.west/` whose manifest lists `zephyr`, ahead of the store's Zephyr
+  workspace (nano-ros issue 2877, PR 4698).
+- Kept: `bootstrap-asi.sh`'s `nros setup board fvp-aemv8r-smp
+  --zephyr-workspace "${ROOT}"`. The flag is required there (it names the
+  tree the patch set is applied to); the issue 2877 ladder is `nros build`
+  and `nros run`'s.
 
 ## Steps
 
@@ -1406,7 +1441,8 @@ bss unchanged.
     the images are not census-sized (nano-ros reports the nested bringup's
     model as unresolved and keeps the configured defaults, which the tests
     fit). The lane exports `NROS_ZEPHYR_WORKSPACE`: `nros run` rebuilds a
-    stale image and takes no `--zephyr-workspace`.
+    stale image and takes no `--zephyr-workspace`. (From pin 9c6b9aebdb
+    the entries set no search path, nano-ros issue 2876.)
     `build.sh --unit-test` on Zephyr now points at the image; `test/zephyr_app`
     keeps `--dds-loopback-test` for the statistics and trace builds.
     Local runs (2026-11-23): unit test passed at 5.4 s, loopback at 3.3 s,
@@ -1429,7 +1465,9 @@ bss unchanged.
     `--zephyr-workspace` to `nros build` and `nros run` instead of
     exporting `NROS_ZEPHYR_WORKSPACE`: with neither, nros takes the store's
     Zephyr workspace, which lacks this repo's Zephyr patches (measured: a
-    Kconfig abort on NET_SOCKETS_POLL_MAX). `build.sh --can-output-test`
+    Kconfig abort on NET_SOCKETS_POLL_MAX). From pin 9c6b9aebdb the lane
+    passes neither: nros takes this checkout's west workspace itself
+    (nano-ros issue 2877). `build.sh --can-output-test`
     stays for the tap network's UDP tunnel build.
     The tap build smoke (phase 5) is a `build.sh` build with no output to
     grade.

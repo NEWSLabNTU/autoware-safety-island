@@ -32,7 +32,10 @@ Runs ``actuation_module/test/unit_test.cpp`` as an image of its own
 (``src/test_bringup/unit_test``) on every board that runs it: the FVP
 (``fvp-aemv8r-smp``), the FreeRTOS POSIX simulator (``freertos-posix``) and
 QEMU's ``mps3-an536-freertos``. ``nros run`` builds the image when it is
-stale and passes once the line has appeared. The test creates a DDS
+stale and passes once the line has appeared. A Zephyr image builds against
+this checkout's west workspace (``west init -l actuation_module`` and
+``west update`` at the repository root): ``nros`` finds it from
+``actuation_module`` with no flag. The test creates a DDS
 publisher and subscriber on the same topic, drives a node timer, and checks
 that messages arrive and callbacks fire as expected. Useful as a smoke test
 after changes to ``include/common/node/`` or ``include/common/dds/``.
