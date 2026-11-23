@@ -15,30 +15,6 @@ if(DEFINED NROS_BRINGUP_DIR AND NOT NROS_BRINGUP_DIR MATCHES "/controller_bringu
 endif()
 project(autoware_mpc_lateral_controller LANGUAGES C CXX)
 
-# The packages this one <depend>s on, added here when nobody did yet:
-# nano-ros's metadata probe configures a node package without its <depend>
-# closure.
-if(NOT TARGET asi_common)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../asi_common" asi_common)
-endif()
-if(NOT TARGET Eigen3::Eigen)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../eigen" eigen)
-endif()
-if(NOT TARGET autoware_interpolation)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_interpolation" autoware_interpolation)
-endif()
-if(NOT TARGET autoware_motion_utils)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_motion_utils" autoware_motion_utils)
-endif()
-if(NOT TARGET autoware_trajectory_follower_base)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_trajectory_follower_base" autoware_trajectory_follower_base)
-endif()
-if(NOT TARGET autoware_universe_utils)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_universe_utils" autoware_universe_utils)
-endif()
-if(NOT TARGET autoware_vehicle_info_utils)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_vehicle_info_utils" autoware_vehicle_info_utils)
-endif()
 # Upstream's spelling; src/eigen points it at the island's Eigen 3.4.0.
 find_package(Eigen3 3.4 REQUIRED)
 

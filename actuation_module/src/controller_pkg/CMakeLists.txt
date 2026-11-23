@@ -19,13 +19,9 @@ endif()
 # actuation_module root (this file lives at <root>/src/controller_pkg/).
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# The platform layer and the vendored Autoware packages the node uses.
-# Configured before this package in a workspace build; nano-ros's metadata
-# probe adds this package on its own, so add them here when nobody did (each
-# Autoware package adds its own <depend>s the same way).
-if(NOT TARGET asi_common)
-  add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
-endif()
+# The vendored Autoware packages the node uses, <depend>s in package.xml:
+# the workspace build and nano-ros's metadata probe add them (and
+# asi_common) before this package (nano-ros issue 2680).
 set(_AUTOWARE_DEPS
   autoware_motion_utils
   autoware_mpc_lateral_controller
@@ -33,11 +29,6 @@ set(_AUTOWARE_DEPS
   autoware_trajectory_follower_base
   autoware_universe_utils
   autoware_vehicle_info_utils)
-foreach(_dep IN LISTS _AUTOWARE_DEPS)
-  if(NOT TARGET ${_dep})
-    add_subdirectory("${_ACT_ROOT}/src/autoware/${_dep}" ${_dep})
-  endif()
-endforeach()
 
 # --- The component library + its registration (RFC-0057) -------------------
 # nano-ros's reference shape, the ament analog: the library owns the sources,

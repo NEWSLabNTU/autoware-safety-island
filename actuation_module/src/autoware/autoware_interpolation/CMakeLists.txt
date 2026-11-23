@@ -15,18 +15,6 @@ if(DEFINED NROS_BRINGUP_DIR AND NOT NROS_BRINGUP_DIR MATCHES "/controller_bringu
 endif()
 project(autoware_interpolation LANGUAGES C CXX)
 
-# The packages this one <depend>s on, added here when nobody did yet:
-# nano-ros's metadata probe configures a node package without its <depend>
-# closure.
-if(NOT TARGET asi_common)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../asi_common" asi_common)
-endif()
-if(NOT TARGET Eigen3::Eigen)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../eigen" eigen)
-endif()
-if(NOT TARGET autoware_universe_utils)
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_universe_utils" autoware_universe_utils)
-endif()
 # Upstream's spelling; src/eigen points it at the island's Eigen 3.4.0.
 find_package(Eigen3 3.4 REQUIRED)
 
