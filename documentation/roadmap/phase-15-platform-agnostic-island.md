@@ -15,9 +15,10 @@ in CI in a network namespace of their own, no password),
 and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below). nano-ros phase-478 T4 (2026-11-23) dropped every
-workaround whose fix is in the pin but one: the P9 dependency fallbacks,
-the P10 bringup guards and `--plan` step, the P11 trace marker; the P3
-`declare_parameter()` defaults stay (see "Dropped on nano-ros-next (pin
+workaround whose fix is in the pin but two: the P9 dependency fallbacks,
+the P10 bringup guards and `--plan` step, the P11 trace marker went; the P3
+`declare_parameter()` defaults and the test entries' `asi_common` fallback
+stay (see "Dropped on nano-ros-next (pin
 7066a4c436, T4)").
 
 Goal: leave the island with application code only. What still ties it to
@@ -557,10 +558,19 @@ fix was checked with `git merge-base --is-ancestor <fix> 7066a4c436`.
   added) is gone; the lanes `nros build` and `nros run` the test images
   (nano-ros issue 2752, 68aaaaebe0: the executable comes from CMake's
   file API). POSIX: unit test matched at 0.3 s, loopback at 2.3 s.
-- 78c7e37, `asi_unit_test`, `asi_dds_loopback_test`: their `asi_common`
-  fallback (issues 2680, 2861). Both census takes are fresh and both
-  freertos-posix test images pass. The Zephyr entries
-  (`asi_*_zephyr`) keep theirs: the entry is the west application
+- Kept, P10: the `asi_common` fallback in `asi_unit_test` and
+  `asi_dds_loopback_test` (removed in 78c7e37, restored by its revert).
+  The census of an owned entry is a host build of the entry package
+  alone, and it does not add the package's workspace `<depend>`s (nano-ros
+  issue 2680 covers the metadata probe only). CI run 45143801025 on a
+  clean checkout: `unit_test_bringup:freertos-posix` and
+  `:mps3-an536-freertos` stop in `NanoRosLeafEntityFacts.cmake:291` ("the
+  census could not be taken"; `unit_test.cpp:23: fatal error:
+  common/clock/clock.hpp: No such file or directory`). Locally the same
+  change passed only because the census read fresh: its one freshness
+  input is the host binary, which an edit of the entry's `CMakeLists.txt`
+  does not rebuild. Both reported to nano-ros. The Zephyr entries
+  (`asi_*_zephyr`) keep theirs too: the entry is the west application
   itself, and asi_common is a Kconfig-only Zephyr module.
 - cc4892c, `asi_common/include/common/diag/trace_marker.hpp`: the markers
   call `rclcpp::trace_marker` (nano-ros issue 2641, dbd56b4bf9) instead of
