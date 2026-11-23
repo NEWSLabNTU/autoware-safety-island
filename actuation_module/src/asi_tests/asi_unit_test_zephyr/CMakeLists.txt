@@ -35,8 +35,9 @@ if(NOT TARGET asi_common)
 endif()
 
 # The workspace's own message packages (safety_island_msgs,
-# visionpilot_msgs), which asi_common's message umbrella includes.
-set(NROS_INTERFACE_SEARCH_PATH "${_ACT_ROOT}/src")
+# visionpilot_msgs), which asi_common's message umbrella includes, are found
+# with no line here: nros build puts <workspace>/src on an owned entry's
+# NROS_INTERFACE_SEARCH_PATH (nano-ros issue 2876).
 
 # ROS2_MAIN: the program keeps its own main(); nano-ros renames it and calls
 # it from the board's main(void). The interface packages package.xml names
