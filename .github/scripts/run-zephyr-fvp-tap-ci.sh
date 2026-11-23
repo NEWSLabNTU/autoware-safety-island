@@ -15,6 +15,9 @@ ROOT_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
 BUILD_ROOT="${ROOT_DIR}/build/zephyr-fvp-tap-can"
 
 source "${ROOT_DIR}/.github/scripts/ci-helpers.sh"
+# build.sh generates the message bindings from AMENT_PREFIX_PATH, as the
+# validation step does (run-zephyr-fvp-ci.sh).
+source_ament_env
 
 ensure_zephyr_workspace()
 {
