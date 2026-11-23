@@ -19,9 +19,6 @@ get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE
 if(NOT COMMAND nano_ros_add_executable)
   find_package(nano_ros REQUIRED)
 endif()
-if(NOT TARGET asi_common)
-  add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
-endif()
 
 # ROS2_MAIN: the program keeps its own main(); on a board nano-ros renames it
 # and calls it from the board's entry, with hosted C++. The interface packages
