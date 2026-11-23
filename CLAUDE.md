@@ -91,9 +91,20 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
   test/zephyr_app (the controller images' fragments plus its own); use one
   `-d` per program.
 - CI lanes run locally as `.github/scripts/run-freertos-posix-ci.sh`,
-  `run-freertos-an536-ci.sh` and `run-zephyr-fvp-ci.sh` from the repo root.
+  `run-freertos-an536-ci.sh` and `run-zephyr-fvp-ci.sh` from the repo root
+  (plus the network tests below).
   Unset `CYCLONEDDS_URI`, `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION` first: an
   inherited Cyclone config changes the POSIX smoke's interface line.
+- Network tests need no sudo or password: `scripts/run-in-netns.sh
+  [--vcan] [--tap] [--root] -- <cmd>` runs <cmd> in a throwaway container
+  (`docker run --rm --cap-add NET_ADMIN --device /dev/net/tun --network
+  none`) with vcan0 / tap0 made inside it; the host's interfaces (its own
+  vcan0 too) are never touched. The vcan roundtrip is
+  `.github/scripts/run-freertos-vcan-ci.sh`, the FVP tap tunnel
+  `.github/scripts/run-zephyr-fvp-tap-ci.sh` (set `ARMFVP_BIN_PATH`). CI runs
+  both in its job containers (`ASI_NETNS_DIRECT=1`, NET_ADMIN in the job's
+  options). Never `--privileged`, never host network with NET_ADMIN, never a
+  tap or vcan on the host.
 - Host tests: `cmake -S actuation_module/test/host -B build/host-tests`.
 - Docs: `python3 -m pip install -r documentation/requirements.txt`, then
   `sphinx-build -b html documentation documentation/_build/html`.

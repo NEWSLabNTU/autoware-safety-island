@@ -81,22 +81,49 @@ program (``test/zephyr_app``), for the tap network's UDP tunnel below. The
 ``freertos-posix`` controller image sends through nano-ros's SocketCAN backend
 on its ``[image.<id>.can] device`` (``vcan0``). See ``demo/can_carla_bridge/README.md``.
 
-SocketCAN ``vcan`` roundtrip (``CAP_NET_ADMIN``, or unprivileged user
-namespaces):
+Network tests with no password
+==============================
+
+The vcan roundtrip and the FVP tap tunnel need a ``vcan0`` and a ``tap0``
+they can configure (``CAP_NET_ADMIN`` over them). ``scripts/run-in-netns.sh``
+gives a test a network namespace of its own: it starts a throwaway container
+with ``docker run --rm --cap-add NET_ADMIN --device /dev/net/tun --network
+none`` (an Ubuntu 22.04 helper image, ``scripts/netns/Dockerfile``, built on
+first use), creates the devices inside it and runs the test there, as the
+calling user unless ``--root``. It needs no sudo and no password, only a
+docker the user can run (the ``docker`` group). The host's interfaces are
+never touched, a host ``vcan0`` included; there is no ``--privileged`` and no
+host network. The host kernel needs the ``vcan`` module (loaded on demand)
+and ``/dev/net/tun``.
+
+SocketCAN ``vcan`` roundtrip (phase-15 P7):
+
+.. code-block:: console
+
+  $ .github/scripts/run-freertos-vcan-ci.sh
+
+or by hand:
 
 .. code-block:: console
 
   $ ./build.sh --platform freertos-posix --can-output-test -d build/freertos-posix-can
-  $ ./actuation_module/test/run-vcan-roundtrip.sh
+  $ scripts/run-in-netns.sh --vcan --root -- \
+      actuation_module/test/run-vcan-roundtrip.sh build/freertos-posix-can/can_vcan_sender
+  $ scripts/run-in-netns.sh --vcan --root -- \
+      actuation_module/test/run-udp-tunnel-roundtrip.sh
 
 On ``freertos-posix``, ``--can-output-test`` builds the controller image and,
-beside it, ``can_vcan_sender`` (the SocketCAN backend). The C++ sender emits
-one classic batch and one CAN-FD frame; the Python decoder receives and
-checks both. Without ``CAP_NET_ADMIN`` over ``vcan0`` the script re-runs in a
-private network namespace (``unshare -rn``) with a ``vcan0`` of its own; it
-exits 77 if neither is available.
-``.github/scripts/run-freertos-vcan-ci.sh`` runs the build and both vcan
-roundtrips; no GitHub Actions job runs it on this branch.
+beside it, ``can_vcan_sender``: the island's encoder through nano-ros's
+SocketCAN backend of ``<nros/platform_can.h>``. The sender emits one classic
+batch and one CAN-FD frame on ``vcan0``; the Python decoder receives and
+checks both; then, with ``vcan0`` at the classic MTU, CAN-FD init must fail
+closed. ``--root`` because that check changes ``vcan0``'s MTU. The UDP
+roundtrip sends a tunnelled batch to the host gateway
+(``demo/can_tunnel_bridge/gateway.py``), which puts it on ``vcan0`` for the
+decoder. Run outside a namespace, the scripts still fall back to
+``unshare -rn`` and exit 77 when neither works. CI runs both in the
+FreeRTOS POSIX job, whose container has ``NET_ADMIN`` (``ASI_NETNS_DIRECT=1``:
+the job container is the namespace).
 
 Python decoder golden vectors and UDP tunnel pack/unpack (no ``vcan``,
 no ``python-can``, no CARLA):
@@ -113,27 +140,39 @@ The closed-loop deployment contract check runs in Open AD Kit PR #146:
 
   $ python3 deployments/safety-island-carla-simulation/test_contract.py
 
-UDP gateway → ``vcan0`` (needs ``CAP_NET_ADMIN``):
+Zephyr FVP TAP UDP tunnel (phase-15 P10; needs the FVP):
 
 .. code-block:: console
 
-  $ ./actuation_module/test/run-udp-tunnel-roundtrip.sh
+  $ export ARMFVP_BIN_PATH=~/.nros/sdk/arm-fvp/11.31.28/bin
+  $ .github/scripts/run-zephyr-fvp-tap-ci.sh
 
-Zephyr FVP TAP UDP tunnel (needs ``tun`` and FVP):
+or by hand:
 
 .. code-block:: console
 
   $ ./build.sh --platform zephyr-fvp --network tap --can-output-test \
       -d build/zephyr-fvp-tap-can
-  $ ./actuation_module/test/run-fvp-tap-tunnel.sh build/zephyr-fvp-tap-can
+  $ scripts/run-in-netns.sh --vcan --tap -- \
+      actuation_module/test/run-fvp-tap-tunnel.sh build/zephyr-fvp-tap-can
 
 On the tap network ``--can-output-test`` builds the test program with
-``CAN_ONLY`` over the UDP tunnel. The script uses a ``tap0`` already
-configured on the host (owned by the user, ``192.168.10.1/24``, up), creates
-one with ``CAP_NET_ADMIN``, or otherwise runs in a private network namespace
-(``unshare -rn``) with its own ``tap0`` and ``vcan0``. The namespace needs no
-host setup and is the safe choice on a host whose LAN is already
-``192.168.10.0/24``.
+``CAN_ONLY`` over the UDP tunnel. ``--tap`` makes ``tap0`` (owned by the
+calling user, ``192.168.10.1/24``, up) in the container; the model opens it
+as that user, its frames reach the gateway on ``192.168.10.1:5555`` and land
+on the container's ``vcan0``, where the decoder must accept a command and the
+console must say ``CAN output tests passed``. The model starts from the
+build dir's recorded command (``build.sh --run``), so the container needs
+neither west nor cmake; ``ARMFVP_BIN_PATH``'s install is mounted read-only.
+The namespace is also the safe choice on a host whose LAN is already
+``192.168.10.0/24``. Outside a namespace the script still uses a ``tap0``
+already configured on the host, or ``unshare -rn``. CI runs it in the Zephyr
+FVP job, whose container has ``NET_ADMIN`` and ``/dev/net/tun``.
+
+The FVP tap demo with the Autoware compose stack (``scripts/run-tap-demo.sh``)
+is not a test and still wants a host ``tap0`` (``sudo
+scripts/setup-tap.sh``): its compose stack reaches the island over that host
+interface.
 
 Native FVP ``--can-output-test`` without ``--network tap`` stays on
 ``zephyr,can-loopback``, as the image does.
@@ -175,7 +214,8 @@ controller image:
 .. code-block:: console
 
   $ ./build.sh --platform freertos-posix --can-output-test -d build/freertos-posix-can
-  $ ./actuation_module/test/run-vcan-roundtrip.sh build/freertos-posix-can/can_vcan_sender
+  $ scripts/run-in-netns.sh --vcan --root -- \
+      actuation_module/test/run-vcan-roundtrip.sh build/freertos-posix-can/can_vcan_sender
 
 Clean between builds if switching flags:
 

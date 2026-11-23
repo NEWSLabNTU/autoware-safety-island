@@ -10,7 +10,8 @@ and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
 alone), P10 in part (every lane runs the controller and the unit and
-loopback tests on `nros run`; the FVP CAN and statistics phases remain),
+loopback tests on `nros run`; the vcan roundtrip and the FVP tap tunnel run
+in CI in a network namespace of their own, no password),
 and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below).
@@ -946,7 +947,8 @@ What remains of P9 and P11 after this:
   are unchanged (192.168.10.2, gateway and peers .1). `network_config.cpp`
   is not gone: its S32Z interface-2 / VLAN path and DHCP wait stay until the
   S32Z states its network in a board file or the hook moves to its board
-  package. No CI lane boots a tap image (it needs a host tap0). CI run
+  package. The FVP tap tunnel boots a tap image in CI since P7's
+  `net-tests` change (tap0 in the job container's namespace). CI run
   44953249873 (e182201, P6 over the pin) is green on all three lanes:
   Zephyr FVP 38 min (the user-mode controller "Actuation Safety Island is
   Live"; Phase 5 builds the `fvp-tap` controller image with
@@ -1005,18 +1007,45 @@ What remains of P9 and P11 after this:
     freertos-posix image links goes the same way. A nano-ros issue is
     filed as nano-ros issue 2822 and fixed by PR 4588 (118cfd3f09); the
     island never worked around it.
-  - Not in CI: the "vcan roundtrip CI and the FVP tap tunnel pass" part of
-    Done when. Neither has a CI lane, and none is added: both need
-    `CAP_NET_ADMIN`, `/dev/net/tun` and the `vcan` module on the runner,
-    which are not approved. What they need, which no CI lane
-    has: the vcan roundtrip (`.github/scripts/run-freertos-vcan-ci.sh`) needs
-    the `vcan` kernel module on the runner and `CAP_NET_ADMIN` over a vcan0
-    (it falls back to an unprivileged user + network namespace, `unshare
-    -rn`, when the runner allows user namespaces); the FVP tap tunnel
-    (`run-zephyr-fvp-tap-ci.sh`, `test/run-fvp-tap-tunnel.sh`) needs a host
-    `tap0` at 192.168.10.1/24 the FVP model can open
-    (`bp.hostbridge.interfaceName=tap0`, so `CAP_NET_ADMIN` and
-    `/dev/net/tun` in the job's container) plus a vcan for the gateway.
+  - The vcan roundtrip and the FVP tap tunnel (the rest of Done when) run
+    with no sudo and no password (branch `net-tests`, 2026-11-23, pin
+    8d4e70a382, no pin move). `scripts/run-in-netns.sh` runs a test in a
+    network namespace of its own: `docker run --rm --cap-add NET_ADMIN
+    --device /dev/net/tun --network none` over a small Ubuntu 22.04 helper
+    image (`scripts/netns/Dockerfile`: iproute2, python3, can-utils,
+    libatomic1), with vcan0 and tap0 made inside it by
+    `scripts/netns/entry.sh` (tap0 owned by the caller, 192.168.10.1/24);
+    the test then runs as the caller unless `--root`. No `--privileged`, no
+    host network, no tap or vcan on the host (the host's own vcan0 is never
+    seen). On CI each job container gets `--cap-add NET_ADMIN --device
+    /dev/net/tun` in its options and the script runs in it directly
+    (`ASI_NETNS_DIRECT=1`): the job container is the namespace.
+    - vcan roundtrip: `.github/scripts/run-freertos-vcan-ci.sh` (a step in
+      the FreeRTOS POSIX job) builds `controller_bringup:freertos-posix`
+      with `can_vcan_sender` (the island's encoder over nano-ros's SocketCAN
+      backend of `<nros/platform_can.h>`), then, in the namespace as root,
+      `run-vcan-roundtrip.sh` (one classic batch and one CAN-FD frame
+      decoded back; CAN-FD init fails closed at MTU 16) and
+      `run-udp-tunnel-roundtrip.sh` (a tunnelled batch through the host
+      gateway onto vcan0, accepted by the decoder). Local run: all pass in
+      0.7 s. The controller image itself boots on the namespace's vcan0
+      ("Actuation Safety Island is Live") but launches with the
+      `control_output` default, DDS_ONLY (system.launch.xml), so it opens no
+      CAN device; the frames on the bus are the sender's.
+    - FVP tap tunnel: `.github/scripts/run-zephyr-fvp-tap-ci.sh` (a step in
+      the Zephyr FVP job) builds `build.sh --platform zephyr-fvp --network
+      tap --can-output-test` and runs `run-fvp-tap-tunnel.sh` in the
+      namespace with tap0 and vcan0: the model on tap0 reports "CAN output
+      tests passed", its frames reach the gateway at 192.168.10.1:5555 and
+      the decoder on vcan0 accepts a command. The model starts from the
+      build dir's recorded `run_armfvp` command (`build.sh --run`, no west
+      in the container) and is stopped once both checks hold. Its console
+      and the gateway log go to the zephyr-fvp-logs artifact
+      (`fvp_tap_tunnel.log`, `fvp_tap_gateway.log`). Local run: pass in
+      1.7 s (gateway injected seq 0 and 1).
+    - Still wanting a host tap0 (`sudo scripts/setup-tap.sh`): the FVP tap
+      demo with the Autoware compose stack (`scripts/run-tap-demo.sh`),
+      which is a demo, not a test.
 
 ### P8. Census on - M
 
@@ -1206,9 +1235,10 @@ What remains of P9 and P11 after this:
   lanes.
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
-- Status on nano-ros-next (pin 4406b7f4e5): the FVP lane's controller,
-  unit and loopback phases are on `nros run` too (below); its CAN and
-  statistics phases are not.
+- Status on nano-ros-next (pin 8d4e70a382): every FVP lane phase is on
+  `nros run` (below). The FVP tap tunnel runs in CI too, in the Zephyr FVP
+  job, with tap0 made in the job container's own network namespace and no
+  password (`scripts/run-in-netns.sh`; see P7).
 - Earlier status (branch `nros-next-p10`, pin 93368ca929): the
   FreeRTOS POSIX and AN536 lanes are done; the FVP lanes are unchanged
   (`run-zephyr-fvp-ci.sh`, `build.sh` `build_zephyr_test` and
