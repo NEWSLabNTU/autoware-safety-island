@@ -14,7 +14,11 @@ loopback tests on `nros run`; the vcan roundtrip and the FVP tap tunnel run
 in CI in a network namespace of their own, no password),
 and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
-nano-ros-next", below).
+nano-ros-next", below). nano-ros phase-478 T4 (2026-11-23) dropped every
+workaround whose fix is in the pin but one: the P9 dependency fallbacks,
+the P10 bringup guards and `--plan` step, the P11 trace marker; the P3
+`declare_parameter()` defaults stay (see "Dropped on nano-ros-next (pin
+7066a4c436, T4)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -59,7 +63,7 @@ Read on `nano-ros-migration` 7f23105 at nano-ros pin 5b9e8844a4.
 | 4006 | `nros-toolchain.toml` cannot pin a git commit | P11 |
 | 4007 | fvp runner: model parameters (SMSC NIC, tap hostbridge, uart out_file) | P10, P11 |
 | 4008 | carry the Zephyr CTF app_marker and k_thread_priority_set patches | P11 |
-| 4009 | public trace marker through the installed trace sink | P11 |
+| 4009 | public trace marker through the installed trace sink; fixed at the pin (issue 2641, dbd56b4bf9), used on nano-ros-next (T4) | P11 |
 | 4010 | `RCLCPP_*_THROTTLE` (steady clock) and `RCLCPP_*_ONCE`; fixed at the pin (PR 4042) | P4 |
 | 4011 | board network file for Zephyr images (`NET_CONFIG_*`); fixed at the pin (issue 2679, 41ffa35b7f); the FVP images state their address in a board network file (P6) | P6 |
 | 4012 | board-owned CAN frame driver | P7 |
@@ -435,8 +439,8 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
   4595678 (was 1947888 / 43964 / 4595678): `.text` unchanged, rodata +1024
   (Eigen's assert `__FILE__` strings carry the longer path). CI run
   44083208345 green (an536, posix, fvp).
-- Checked, kept: the controller_pkg `add_subdirectory` fallbacks
-  (`:18-23`). Without them the metadata probe fails: its generated
+- Checked, kept at that pin (gone at 7066a4c436, see T4 below): the
+  controller_pkg `add_subdirectory` fallbacks (`:18-23`). Without them the metadata probe fails: its generated
   `CMakeLists.txt` adds `src/controller_pkg` alone, not the package's
   `<depend>` closure, so `controller_node.hpp` cannot find
   `autoware/trajectory_follower_base/control_horizon.hpp` and `nros build
@@ -518,19 +522,71 @@ Each is done on `nano-ros-next` only; on `nano-ros` it waits for nros12.
 
 What remains of P9 and P11 after this:
 
-- P9: the `add_subdirectory` fallbacks in controller_pkg and the seven
-  Autoware packages, until the metadata probe configures a node package's
-  workspace `<depend>`s (a nano-ros change, not filed). The Autoware
-  packages' add-once guard is gone (nano-ros issue 2756, see below).
+- P9: nothing on nano-ros-next. The `add_subdirectory` fallbacks went at
+  pin 7066a4c436 (T4, below); the Autoware packages' add-once guard is
+  gone (nano-ros issue 2756, see below).
 - P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
   hand upstream as is; the RTD switch above; one pin and the west import
-  (4006); the Zephyr patches and trace marker (4008, 4009). FVP model
+  (4006); the Zephyr patch 0003 (4008; nano-ros issue 2878). The trace
+  marker is nano-ros's (4009, T4 below). FVP model
   parameters come from the board and image rows (4007, see below), except
   for the test programs, which are no image.
 - P7 (CAN behind one interface) is done on nano-ros-next (pin 118cfd3f09)
   over the board-owned CAN frame driver (4012).
+
+### Dropped on nano-ros-next (pin 7066a4c436, T4)
+
+nano-ros phase-478 T4: each workaround whose nano-ros fix is in the pin,
+one commit each on branch `t4-cleanups`, landed on `nano-ros-next`. Each
+fix was checked with `git merge-base --is-ancestor <fix> 7066a4c436`.
+
+- 2d54310, controller_pkg and the seven `src/autoware/*/CMakeLists.txt`:
+  the `add_subdirectory` fallbacks for `asi_common`, `eigen` and each
+  other (P9). The metadata probe adds a node package's workspace
+  `<depend>` closure (nano-ros issue 2680, PR 4153, 444e3f7c5c). `nros
+  build controller_bringup:freertos-posix` probes and links without them.
+- 7dc229f, controller_pkg, the seven Autoware packages, `asi_unit_test`,
+  `asi_dds_loopback_test`: the `NROS_BRINGUP_DIR` guards (P10). A
+  generated root adds only its bringup's closure (nano-ros issue 2754,
+  976970a3da): the `unit_test_bringup:freertos-posix` root adds
+  `asi_common` and `asi_unit_test` alone.
+- aa44bfd, `.github/scripts/ci-helpers.sh` and the two FreeRTOS lanes:
+  `nros_run_program` (`nros run --plan` over a dry-run plan with the ELF
+  added) is gone; the lanes `nros build` and `nros run` the test images
+  (nano-ros issue 2752, 68aaaaebe0: the executable comes from CMake's
+  file API). POSIX: unit test matched at 0.3 s, loopback at 2.3 s.
+- 78c7e37, `asi_unit_test`, `asi_dds_loopback_test`: their `asi_common`
+  fallback (issues 2680, 2861). Both census takes are fresh and both
+  freertos-posix test images pass. The Zephyr entries
+  (`asi_*_zephyr`) keep theirs: the entry is the west application
+  itself, and asi_common is a Kconfig-only Zephyr module.
+- cc4892c, `asi_common/include/common/diag/trace_marker.hpp`: the markers
+  call `rclcpp::trace_marker` (nano-ros issue 2641, dbd56b4bf9) instead of
+  declaring `sys_trace_app_marker` under `CONFIG_TRACING_CTF` (P11, 4009).
+  On Zephyr the sched-task entry's default sink writes the same CTF
+  `app_marker` event. `controller_bringup:fvp-trace`, 35 s on the FVP:
+  4866 `app_marker` events, 1195 cycle enter / 1194 exit markers, period
+  p50 30.000 ms, beside the executor's callback events.
+- Kept, P3: the C++ `declare_parameter()` defaults. The probe seeds launch
+  values (nano-ros issue 2640, a7574ca6eb) only when every launch
+  instance agrees. Two models name `/controller`, `system_model.yaml`
+  and `system_carla_model.yaml`, and they differ on `wheel_base` (2.74,
+  3.005), `max_pitch_rad` (0.1, 0.2) and `min_pitch_rad` (-0.1, -0.2), so
+  the probe constructs the node on its declaration defaults for every
+  parameter. Without the defaults (`declare_parameter<T>(name)`, 148
+  calls) the probe exits 1 and `nros build controller_bringup:freertos-posix`
+  stops ("1 metadata probe(s) failed ... the node cannot be constructed on
+  its declaration defaults ... its launch instances disagree"). Keeping
+  defaults for only those three parameters fails the same way. Reported
+  to nano-ros: seed the agreeing parameters and fall back per parameter,
+  or probe per model.
+- Kept, P10/P11: `build.sh` `build_zephyr_test`'s FVP model parameters
+  (`-DARMFVP_EXTRA_FLAGS`, `FVP_TAP_INTERFACE`). The test images take the
+  board's rows (nano-ros issue 2629); what is left of `test/zephyr_app`
+  (the tap UDP tunnel CAN build the FVP tap lane runs, and the
+  trace / statistics builds) is no image and still needs them.
 
 ## Steps
 
@@ -682,10 +738,11 @@ What remains of P9 and P11 after this:
     lanes' "Safety Island parameters incomplete" refusal went at the pin
     move to ea94566e87.
   - Waiting on nano-ros, interim in place:
-    - the C++ `declare_parameter()` defaults stay (same values as the files):
-      the per-component metadata probe constructs the node with no launch
-      values, so a node declaring without defaults cannot be probed. Goes
-      with P8's census or a probe that seeds the image.
+    - the C++ `declare_parameter()` defaults stay (same values as the files).
+      The probe seeds launch values since nano-ros issue 2640 (in the pin),
+      but only when every launch instance agrees, and the CARLA model
+      differs on three values; see "Dropped on nano-ros-next (pin
+      7066a4c436, T4)".
   - Checks: on the posix image, all 149 parameters read back by name
     (`~/get_parameters`) have the same type and value as on the pre-P3 image.
     At ea94566e87 `ros2 param list /controller` on the posix image lists all
@@ -1184,8 +1241,8 @@ What remains of P9 and P11 after this:
   define is gone (6d3d71e); Eigen is the `eigen` workspace package
   (b8ef477); `can_vcan_sender` is `nano_ros_add_plain_executable` (c35a136,
   4016); the Autoware packages' add-once guard is gone (nano-ros issue
-  2756). The controller_pkg fallbacks stay (nano-ros's metadata probe
-  adds only the node package). See "Dropped on nano-ros-next".
+  2756); the `add_subdirectory` fallbacks are gone (pin 7066a4c436,
+  nano-ros issue 2680, T4). See "Dropped on nano-ros-next".
   - Package split (b39a736): `autoware_controller_libs` is gone;
     `src/autoware/<pkg>/` holds seven ament packages, one per vendored
     upstream package (`autoware_universe_utils`, `_interpolation`,
@@ -1291,7 +1348,8 @@ What remains of P9 and P11 after this:
   - Workarounds, each to drop when nano-ros covers it: the bringup guards in `controller_pkg`,
     the seven Autoware packages and the test packages (a workspace configure
     adds every package; the controller's component executable does not
-    build in another bringup's root); the `--plan` step above.
+    build in another bringup's root); the `--plan` step above. Both gone
+    at pin 7066a4c436 (nano-ros issues 2754, 2752; T4).
   - `build.sh`: the FreeRTOS lanes no longer call it. Its FreeRTOS path
     stays for the CARLA image, the S32Z2 link, the vcan sender and the
     demos, which read its `actuation_*_entry` links; the FVP lanes keep
@@ -1518,7 +1576,8 @@ What remains of P9 and P11 after this:
 - The asi_common Zephyr module for the app's own Kconfig symbols
   (`ENABLE_*`, `ASI_TRACE_RING*`, `ASI_THREAD_STATS*`, CAN transport).
 - RT-evaluation tooling (trace ring backend, thread stats, CTF and trace
-  parsers, an536 gdb probes) until 4009 gives a portable marker path.
+  parsers, an536 gdb probes). The markers go through nano-ros's portable
+  `rclcpp::trace_marker` (4009); FreeRTOS has no default sink.
 - Deployment: `demo/`, `integration/carla/`, the domain split with
   domain_bridge, `check-bridge-contract.py`, `scripts/sntp-server.py`
   while SNTP is the epoch source.

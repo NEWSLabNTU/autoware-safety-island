@@ -48,8 +48,11 @@ Why the phase-7 markers are not the answer
 ==========================================
 
 ``include/common/diag/trace_marker.hpp`` defines seven marker sites, placed by
-hand in ``controller_node.cpp``. They answered the phase-7 questions and they
-are the wrong long-term shape:
+hand in ``controller_node.cpp``. (They call nano-ros's public
+``rclcpp::trace_marker`` now, nano-ros issue 2641, on the same sink as the
+callback events below; they no longer call ``sys_trace_app_marker``
+themselves.) They answered the phase-7 questions and they are the wrong
+long-term shape:
 
 * **Manual placement.** Every new callback needs someone to remember. The
   subscription callbacks have no markers at all today, so nothing is known
