@@ -45,7 +45,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-23: 9e9deb715f, past PR 4639 (issue 2865: bare-metal
+    # ON main, 2026-11-23: 8d4e70a382, past PR 4646 (issues 2861-2864: an
+    # owned Zephyr west entry deploys as `DEPLOY zephyr` and gets its
+    # workspace's Zephyr modules; a nested bringup gets its workspace root and
+    # an owned entry its census; `nros build` reports where each os_config
+    # fragment was found; `nros run` takes --forbid, --settle and
+    # --zephyr-workspace), phase-588 (`nros build` keeps the native tool's
+    # log) and phase-573 W3 (executor derives take the executor's lock).
+    # Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-23: 9e9deb715f, past PR 4639 (issue 2865: bare-metal
     # FreeRTOS resolves the wall clock at a boot point after the network is
     # up and the log writer is registered, so the `board` source answers
     # inside fallback_settle_ms and its verdict line prints), 4637 (issue
@@ -239,7 +248,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 9e9deb715fde11c4348bfc807e3a977a6c7f4b14
+      revision: 8d4e70a3828c24dba25bcbdaae0e4fd126069240
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
