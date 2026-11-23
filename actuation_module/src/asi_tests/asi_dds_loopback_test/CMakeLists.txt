@@ -12,12 +12,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(asi_dds_loopback_test LANGUAGES C CXX)
 
-# A workspace configure adds every package, so this one is configured for
-# the controller's images too; it builds a program only for its own.
-if(DEFINED NROS_BRINGUP_DIR AND NOT NROS_BRINGUP_DIR MATCHES "/test_bringup/dds_loopback_test/?$")
-  return()
-endif()
-
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 
 # A workspace build has nano-ros loaded already; the census (a host build of

@@ -9,13 +9,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(controller_pkg LANGUAGES C CXX)
 
-# The controller's images only. A workspace configure adds every package, so
-# the test programs' images (src/test_bringup) configure this one too; there
-# it would build a second controller program for nothing.
-if(DEFINED NROS_BRINGUP_DIR AND NOT NROS_BRINGUP_DIR MATCHES "/controller_bringup/?$")
-  return()
-endif()
-
 # actuation_module root (this file lives at <root>/src/controller_pkg/).
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
