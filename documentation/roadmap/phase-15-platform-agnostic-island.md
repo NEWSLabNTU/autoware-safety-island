@@ -623,7 +623,11 @@ bss unchanged.
 
 ### Dropped on nano-ros-next (pin 9c6b9aebdb)
 
-Each fix is in the pin (`git merge-base --is-ancestor`).
+Each fix is in the pin (`git merge-base --is-ancestor`). CI run
+45185201105 (b1de533) green on all three lanes: FreeRTOS POSIX 20 min,
+FreeRTOS AN536 28 min, Zephyr FVP 46 min (unit test matched at 4.4 s;
+every `nros build` printed "Zephyr tree .../zephyr (the west workspace
+... this project is in")).
 
 - `src/asi_tests/asi_*_zephyr/CMakeLists.txt`: the hand-set
   `NROS_INTERFACE_SEARCH_PATH` (P10). `nros build` puts the workspace's
