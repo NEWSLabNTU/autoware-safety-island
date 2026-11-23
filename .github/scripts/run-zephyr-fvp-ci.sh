@@ -200,9 +200,10 @@ bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 # rest of a report.
 #
 # The west workspace is this checkout, for nros build and for the build
-# `nros run` starts when an image is stale: both take --zephyr-workspace.
-# Without it nros falls back to the store's Zephyr workspace, which has
-# neither this repo's Zephyr patches nor, in CI, a checkout at all.
+# `nros run` starts when an image is stale: nros takes the nearest .west/
+# whose manifest lists zephyr (nano-ros issue 2877), ahead of the store's
+# Zephyr workspace, which has neither this repo's Zephyr patches nor, in CI,
+# a checkout at all. The build prints the tree it chose.
 FATAL="ZEPHYR FATAL ERROR"
 SETTLE_SECONDS="${SETTLE_SECONDS:-15}"
 nros_fvp()
@@ -210,7 +211,7 @@ nros_fvp()
   local verb="$1"
   shift
   ( cd "${ROOT_DIR}/actuation_module" && \
-      "${NROS_CLI}" "${verb}" --zephyr-workspace "${ROOT_DIR}" "$@" )
+      "${NROS_CLI}" "${verb}" "$@" )
 }
 
 echo "Phase 1 - Zephyr FVP controller image (nros run controller_bringup:fvp)"

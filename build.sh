@@ -440,7 +440,7 @@ function build_zephyr_controller() {
   local native=(-d "${build_dir}" -p auto
     -DEXTRA_CFLAGS=-Wno-error -DEXTRA_CXXFLAGS=-Wno-error)
   ( cd "${ROOT_DIR}/actuation_module" && \
-      "${NROS_CLI_BIN}" build "controller_bringup:${image}" --zephyr-workspace "${ROOT_DIR}" -- "${native[@]}" )
+      "${NROS_CLI_BIN}" build "controller_bringup:${image}" -- "${native[@]}" )
 }
 
 # The Zephyr test programs (--dds-publisher, --dds-subscriber,
