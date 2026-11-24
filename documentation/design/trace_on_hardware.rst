@@ -50,7 +50,7 @@ What transfers unchanged
   so a mismatched pairing renames events and misreads fields silently instead
   of failing. Note also that this repo's TSDL is patched to add
   ``app_marker``; a stock metadata will not decode the heartbeat.
-* The out-of-tree ``app_marker`` event (``patches/zephyr/``) and
+* The out-of-tree ``app_marker`` event (nano-ros's Zephyr patch set) and
   ``common::diag::trace_marker``. Not board-specific.
 
 
@@ -296,10 +296,10 @@ Two ways out, both worth knowing before assuming RTT is available:
   plausible number and missed this entirely.
 * An out-of-tree backend via ``TRACING_BACKEND_DEFINE()``. Upstream Zephyr
   hardcodes the backend name in ``tracing_core.c`` and offers no Kconfig to
-  select one, so this repo carries
-  ``patches/zephyr/0003-tracing-allow-an-out-of-tree-backend.patch`` (16 lines)
-  to make it selectable. That patch, not anything upstream, is what an
-  RTT-for-CTF backend would need.
+  select one, so nano-ros's Zephyr patch set
+  (``scripts/zephyr/tracing-custom-backend-patch.sh``, once this repo's 0003)
+  adds ``CONFIG_TRACING_BACKEND_CUSTOM`` to make it selectable. That patch,
+  not anything upstream, is what an RTT-for-CTF backend would need.
 
 .. note::
 

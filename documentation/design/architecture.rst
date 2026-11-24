@@ -114,7 +114,7 @@ hides runtime-specific primitives behind small interfaces:
 - ``dds/`` — CycloneDDS publisher/subscriber templates with ROS 2
   topic-name translation.
 - ``clock/clock.hpp`` — monotonic clock, optional SNTP-backed wall clock.
-- ``logger/logger.hpp`` — throttled logging.
+- ``logger/logger.hpp`` — ``log_*`` macros over nano-ros's log sink, gated by its compile-time floor.
 
 This layering means replacing the RTOS backend is a question of swapping
 these four headers, not rewriting the controller. The FreeRTOS backend

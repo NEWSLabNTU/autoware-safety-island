@@ -5,7 +5,7 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 9c6b9aebdb (2026-11-23)
+On branch `nano-ros-next` nano-ros is pinned at main 55d9a6d761 (2026-11-24)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -21,7 +21,10 @@ the P10 bringup guards and `--plan` step, the P11 trace marker went; the P3
 stay (see "Dropped on nano-ros-next (pin
 7066a4c436, T4)"). Pin 9c6b9aebdb dropped two more: the Zephyr test
 entries' `NROS_INTERFACE_SEARCH_PATH` and the `--zephyr-workspace` flags
-(see "Dropped on nano-ros-next (pin 9c6b9aebdb)").
+(see "Dropped on nano-ros-next (pin 9c6b9aebdb)"). Pin 55d9a6d761 dropped
+the last carried Zephyr patch (0003, with `scripts/apply-zephyr-patches.sh`)
+and the logger's `CONFIG_LOG_LEVEL` gate (see "Dropped on nano-ros-next
+(pin 55d9a6d761)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -81,7 +84,16 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 9c6b9aebdb (2026-11-23). Over 7066a4c436 it adds PR 4696
+nano-ros main 55d9a6d761 (2026-11-24, post-submit green). Over 9c6b9aebdb it
+adds PR 4735 (issue 2878: nano-ros's Zephyr 3.7 and 4.4 patch sets add
+`CONFIG_TRACING_BACKEND_CUSTOM` and `CONFIG_TRACING_BACKEND_CUSTOM_NAME`,
+`scripts/zephyr/tracing-custom-backend-patch.sh`, the names the island's
+0003 used) and PR 4733 (issue 2881: the `RCLC_LOG_MIN_SEVERITY` and
+`RCLCPP_LOG_MIN_SEVERITY` compile-time floors), and fixes for issues 2687,
+2816, 2847, 2875, 2903, 2906, 2910, 2914, 2915, 2920, 2923 and 2924. No
+rename touched the island. Cyclone is unchanged, `nros-sdk.lock` as it was.
+
+Before that, nano-ros main 9c6b9aebdb (2026-11-23). Over 7066a4c436 it adds PR 4696
 (issue 2876: `nros build` passes `-DNROS_INTERFACE_SEARCH_PATH=<workspace>/src`
 on an owned Zephyr west entry's line, the path the entry's census build
 uses), PR 4698 (issue 2877: with no `--zephyr-workspace`, `ZEPHYR_BASE` or
@@ -546,7 +558,8 @@ What remains of P9 and P11 after this:
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
   hand upstream as is; the RTD switch above; one pin and the west import
-  (4006); the Zephyr patch 0003 (4008; nano-ros issue 2878). The trace
+  (4006). The Zephyr patch 0003 is nano-ros's since pin 55d9a6d761 (issue
+  2878, below). The trace
   marker is nano-ros's (4009, T4 below). FVP model
   parameters come from the board and image rows (4007, see below), except
   for the test programs, which are no image.
@@ -643,6 +656,55 @@ every `nros build` printed "Zephyr tree .../zephyr (the west workspace
   --zephyr-workspace "${ROOT}"`. The flag is required there (it names the
   tree the patch set is applied to); the issue 2877 ladder is `nros build`
   and `nros run`'s.
+
+### Dropped on nano-ros-next (pin 55d9a6d761)
+
+Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45337319462
+(5abcec2) green on all three lanes: FreeRTOS POSIX 20 min, FreeRTOS AN536
+25 min, Zephyr FVP 64 min ("Actuation Safety Island is Live" and the
+controller's other lines as `<inf> nros:` records, no debug line; the
+workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/subsys/tracing`, and the trace-ring images configured with
+`prj-trace-ring.conf`). The pin commit alone (50c5a85) was green too, run
+45330201341.
+
+- `patches/zephyr/0003-tracing-allow-an-out-of-tree-backend.patch`, the last
+  file of `patches/zephyr/`, and `scripts/apply-zephyr-patches.sh` with its
+  four callers (`bootstrap-asi.sh`, `build.sh`'s `zephyr_env`,
+  `run-zephyr-fvp-ci.sh`, `run-zephyr-fvp-tap-ci.sh`) (P11). nano-ros's
+  patch set adds the same two symbols (issue 2878, PR 4735) through
+  `nros setup board` locally and `scripts/zephyr/patches/3.7.sh` in both
+  FVP lanes. Removed in the pin commit: once nano-ros has made the edit,
+  0003 neither applies nor reverse-applies, and the applier stops the
+  build. A tree that still carries 0003 (a restored CI cache, an old
+  checkout) gets nano-ros's copy beside it; Kconfig merges the repeated
+  symbols and `tracing_core.c`'s first `#elif` wins, so it still selects
+  the backend (checked with kconfiglib on the 3.7 Kconfig).
+- Kept: `prj-trace-ring.conf` (it states `CONFIG_TRACING_BACKEND_CUSTOM=y`
+  and the name; the symbols are now nano-ros's) and the ring backend.
+- `logger.hpp`'s `CONFIG_LOG_LEVEL` gate, its fallback define and
+  asi_common's Kconfig `LOG_LEVEL` (P4). The floor is nano-ros's
+  `RCLC_LOG_MIN_SEVERITY` (issue 2881, PR 4733): `log_info`, `log_warn`,
+  `log_error`, `log_debug` and `log_success` (INFO) are macros, so a call
+  below the floor evaluates nothing; `PROFILE_LOG` is `log_debug` and
+  `PROFILE_POINT` / `PROFILE_MS` exist only when the floor admits DEBUG.
+  `log_debug` emits at DEBUG (it was INFO, to pass the run-time threshold);
+  a floor of exactly DEBUG lowers the default logger's threshold to DEBUG
+  once, so `knobs.log.max_level = 1` alone shows debug lines.
+  asi_common sets the floor on its interface: `CONFIG_NROS_LOG_MAX_LEVEL`
+  on Zephyr; elsewhere `NROS_LOG_MAX_LEVEL` from the configure's
+  environment, else INFO. The controller's `[image_defaults]` state
+  `knobs.log.max_level = 2` (info; a level name is refused on Zephyr, "an int"), so the output is as before: info, warn
+  and error lines, no debug. Callers name the macros unqualified (six
+  files dropped `common::logger::`).
+- Kept: a thin `emit_` behind the macros, not `RCLC_LOG_*` itself. It
+  strips one trailing newline (at least 34 format strings end in `\n`) and
+  emits without the call site, as before, so the console lines are
+  unchanged.
+- Gap: on the CMake road (FreeRTOS POSIX, AN536, S32Z2, the census's
+  linux images) nano-ros hands the image's `log.max_level` to its cargo
+  builds as a cargo config and not to the CMake configure, so asi_common
+  cannot read it there and takes INFO. A debug FreeRTOS build exports
+  `NROS_LOG_MAX_LEVEL=debug` to the configure.
 
 ## Steps
 
@@ -859,11 +921,10 @@ every `nros build` printed "Zephyr tree .../zephyr (the west workspace
     bypass). It touches `controller_node.cpp`, so it waits for the P9 work
     there.
   - Waiting on nano-ros:
-    - the level stays `CONFIG_LOG_LEVEL` (compile time: `log_debug` and
-      `PROFILE_*` compile out below 2). `knobs.log.max_level` is a ceiling
-      nros_log checks at run time, after the call site has evaluated its
-      arguments, so it would not keep the per-cycle debug work out of the
-      control loop.
+    - done at pin 55d9a6d761: the level is nano-ros's compile-time floor
+      `RCLC_LOG_MIN_SEVERITY` (issue 2881), set from the image's
+      `knobs.log.max_level` on Zephyr; `CONFIG_LOG_LEVEL` is gone. See
+      "Dropped on nano-ros-next (pin 55d9a6d761)".
 
 ### P5. Clock - M
 
@@ -1489,8 +1550,8 @@ every `nros build` printed "Zephyr tree .../zephyr (the west workspace
     (`nros sdk-path zephyr-sdk`) into `activate-asi.sh`. Kept as its own:
     the system packages west and Zephyr need, foreign-owned paths, rustup
     and the armv8r target, `git submodule` + `west init/update`, Zephyr's
-    python requirements, `nros setup board fvp-aemv8r-smp` (patches), this
-    repo's Zephyr patches, `activate-asi.sh`. The FVP stays provisioned as
+    python requirements, `nros setup board fvp-aemv8r-smp` (patches; the
+    repo's own Zephyr patch went at pin 55d9a6d761), `activate-asi.sh`. The FVP stays provisioned as
     before (`ensure_fvp_available`, the devcontainer image): nothing
     depends on nano-ros issue 2802's behaviour.
   - Earlier, not started: `nros setup` / `nros doctor` for `bootstrap-asi.sh`,
@@ -1516,7 +1577,9 @@ every `nros build` printed "Zephyr tree .../zephyr (the west workspace
   it reproduces.
 - Done when: one pin, no carried Zephyr patch, no consumer-owned board
   package, `build.sh` exports no `NROS_*` or `ARMFVP_*` variable.
-- Status on nano-ros-next (pending nros12 for `nano-ros`): the S32Z270
+- Status on nano-ros-next (pending nros12 for `nano-ros`): no Zephyr patch
+  is carried since pin 55d9a6d761 (`patches/zephyr/` and
+  `scripts/apply-zephyr-patches.sh` are gone; nano-ros issue 2878). The S32Z270
   Zephyr board moved upstream; `src/s32z270_zephyr_board/`,
   `-DBOARD_REVISION=D` and the `NROS_EXTRA_BOARD_PATH` export are gone
   (a3e3df1). The RTD variant exists upstream but is not used yet; see

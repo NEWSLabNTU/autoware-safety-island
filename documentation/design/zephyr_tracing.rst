@@ -204,10 +204,12 @@ FVP models it and ``uart_poll_out`` returns in negligible model time; on
 silicon this pair is the 1.215 ms case above. **This configuration is not a
 hardware template.**
 
-Three out-of-tree patches. nano-ros's Zephyr patch set carries the first
-two (``scripts/zephyr/ctf-priority-set-patch.sh`` and
-``ctf-app-marker-patch.sh``, nano-ros issue 2766); the third is under
-``patches/zephyr/``:
+Three out-of-tree patches, all in nano-ros's Zephyr patch set now, which
+``nros setup board`` and the FVP CI lanes apply:
+``scripts/zephyr/ctf-priority-set-patch.sh`` and ``ctf-app-marker-patch.sh``
+(once this repo's 0001 and 0002, nano-ros issue 2766) and
+``tracing-custom-backend-patch.sh`` (once 0003, nano-ros issue 2878). The
+repo carries no Zephyr patch of its own.
 
 ``0001-ctf-trace-k_thread_priority_set.patch``
    Adds a trace point upstream lacks, so a priority change is visible in the
@@ -221,7 +223,8 @@ two (``scripts/zephyr/ctf-priority-set-patch.sh`` and
    cannot be decoded.
 
 ``0003-tracing-allow-an-out-of-tree-backend.patch``
-   16 Kconfig lines. Upstream hardcodes the backend name in
+   Adds ``CONFIG_TRACING_BACKEND_CUSTOM`` and
+   ``CONFIG_TRACING_BACKEND_CUSTOM_NAME``. Upstream hardcodes the backend name in
    ``tracing_core.c`` and offers no way to select your own, even though
    ``TRACING_BACKEND_DEFINE()`` exists. This makes it selectable, which is
    what any custom backend (an RTT one, for instance) would need.

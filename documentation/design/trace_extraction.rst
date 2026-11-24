@@ -65,7 +65,8 @@ them with a 200 us threshold, which sits well below every period in play
 Zephyr FVP
 ==========
 
-Requires the out-of-tree CTF patches under ``patches/zephyr/`` and a build
+Requires nano-ros's out-of-tree CTF patches (applied by ``nros setup
+board``) and a build
 with ``CONFIG_TRACING_CTF``; see :doc:`rt_evaluation_zephyr`.
 
 .. code-block:: console
@@ -85,7 +86,7 @@ are positions in that file, so decoding a stream against a different tree's
 TSDL silently renames events and misreads fields rather than failing. Decode
 with the metadata from the tree that built the image.
 
-This repo's copy is also patched -- ``patches/zephyr/0002`` adds the
+This repo's copy is also patched -- nano-ros's ``ctf-app-marker-patch.sh`` adds the
 ``app_marker`` event -- so a stock metadata cannot decode markers at all, and
 a patched image traced against stock TSDL loses them silently.
 

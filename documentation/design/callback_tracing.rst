@@ -338,7 +338,7 @@ call site is eliminated entirely when disabled.
    feature to actually vanish. A plain feature gate is the safer shape.
 
 Transport on Zephyr reuses what already exists: the out-of-tree ``app_marker``
-CTF event (``patches/zephyr/0002``), which ``scripts/parse-zephyr-ctf.py``
+CTF event (nano-ros's ``ctf-app-marker-patch.sh``, once ``patches/zephyr/0002``), which ``scripts/parse-zephyr-ctf.py``
 already decodes. No new patch is required.
 
 **Core must not name Zephyr**, and the binding does not go where an earlier
@@ -542,12 +542,11 @@ Cheap, and independent of everything above.
 Exit plan for the out-of-tree patches
 =====================================
 
-``patches/zephyr/0002-ctf-app-marker-event.patch`` exists because Zephyr 3.7
+The ``app_marker`` patch (nano-ros's ``scripts/zephyr/ctf-app-marker-patch.sh``,
+once this repo's ``patches/zephyr/0002``) exists because Zephyr 3.7
 has no user-event facility (verified: ``named_event`` is absent from the 3.7
 tree). Zephyr 4.3's Instrumentation subsystem supersedes it. When this repo
-leaves the 3.7 LTS pin, patch 0002 should be retired rather than forward-ported
-— that note belongs in ``patches/zephyr/README.md`` so the patch does not
-outlive its reason.
+leaves the 3.7 LTS pin, the patch should be retired rather than forward-ported.
 
 
 References
