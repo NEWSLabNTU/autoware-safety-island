@@ -35,10 +35,9 @@ ensure_zephyr_workspace()
 
 mkdir -p "${ROOT_DIR}/build"
 ensure_zephyr_workspace
-# nano-ros's Zephyr 3.7 patch set and this repo's, as run-zephyr-fvp-ci.sh
-# applies them (idempotent): a Rust image refuses to configure without them.
+# nano-ros's Zephyr 3.7 patch set, as run-zephyr-fvp-ci.sh applies it
+# (idempotent): a Rust image refuses to configure without it.
 bash "${ROOT_DIR}/modules/nros/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
-"${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
 ensure_fvp_available
 
 echo "Zephyr FVP TAP UDP tunnel build"

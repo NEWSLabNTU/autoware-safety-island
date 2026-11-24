@@ -178,10 +178,6 @@ nros_cli_select
 # cached workspace is fine.
 bash "${NROS}/scripts/zephyr/patches/3.7.sh" "${ROOT_DIR}"
 
-# This repo's Zephyr patches (patches/zephyr), as build.sh applies them before
-# every Zephyr build; the images below are built by nros directly.
-"${ROOT_DIR}/scripts/apply-zephyr-patches.sh" "${ROOT_DIR}/zephyr"
-
 # The controller image and the test program images run with
 # `nros run <image> --expect <line>... --forbid <line> --timeout N`: nros
 # builds the image if stale and boots it on the board's runner (the FVP model

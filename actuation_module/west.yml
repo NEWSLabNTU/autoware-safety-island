@@ -45,7 +45,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-23: 9c6b9aebdb, past PRs 4696 (issue 2876: `nros
+    # ON main, 2026-11-24: 55d9a6d761, past PRs 4735 (issue 2878: nano-ros's
+    # Zephyr 3.7 and 4.4 patch sets add CONFIG_TRACING_BACKEND_CUSTOM and
+    # CONFIG_TRACING_BACKEND_CUSTOM_NAME, the out-of-tree backend selection
+    # the trace-ring images use; the island's patches/zephyr/0003 and
+    # scripts/apply-zephyr-patches.sh are retired with it) and 4733 (issue
+    # 2881: the RCLC_LOG_MIN_SEVERITY / RCLCPP_LOG_MIN_SEVERITY compile-time
+    # floors, which replace the logger's CONFIG_LOG_LEVEL gate). Cyclone is
+    # unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-23: 9c6b9aebdb, past PRs 4696 (issue 2876: `nros
     # build` puts the workspace's src/ on an owned Zephyr west entry's
     # NROS_INTERFACE_SEARCH_PATH) and 4698 (issue 2877: with no flag or env
     # var, nros build and nros run take the nearest west workspace whose
@@ -265,7 +274,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 9c6b9aebdb0d13c4006b7525ec12ce8bb703497b
+      revision: 55d9a6d761b64d4633d3ec6820ad37f68f2acfe7
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract

@@ -182,15 +182,6 @@ ROOT_DIR="${ROOT}" nros_cli_select || die "no nros CLI (see above)."
 say "provisioning zephyr for board fvp-aemv8r-smp (nros setup board)…"
 ( cd "${ROOT}/actuation_module" && "${NROS_CLI}" setup board fvp-aemv8r-smp \
     --zephyr-workspace "${ROOT}" )
-# ---- 6b.1 local zephyr patches (on top of the nano-ros set) ----
-# `nros setup board` rewrites ${ROOT}/zephyr, so anything this repo needs
-# beyond nano-ros's patch set has to be re-applied here or it vanishes on the
-# next provisioning run. Each is checked with --reverse first so re-running
-# bootstrap is idempotent (scripts/apply-zephyr-patches.sh, which build.sh
-# also runs). See patches/zephyr/README.md.
-"${ROOT}/scripts/apply-zephyr-patches.sh" ||
-  warn "a zephyr patch needs a refresh against the current pin (above)."
-
 # ---- 6c. every image's toolchains and sources (nros setup --workspace) ----
 # One plan over every bringup's [image.*] boards and RMWs: the Zephyr SDK
 # (the Zephyr boards), arm-none-eabi-gcc and QEMU (mps3-an536-freertos), the
