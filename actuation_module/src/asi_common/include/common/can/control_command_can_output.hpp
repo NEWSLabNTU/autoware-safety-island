@@ -50,19 +50,19 @@ public:
     }
 
     if (!initialized_) {
-      common::logger::log_error("CAN output is not initialized");
+      log_error("CAN output is not initialized");
       return false;
     }
 
     if (fd_active_) {
       const auto encoded = encode_control_command_fd(msg, mode, sequence_);
       if (!encoded.ok) {
-        common::logger::log_error("CAN-FD control command encoding failed: %s", encoded.error);
+        log_error("CAN-FD control command encoding failed: %s", encoded.error);
         return false;
       }
 
       if (encoded.count != 0U && !platform::can_send_fd(encoded.frame)) {
-        common::logger::log_error("CAN-FD control command send failed");
+        log_error("CAN-FD control command send failed");
         return false;
       }
 
@@ -72,12 +72,12 @@ public:
 
     const auto encoded = encode_control_command(msg, mode, sequence_);
     if (!encoded.ok) {
-      common::logger::log_error("CAN control command encoding failed: %s", encoded.error);
+      log_error("CAN control command encoding failed: %s", encoded.error);
       return false;
     }
 
     if (!platform::can_send_batch(encoded.frames.data(), encoded.count)) {
-      common::logger::log_error("CAN control command batch send failed");
+      log_error("CAN control command batch send failed");
       return false;
     }
 

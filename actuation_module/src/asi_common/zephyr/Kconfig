@@ -3,24 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # asi_common's Kconfig symbols: the Safety Island application's settings that
-# asi_common's Zephyr headers and sources read (logging, the CAN
+# asi_common's Zephyr headers and sources read (the CAN
 # output path and its transport, the interface addresses, the
 # real-time evaluation reporters). asi_common is a Zephyr module
 # (zephyr/module.yml), so the symbols reach every application whose image
 # depends on it: the west application `nros build` generates for a
 # controller image, and the test application under test/zephyr_app.
 # An image's os_config fragments assign them.
-
-config LOG_LEVEL
-	int "Log level for actuation module"
-	default 1
-	range 0 2
-	help
-	  This config sets the log level for actuation module.
-	  0: No logs
-	  1: Fatal, Error, Warning, Config
-	  2: Debug
-	  It is used to limit the rate of messages being published to the console.
 
 config CONTROL_CMD_CAN_OUTPUT
 	bool "Build the CAN control-command output"

@@ -22,8 +22,6 @@
   #include <zephyr/kernel.h>
 #endif
 
-using common::logger::log_error;
-using common::logger::log_info;
 
 #define ASSERT_MSG(condition, message) \
   do { \

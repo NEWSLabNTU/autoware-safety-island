@@ -83,12 +83,12 @@ inline bool can_init(const bool want_fd = false, const char * device = nullptr)
   const int8_t rc = nros_platform_can_open(&handle, device, want_fd ? 1U : 0U);
   const char * name = device != nullptr ? device : "the image's CAN device";
   if (rc != NROS_PLATFORM_CAN_OK) {
-    common::logger::log_error(
+    log_error(
       "CAN open failed for %s (format=%s): %s (%d)",
       name, want_fd ? "fd" : "classic", can_error_name(rc), static_cast<int>(rc));
     return false;
   }
-  common::logger::log_info(
+  log_info(
     "CAN opened %s (format=%s, fd_active=%d)",
     name, want_fd ? "fd" : "classic", static_cast<int>(nros_platform_can_fd_active(&handle)));
   return true;
@@ -102,7 +102,7 @@ inline bool can_fd_active()
 inline bool can_send(const CanFrame & frame)
 {
   if (frame.dlc > kCanMaxDataLength) {
-    common::logger::log_error("CAN frame id=0x%03x has dlc=%u", static_cast<unsigned int>(frame.id),
+    log_error("CAN frame id=0x%03x has dlc=%u", static_cast<unsigned int>(frame.id),
       static_cast<unsigned int>(frame.dlc));
     return false;
   }
@@ -113,7 +113,7 @@ inline bool can_send(const CanFrame & frame)
   std::memcpy(wire.data, frame.data.data(), frame.dlc);
   const int8_t rc = nros_platform_can_send(&can_handle(), &wire, kCanSendTimeoutUs);
   if (rc != NROS_PLATFORM_CAN_OK) {
-    common::logger::log_error(
+    log_error(
       "CAN send failed for id=0x%03x: %s (%d)",
       static_cast<unsigned int>(frame.id), can_error_name(rc), static_cast<int>(rc));
     return false;
@@ -124,7 +124,7 @@ inline bool can_send(const CanFrame & frame)
 inline bool can_send_fd(const CanFdFrame & frame)
 {
   if (frame.length > kCanFdMaxDataLength) {
-    common::logger::log_error(
+    log_error(
       "CAN-FD frame id=0x%03x has length=%u", static_cast<unsigned int>(frame.id),
       static_cast<unsigned int>(frame.length));
     return false;
@@ -137,7 +137,7 @@ inline bool can_send_fd(const CanFdFrame & frame)
   std::memcpy(wire.data, frame.data.data(), frame.length);
   const int8_t rc = nros_platform_can_send(&can_handle(), &wire, kCanSendTimeoutUs);
   if (rc != NROS_PLATFORM_CAN_OK) {
-    common::logger::log_error(
+    log_error(
       "CAN-FD send failed for id=0x%03x: %s (%d)",
       static_cast<unsigned int>(frame.id), can_error_name(rc), static_cast<int>(rc));
     return false;
@@ -149,7 +149,7 @@ inline bool can_send_fd(const CanFdFrame & frame)
 
 inline bool can_init(const bool = false, const char * = nullptr)
 {
-  common::logger::log_error("CAN output is not built into this image");
+  log_error("CAN output is not built into this image");
   return false;
 }
 

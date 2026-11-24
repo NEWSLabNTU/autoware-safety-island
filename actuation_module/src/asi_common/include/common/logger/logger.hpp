@@ -12,23 +12,24 @@
 // at the call site (upstream's macro, measured on the clock argument), not
 // a helper here.
 //
-// Kept ASI-side (upstream has no equivalents yet):
-//   * CONFIG_LOG_LEVEL compile-time gating -- zero-cost below level; the
-//     nros per-logger runtime threshold defaults to INFO, so `log_debug`/
-//     PROFILE emit at INFO severity and ASI's compile-time gate stays the
-//     debug on/off switch.
+// The level gate is nano-ros's compile-time floor, RCLC_LOG_MIN_SEVERITY
+// (<rclc/log.h>, 0 trace .. 6 none, numbered as the image's log.max_level),
+// which asi_common's CMakeLists.txt sets for every user of asi_common (INFO
+// unless the image asks for another level). `log_*` and `PROFILE_LOG` are
+// macros, so a call below the floor expands to `((void)0)` and evaluates
+// none of its arguments. `log_success` is INFO: rclc has no success level.
+// Call them unqualified (`log_info(...)`, not `common::logger::log_info`).
 
 #include <chrono>
-#include <cstdio>
 #include <cstdarg>
+#include <cstdio>
+#include <cstring>
 
-// CONFIG_LOG_LEVEL is asi_common's Kconfig symbol (zephyr/Kconfig) where the
-// build has Kconfig: on Zephyr autoconf.h reaches every source. Elsewhere it
-// is that symbol's default, 1 (fatal, error, warning, config; no debug).
-#ifndef CONFIG_LOG_LEVEL
-#define CONFIG_LOG_LEVEL 1
+// asi_common's interface defines the floor; a TU that reaches this header
+// without linking asi_common would get <rclc/log.h>'s default, TRACE.
+#ifndef RCLC_LOG_MIN_SEVERITY
+#error "RCLC_LOG_MIN_SEVERITY is unset: link asi_common, which sets the island's log floor"
 #endif
-
 #include <rclc/log.h>
 
 namespace common::logger {
@@ -37,87 +38,81 @@ namespace common::logger {
 // .init_array; the no_std lanes (FreeRTOS/S32Z2) need the explicit
 // `rclc_log_init()` after the board's platform-log writer registers —
 // calling it from a magic static covers both (idempotent upstream).
+//
+// A floor of exactly DEBUG (log.max_level = 1) is the debug build: the
+// default logger's run-time threshold (INFO unless set) is lowered to DEBUG
+// as well, so `log_debug` lines are shown and not only compiled in.
 inline rclc_logger_t default_logger_() {
-    static const bool init_once = (rclc_log_init(), true);
-    (void)init_once;
-    return rclc_log_default_logger();
+    static const rclc_logger_t logger = [] {
+        rclc_log_init();
+        rclc_logger_t l = rclc_log_default_logger();
+#if RCLC_LOG_MIN_SEVERITY == RCLC_LOG_MIN_SEVERITY_DEBUG
+        rclc_logger_set_level(l, RCLC_LOG_SEVERITY_DEBUG);
+#endif
+        return l;
+    }();
+    return logger;
 }
 
-inline void vemit_(rcl_log_severity_t severity, const char * format, va_list args) {
+// The emit behind every macro below. Callers historically embed a trailing
+// '\n'; the sink adds its own line ending, so one trailing newline is
+// stripped to avoid blank lines. The record is then bounded by
+// rclc_log_emit_fmt's own buffer (NROS_LOG_FMT_BUFFER_SIZE), as before.
+inline void emit_(rcl_log_severity_t severity, const char * format, ...) {
     char buffer[1024];
+    va_list args;
+    va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
-    // Callers historically embed a trailing '\n'; the sink adds its own
-    // line ending, so strip one trailing newline to avoid blank lines.
-    size_t len = 0;
-    while (buffer[len] != '\0') { ++len; }
+    va_end(args);
+    const size_t len = std::strlen(buffer);
     if (len > 0 && buffer[len - 1] == '\n') { buffer[len - 1] = '\0'; }
     rclc_log_emit_fmt(default_logger_(), severity, "%s", buffer);
 }
 
-inline void log_success(const char * format, ...) {
-    #if CONFIG_LOG_LEVEL >= 1
-    va_list args;
-    va_start(args, format);
-    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
-    va_end(args);
-    #endif
-}
-
-inline void log_info(const char * format, ...) {
-    #if CONFIG_LOG_LEVEL >= 1
-    va_list args;
-    va_start(args, format);
-    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
-    va_end(args);
-    #endif
-}
-
-inline void log_warn(const char * format, ...) {
-    #if CONFIG_LOG_LEVEL >= 1
-    va_list args;
-    va_start(args, format);
-    vemit_(RCLC_LOG_SEVERITY_WARN, format, args);
-    va_end(args);
-    #endif
-}
-
-inline void log_error(const char * format, ...) {
-    #if CONFIG_LOG_LEVEL >= 1
-    va_list args;
-    va_start(args, format);
-    vemit_(RCLC_LOG_SEVERITY_ERROR, format, args);
-    va_end(args);
-    #endif
-}
-
-inline void log_debug(const char * format, ...) {
-    #if CONFIG_LOG_LEVEL >= 2
-    va_list args;
-    va_start(args, format);
-    // INFO severity on purpose: the nros default threshold is INFO with no
-    // C-side setter; ASI's compile-time gate is the debug switch.
-    vemit_(RCLC_LOG_SEVERITY_INFO, format, args);
-    va_end(args);
-    #endif
-}
-
 } // namespace common::logger
 
+#define ASI_LOG_COMPILED_OUT_() ((void)0)
+
+#if RCLC_LOG_MIN_SEVERITY <= RCLC_LOG_MIN_SEVERITY_DEBUG
+#define log_debug(...) ::common::logger::emit_(RCLC_LOG_SEVERITY_DEBUG, __VA_ARGS__)
+#else
+#define log_debug(...) ASI_LOG_COMPILED_OUT_()
+#endif
+
+#if RCLC_LOG_MIN_SEVERITY <= RCLC_LOG_MIN_SEVERITY_INFO
+#define log_info(...) ::common::logger::emit_(RCLC_LOG_SEVERITY_INFO, __VA_ARGS__)
+#define log_success(...) ::common::logger::emit_(RCLC_LOG_SEVERITY_INFO, __VA_ARGS__)
+#else
+#define log_info(...) ASI_LOG_COMPILED_OUT_()
+#define log_success(...) ASI_LOG_COMPILED_OUT_()
+#endif
+
+#if RCLC_LOG_MIN_SEVERITY <= RCLC_LOG_MIN_SEVERITY_WARN
+#define log_warn(...) ::common::logger::emit_(RCLC_LOG_SEVERITY_WARN, __VA_ARGS__)
+#else
+#define log_warn(...) ASI_LOG_COMPILED_OUT_()
+#endif
+
+#if RCLC_LOG_MIN_SEVERITY <= RCLC_LOG_MIN_SEVERITY_ERROR
+#define log_error(...) ::common::logger::emit_(RCLC_LOG_SEVERITY_ERROR, __VA_ARGS__)
+#else
+#define log_error(...) ASI_LOG_COMPILED_OUT_()
+#endif
+
 // --- Per-cycle profiling instrumentation ------------------------------------
-// Compiled out entirely unless CONFIG_LOG_LEVEL >= 2 (debug): the default INFO
-// build takes no timestamps and evaluates none of the log arguments, so the
+// Compiled out entirely unless the floor admits DEBUG: the default INFO build
+// takes no timestamps and evaluates none of the log arguments, so the
 // instrumentation adds zero latency/jitter to the control cycle it measures.
 // Uses a monotonic clock (steady_clock) so an SNTP step cannot produce negative
 // or garbled deltas. PROFILE_MS returns milliseconds as a double.
-#if CONFIG_LOG_LEVEL >= 2
+#if RCLC_LOG_MIN_SEVERITY <= RCLC_LOG_MIN_SEVERITY_DEBUG
 #define PROFILE_POINT(name) const auto name = std::chrono::steady_clock::now()
 #define PROFILE_MS(from, to) \
     (std::chrono::duration<double, std::milli>((to) - (from)).count())
-#define PROFILE_LOG(...) common::logger::log_debug(__VA_ARGS__)
 #else
 #define PROFILE_POINT(name) ((void)0)
 #define PROFILE_MS(from, to) 0.0
-#define PROFILE_LOG(...) ((void)0)
 #endif
+#define PROFILE_LOG(...) log_debug(__VA_ARGS__)
 
 #endif  // COMMON__LOGGER_LOGGER_HPP_

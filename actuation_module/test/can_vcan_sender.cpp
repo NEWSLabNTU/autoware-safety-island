@@ -13,7 +13,7 @@
 #define ASSERT_MSG(condition, message) \
   do { \
     if (!(condition)) { \
-      common::logger::log_error("Assertion failed: %s", message); \
+      log_error("Assertion failed: %s", message); \
       assert(false && message); \
     } \
   } while (0)
@@ -47,18 +47,18 @@ static int expect_fd_init_failure()
 {
   common::can::ControlCommandCanOutput output;
   ASSERT_MSG(!output.init(true, kIface), "CAN-FD init fails closed below the FD MTU");
-  common::logger::log_info("low-MTU CAN-FD init failed closed");
+  log_info("low-MTU CAN-FD init failed closed");
   return 0;
 }
 
 int main(int argc, char ** argv)
 {
   if (argc > 1 && std::strcmp(argv[1], "expect-fd-init-failure") == 0) {
-    common::logger::log_info("=== Starting SocketCAN low-MTU FD check ===");
+    log_info("=== Starting SocketCAN low-MTU FD check ===");
     return expect_fd_init_failure();
   }
 
-  common::logger::log_info("=== Starting SocketCAN vcan sender ===");
+  log_info("=== Starting SocketCAN vcan sender ===");
 
   // No image named a device for this program, so open(NULL) has none.
   ASSERT_MSG(!common::can::platform::can_init(), "no image device fails init");
@@ -82,6 +82,6 @@ int main(int argc, char ** argv)
     output.send(make_sample_control_msg(), common::can::ControlCommandOutputMode::CAN_ONLY),
     "encoded command is sent as CAN-FD");
 
-  common::logger::log_info("vcan sender passed");
+  log_info("vcan sender passed");
   return 0;
 }

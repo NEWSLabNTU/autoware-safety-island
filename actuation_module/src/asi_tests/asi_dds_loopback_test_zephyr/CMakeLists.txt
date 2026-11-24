@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 
-# asi_common's Kconfig symbols (CONFIG_LOG_LEVEL, CONFIG_NET_IFACE2_* and the
+# asi_common's Kconfig symbols (CONFIG_NET_IFACE2_* and the
 # rest it reads) come from nros build: asi_common is a Zephyr module
 # (zephyr/module.yml) and a workspace dependency of this package, so it joins
 # ZEPHYR_EXTRA_MODULES on the west line, as for a generated application.

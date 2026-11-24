@@ -70,13 +70,13 @@ class Controller final
     /// wall clock moved to nano-ros's `board` source, phase-15 P5).
     explicit Controller(rclcpp::NodeHandle handle)
         : ::autoware::motion::control::trajectory_follower_node::Controller(
-              (common::logger::log_success("-----------------------------------------"),
-               common::logger::log_success("ARM - Autoware: Actuation Safety Island"),
-               common::logger::log_success("-----------------------------------------"),
-               common::logger::log_info("Starting Controller Node...\n"), handle))
+              (log_success("-----------------------------------------"),
+               log_success("ARM - Autoware: Actuation Safety Island"),
+               log_success("-----------------------------------------"),
+               log_info("Starting Controller Node...\n"), handle))
     {
-        common::logger::log_success("Controller Node Started\n");
-        common::logger::log_success("Actuation Safety Island is Live\n");
+        log_success("Controller Node Started\n");
+        log_success("Actuation Safety Island is Live\n");
     }
 };
 

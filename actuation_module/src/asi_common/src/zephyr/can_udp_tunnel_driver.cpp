@@ -80,7 +80,7 @@ extern "C" int8_t nros_platform_can_open(
     return NROS_PLATFORM_CAN_EINVAL;
   }
   if (device != nullptr) {
-    common::logger::log_error("CAN UDP tunnel: no device named %s (the tunnel is the image's only one)",
+    log_error("CAN UDP tunnel: no device named %s (the tunnel is the image's only one)",
       device);
     return NROS_PLATFORM_CAN_ENODEV;
   }
@@ -89,19 +89,19 @@ extern "C" int8_t nros_platform_can_open(
   peer.sin_family = AF_INET;
   peer.sin_port = htons(static_cast<uint16_t>(CONFIG_CONTROL_CMD_CAN_TUNNEL_PORT));
   if (inet_pton(AF_INET, CONFIG_CONTROL_CMD_CAN_TUNNEL_PEER, &peer.sin_addr) != 1) {
-    common::logger::log_error(
+    log_error(
       "CAN UDP tunnel peer is invalid: %s", CONFIG_CONTROL_CMD_CAN_TUNNEL_PEER);
     return NROS_PLATFORM_CAN_EINVAL;
   }
 
   const int socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (socket_fd < 0) {
-    common::logger::log_error("CAN UDP socket failed: %s", std::strerror(errno));
+    log_error("CAN UDP socket failed: %s", std::strerror(errno));
     return NROS_PLATFORM_CAN_EIO;
   }
   const int flags = fcntl(socket_fd, F_GETFL, 0);
   if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-    common::logger::log_error("CAN UDP O_NONBLOCK failed: %s", std::strerror(errno));
+    log_error("CAN UDP O_NONBLOCK failed: %s", std::strerror(errno));
     close(socket_fd);
     return NROS_PLATFORM_CAN_EIO;
   }
@@ -111,7 +111,7 @@ extern "C" int8_t nros_platform_can_open(
   state->socket_fd = socket_fd;
   state->pending = 0U;
   g_peer = peer;
-  common::logger::log_info(
+  log_info(
     "CAN UDP tunnel initialized to %s:%d",
     CONFIG_CONTROL_CMD_CAN_TUNNEL_PEER,
     CONFIG_CONTROL_CMD_CAN_TUNNEL_PORT);
@@ -138,7 +138,7 @@ extern "C" int8_t nros_platform_can_send(
   if ((frame->flags & NROS_PLATFORM_CAN_FLAG_EXT) != 0U || frame->id != kCommandIds[index] ||
     frame->len != common::can::kCanMaxDataLength)
   {
-    common::logger::log_error(
+    log_error(
       "CAN UDP tunnel: frame id=0x%03x len=%u is not frame %u of a control command",
       static_cast<unsigned int>(frame->id), static_cast<unsigned int>(frame->len),
       static_cast<unsigned int>(index));
@@ -163,14 +163,14 @@ extern "C" int8_t nros_platform_can_send(
   const auto packed =
     common::can::pack_can_udp_tunnel(g_frames, common::can::kControlCommandCanFrameCount, sequence);
   if (!packed.ok) {
-    common::logger::log_error("CAN UDP pack failed: %s", packed.error);
+    log_error("CAN UDP pack failed: %s", packed.error);
     return NROS_PLATFORM_CAN_EINVAL;
   }
   const ssize_t sent = sendto(
     state->socket_fd, packed.bytes.data(), packed.bytes.size(), 0,
     reinterpret_cast<const sockaddr *>(&g_peer), sizeof(g_peer));
   if (sent != static_cast<ssize_t>(packed.bytes.size())) {
-    common::logger::log_error("CAN UDP send failed: %s", std::strerror(errno));
+    log_error("CAN UDP send failed: %s", std::strerror(errno));
     return (errno == EAGAIN || errno == EWOULDBLOCK) ? NROS_PLATFORM_CAN_EAGAIN
                                                      : NROS_PLATFORM_CAN_EIO;
   }

@@ -10,7 +10,7 @@
 // No network configuration is needed -- CycloneDDS uses native sockets.
 // On real FreeRTOS hardware (Phase 5), this will be replaced with lwIP setup.
 static inline int configure_network(void) {
-    common::logger::log_info("FreeRTOS sim: using host network (no configuration needed)\n");
+    log_info("FreeRTOS sim: using host network (no configuration needed)\n");
     return 0;
 }
 
