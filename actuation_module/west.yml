@@ -29,7 +29,18 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-26: ebbb3a570d, past 1a638e9958 (44 commits): PRs
+    # ON main, 2026-11-26: 1afe48ca78, past ebbb3a570d (10 commits): PRs
+    # 4907 (issue 2952: the image's log.max_level is exported to C/C++ on
+    # every CMake platform as NROS_LOG_MAX_LEVEL, 0..6, a compile definition
+    # on NanoRos::NanoRos, so asi_common's floor names it and derives no
+    # level of its own), 4902 (issue 2980: an image's configure currency
+    # reads only its own bringup's censuses), 4879 (issue 2852: a musl Linux
+    # cross board), 4861 (the Rust metadata probe takes the launch seeds),
+    # 4838 (issue 2954) and docs PRs 4905, 4906, 4910 and 4911. The s32z270
+    # west fragment and nros-sdk.lock are unchanged. Branch nano-ros-next
+    # only.
+    #
+    # Before that, ON main, 2026-11-26: ebbb3a570d, past 1a638e9958 (44 commits): PRs
     # 4901 (issue 2979: nros-stack-floor.py walks the call graph
     # iteratively, so a fresh s32z270 build no longer stops on Python's
     # recursion limit), 4825 (issues 2899, 2900: the owned-entry census
@@ -293,7 +304,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: ebbb3a570df0f9eeeb4bbf40601de6743e0ed060
+      revision: 1afe48ca780aa007f108b9a533e960af697a93cf
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
