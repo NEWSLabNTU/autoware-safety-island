@@ -154,11 +154,10 @@ knobs.executor.subscription_buffer_bytes = 16384
 # The log ceiling: info, warn and error records, no debug. On Zephyr it is
 # also the island logger's compile-time floor (asi_common's CMakeLists.txt
 # passes CONFIG_NROS_LOG_MAX_LEVEL as RCLC_LOG_MIN_SEVERITY), so a log_debug
-# call and the PROFILE_* instrumentation compile to nothing. Debug (1) builds
-# them in and shows them. A number (2 = info, 1 = debug): the Zephyr
-# images refuse the level's name ("on Zephyr this knob is
-# CONFIG_NROS_LOG_MAX_LEVEL, an int").
-knobs.log.max_level = 2
+# call and the PROFILE_* instrumentation compile to nothing. "debug" builds
+# them in and shows them. A level name is carried as its index (info = 2)
+# on every road, Kconfig's int included (nano-ros issue 2951).
+knobs.log.max_level = "info"
 
 # The wall clock (phase-15 P5). nano-ros resolves the image's [knobs.clock]
 # source once and keeps it as an offset from the monotonic clock. Every

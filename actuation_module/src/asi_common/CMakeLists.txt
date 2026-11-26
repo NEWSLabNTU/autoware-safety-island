@@ -51,7 +51,7 @@ target_include_directories(asi_common INTERFACE
 # log.max_level. A log_* call below it, and PROFILE_*, compile to nothing.
 #
 # On Zephyr it is the image's ceiling, CONFIG_NROS_LOG_MAX_LEVEL
-# ([image.<id>] knobs.log.max_level; the controller images state 2, info).
+# ([image.<id>] knobs.log.max_level; the controller images state "info", 2).
 # The CMake road carries that knob to its cargo builds only, as a cargo
 # config, not to this configure, so elsewhere it is NROS_LOG_MAX_LEVEL when
 # the configure's environment exports it (a name or a number) and INFO
