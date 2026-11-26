@@ -37,9 +37,9 @@ Use C++17-compatible, embedded-friendly code: keep allocations, blocking calls,
 and platform assumptions explicit. Follow existing 2-space indentation in
 CMake and nearby C/C++ files. Use `snake_case` for files, functions, and local
 variables; use `PascalCase` only where matching existing Autoware or message
-types. Keep platform-specific code behind `platform_*` interfaces and
-`PLATFORM_ZEPHYR`/FreeRTOS-specific paths. Preserve SPDX copyright headers in
-new source and documentation files.
+types. Keep platform-specific code behind nano-ros or std facilities,
+Kconfig or board facts; asi_common defines no `PLATFORM_*`. Preserve SPDX
+copyright headers in new source and documentation files.
 
 ## nano-ros Migration Notes
 

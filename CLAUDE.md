@@ -119,8 +119,8 @@ zephyr/                      Zephyr v3.7.0 - do NOT edit
 - `snake_case` for files, functions, locals. `PascalCase` only where matching
   existing Autoware or message types.
 - Platform-specific code behind nano-ros or std facilities, or Kconfig /
-  board facts. `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS` remain only for the
-  clock and the S32Z network headers (phase-15 P5, P6); add no new user.
+  board facts. asi_common defines no `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS`
+  (phase-15 P5, P6); add none.
 - Keep SPDX copyright headers in new source + docs files.
 
 ## nano-ros branch context

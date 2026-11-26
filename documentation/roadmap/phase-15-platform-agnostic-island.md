@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main d92c369a14 (2026-11-26,
-the nros12 release candidate)
+On branch `nano-ros-next` nano-ros is pinned at main 1a638e9958 (2026-11-26,
+18 commits past the nros12 release candidate d92c369a14)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -27,7 +27,9 @@ the last carried Zephyr patch (0003, with `scripts/apply-zephyr-patches.sh`)
 and the logger's `CONFIG_LOG_LEVEL` gate (see "Dropped on nano-ros-next
 (pin 55d9a6d761)"). Pin d92c369a14 dropped the hand pins of
 `zephyr-lang-rust`, `hal_nxp` and `cmsis` from `west.yml` (see "Dropped on
-nano-ros-next (pin d92c369a14)").
+nano-ros-next (pin d92c369a14)"). Pin 1a638e9958 dropped the S32Z's own
+network bring-up, the last `PLATFORM_*` reader (see "Dropped on
+nano-ros-next (pin 1a638e9958)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -87,7 +89,14 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main d92c369a14 (2026-11-26), the nros12 release candidate; 111
+nano-ros main 1a638e9958 (2026-11-26). Over d92c369a14 it adds PR 4829 (issue
+2879, phase-478 I39: `s32z270-rtu0-zephyr` declares its NETC port in
+`[board.net]`, and a board network file may tag an interface with `vlan =
+<tag>`, rendered into `NET_VLAN` and nano-ros's own VLAN bring-up) and PR 4826
+(issue 2951: a `log.max_level` name is carried as its index on every road).
+The s32z270 west fragment, Cyclone and `nros-sdk.lock` are unchanged.
+
+Before that, nano-ros main d92c369a14 (2026-11-26), the nros12 release candidate; 111
 commits over 55d9a6d761. It adds PR 4817 (issue 2880: `s32z270-rtu0-zephyr`
 ships `west-downstream.yml`, the west projects a consumer imports instead of
 pinning them), PR 4851 (issue 2965: a spawned executor level parks at the
@@ -709,8 +718,55 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   Revision: D`, links, text / data / bss 1991436 / 49612 / 3315565, RAM
   72.95 % of 7 MiB (was 89.72 %; the heap floor of issue 2780). Its first
   build stopped in nano-ros's post-link stack-floor check
-  (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool,
-  under load); the same build dir rebuilt clean, check included.
+  (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool);
+  the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
+  build since has done the same (see pin 1a638e9958).
+
+### Dropped on nano-ros-next (pin 1a638e9958)
+
+Each fix is in the pin. CI run 45779296670 (7657dd4) green on all three
+lanes: FreeRTOS POSIX 29 min, FreeRTOS AN536 34 min, Zephyr FVP 42 min.
+
+- The S32Z's network bring-up (P6, P8; nano-ros issue 2879, PR 4829).
+  `[image.s32z]` names `zephyr/net-s32z.toml` first in `os_config`: `[eth0]`
+  (the board's one NETC port, `enetc_psi0`) on `network = "s32z"`, `address
+  = "dhcp"`, `[network.s32z] subnet = "192.168.0.0/24"` (the host LAN the S32Z
+  Cyclone configuration names), `dhcp = true`, untagged. nros build renders
+  `NET_CONFIG_SETTINGS`, `NET_CONFIG_AUTO_INIT`, `NET_CONFIG_NEED_IPV4` and
+  `NET_DHCPV4=y`, so Zephyr's net_config holds the application until the
+  lease. `prj-s32z.conf` drops `CONFIG_NET_CONFIG_SETTINGS` and
+  `CONFIG_NET_DHCPV4` (nano-ros refuses a rendered symbol in a fragment);
+  `CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX=10` is not rendered and stays.
+- Gone with it: `network_config.cpp` / `.hpp` (the interface-2 and VLAN path,
+  `NET_IFACE2_*`, which no in-tree configuration set),
+  `board_network_hook.cpp` (the 10 s DHCP sleep before `nros::init`; the
+  weak nano-ros default takes over), asi_common's `NET_IFACE2_*` Kconfig, the
+  `ASI_COMMON_ENTRY_HOOK` switch the Zephyr test programs set off, and the
+  unused `platform/platform_network.h` with its Zephyr and FreeRTOS headers.
+  Those were the last readers of `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS`,
+  so asi_common defines neither any more (`git grep PLATFORM_ asi_common`
+  is empty). Not kept: a second interface. nano-ros refuses one on Zephyr
+  (issue 2879's open decision); the island had none configured.
+- A tagged switch port is one line, `vlan = <1-4094>` under `[eth0]`.
+  Checked with `vlan = 20` (not committed): the rendered
+  `build/nros/net/s32z.conf` and `zephyr/.config` have `NET_VLAN=y`,
+  `NROS_NET_VLAN_TAG=20`, `NET_IF_MAX_IPV4_COUNT=2` and no
+  `NET_CONFIG_AUTO_INIT`, and the image links (RAM 73.01 %).
+- `knobs.log.max_level = "info"` in `[image_defaults]` (was `2`, P4): the
+  Zephyr images take the name (issue 2951, PR 4826). The CMake-road export
+  of the floor (nano-ros PR 4831) is not in the pin, so asi_common's
+  `NROS_LOG_MAX_LEVEL` fallback stays.
+- Checked locally: the FVP lane and FreeRTOS POSIX and AN536 lanes, and
+  zephyr-s32z on a fresh directory: links, text / data / bss 1990744 /
+  49612 / 3315553, RAM 72.94 %. Two things on the way: the first S32Z
+  configure stopped at NanoRosPromise.cmake ("entity inventory was composed
+  after this configure's readers ran"), because the census of another
+  bringup (`can_output_test_bringup`, whose test CMakeLists changed) was
+  stale when the S32Z ran first; after the FVP lane rebuilt it the
+  configure seeded. And every fresh S32Z build stops in the post-link
+  stack-floor check with a `RecursionError` (a call path deeper than
+  Python's 1000 frames in `worst_path`); a second `cmake --build` of the
+  same directory passes. Both are nano-ros's to fix.
 
 ### Dropped on nano-ros-next (pin 55d9a6d761)
 
