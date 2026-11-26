@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 1a638e9958 (2026-11-26,
-18 commits past the nros12 release candidate d92c369a14)
+On branch `nano-ros-next` nano-ros is pinned at main ebbb3a570d (2026-11-26,
+the nros12 candidate after d92c369a14)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -29,7 +29,9 @@ and the logger's `CONFIG_LOG_LEVEL` gate (see "Dropped on nano-ros-next
 `zephyr-lang-rust`, `hal_nxp` and `cmsis` from `west.yml` (see "Dropped on
 nano-ros-next (pin d92c369a14)"). Pin 1a638e9958 dropped the S32Z's own
 network bring-up, the last `PLATFORM_*` reader (see "Dropped on
-nano-ros-next (pin 1a638e9958)").
+nano-ros-next (pin 1a638e9958)"). Pin ebbb3a570d drops no island code; it
+fixes the fresh S32Z build's stack-floor `RecursionError` (see "Dropped on
+nano-ros-next (pin ebbb3a570d)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -89,7 +91,18 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 1a638e9958 (2026-11-26). Over d92c369a14 it adds PR 4829 (issue
+nano-ros main ebbb3a570d (2026-11-26), the nros12 candidate; 44 commits over
+1a638e9958. It adds PR 4901 (issue 2979: `nros-stack-floor.py` walks the call
+graph iteratively), PR 4825 (issues 2899, 2900: the owned-entry census adds
+the entry's workspace dependencies and goes stale when its build files
+change), PR 4741 (issues 2913, 2925: a Zephyr SDK without the board's
+toolchain is refused before configure; `NROS_ZEPHYR_BUILD_ROOT`), PR 4862
+(issue 2969: a declaration adopts the launch seed of its name), and PRs
+4870, 4854, 4849, 4850, 4782 and 4859. The s32z270 west fragment and
+`nros-sdk.lock` are unchanged. Not in it: PR 4831 (the CMake-road export of
+the log floor), so asi_common's `NROS_LOG_MAX_LEVEL` fallback stays.
+
+Before that, nano-ros main 1a638e9958 (2026-11-26). Over d92c369a14 it adds PR 4829 (issue
 2879, phase-478 I39: `s32z270-rtu0-zephyr` declares its NETC port in
 `[board.net]`, and a board network file may tag an interface with `vlan =
 <tag>`, rendered into `NET_VLAN` and nano-ros's own VLAN bring-up) and PR 4826
@@ -722,6 +735,33 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
   build since has done the same (see pin 1a638e9958).
 
+### Dropped on nano-ros-next (pin ebbb3a570d)
+
+No island change. CI run 45825154165 (e53a738): FreeRTOS POSIX and FreeRTOS
+AN536 green (22, 28 min); Zephyr FVP red (32 min). Its `fvp-tap` controller
+configure stops at NanoRosPromise.cmake ("entity inventory was composed
+after this configure's readers ran", unseeded): `nros build` judged the
+configure stale on the owned-entry census of another bringup
+(`dds_loopback_test_bringup/fvp-aemv8r-smp.census.json`, "source_tree ``
+changed"), right after the CAN output test passed. Pin 1a638e9958 was green
+on the same lane; the owned-entry census staleness (PR 4825, issues 2899,
+2900) is new in this pin. The census fix is nano-ros's (not in this pin).
+
+- The fresh S32Z build's stack-floor stop (nano-ros issue 2979, PR 4901).
+  The nros12 acceptance check: `./build.sh --platform zephyr-s32z -d
+  build/zephyr-s32z` on a directory that did not exist, first try, under
+  nano-ros's jobserver (`ninja: Jobserver mode detected: -j20`), printed
+  ``nros-stack-floor: 8 walk order(s) from `main` on 8 job token(s)`` and
+  exited 0, no `RecursionError`. RAM 72.96 % of 7 MiB. The walk's verdict
+  is unchanged: REFUSED (no frame for `__aeabi_uidiv`, `__aeabi_uidivmod`,
+  `arch_cpu_idle`, `z_arm_cortex_r_svc`, `z_arm_int_exit`), so the image is
+  UNMEASURED and not enforced. The check now also states the depth it
+  reached before refusing: at least 194260 B from `main`, over the 32768 B
+  main stack (deepest frames: rclcpp's `register_subscription_capturing`
+  lambda for `Trajectory` 22096 B, `MpcLateralController::run` 17432 B,
+  nros_node's `action_client_raw_try_process` 16488 B). Open; nano-ros's to
+  confirm against a measured row.
+
 ### Dropped on nano-ros-next (pin 1a638e9958)
 
 Each fix is in the pin. CI run 45779296670 (7657dd4) green on all three
@@ -766,7 +806,8 @@ lanes: FreeRTOS POSIX 29 min, FreeRTOS AN536 34 min, Zephyr FVP 42 min.
   configure seeded. And every fresh S32Z build stops in the post-link
   stack-floor check with a `RecursionError` (a call path deeper than
   Python's 1000 frames in `worst_path`); a second `cmake --build` of the
-  same directory passes. Both are nano-ros's to fix.
+  same directory passes. Both are nano-ros's to fix (the second is fixed
+  in pin ebbb3a570d).
 
 ### Dropped on nano-ros-next (pin 55d9a6d761)
 
