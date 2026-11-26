@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main ebbb3a570d (2026-11-26,
-the nros12 candidate after d92c369a14)
+On branch `nano-ros-next` nano-ros is pinned at main 1afe48ca78 (2026-11-26,
+10 commits past the nros12 candidate ebbb3a570d)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -31,7 +31,9 @@ nano-ros-next (pin d92c369a14)"). Pin 1a638e9958 dropped the S32Z's own
 network bring-up, the last `PLATFORM_*` reader (see "Dropped on
 nano-ros-next (pin 1a638e9958)"). Pin ebbb3a570d drops no island code; it
 fixes the fresh S32Z build's stack-floor `RecursionError` (see "Dropped on
-nano-ros-next (pin ebbb3a570d)").
+nano-ros-next (pin ebbb3a570d)"). Pin 1afe48ca78 dropped asi_common's
+hand-derived log floor off Zephyr (see "Dropped on nano-ros-next (pin
+1afe48ca78)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -91,7 +93,19 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main ebbb3a570d (2026-11-26), the nros12 candidate; 44 commits over
+nano-ros main 1afe48ca78 (2026-11-26), 10 commits over ebbb3a570d. It adds
+PR 4907 (issue 2952: the image's `log.max_level` is exported to C/C++ on
+every CMake platform as `NROS_LOG_MAX_LEVEL`, 0 trace .. 6 off, a compile
+definition on `NanoRos::NanoRos` and a cache variable, resolved over the
+`nros-log` ladder by `nros config explain --get log.max_level`), PR 4902
+(issue 2980: an image's configure currency reads only its own bringup's
+censuses and refused resolves), PR 4879 (issue 2852: a musl Linux cross
+board), PR 4861 (the Rust metadata probe takes the launch seeds), PR 4838
+(issue 2954) and docs PRs 4905, 4906, 4910 and 4911. nano-ros does not set
+`RCLC_LOG_MIN_SEVERITY` itself; a consumer names the exported symbol. The
+s32z270 west fragment and `nros-sdk.lock` are unchanged.
+
+Before that, nano-ros main ebbb3a570d (2026-11-26), the nros12 candidate; 44 commits over
 1a638e9958. It adds PR 4901 (issue 2979: `nros-stack-floor.py` walks the call
 graph iteratively), PR 4825 (issues 2899, 2900: the owned-entry census adds
 the entry's workspace dependencies and goes stale when its build files
@@ -735,6 +749,41 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
   build since has done the same (see pin 1a638e9958).
 
+### Dropped on nano-ros-next (pin 1afe48ca78)
+
+CI run 45836615727 (55541d7) green on all three lanes: FreeRTOS POSIX 20
+min, FreeRTOS AN536 35 min, Zephyr FVP 45 min (the `fvp-tap` controller
+configure and the tap tunnel included). The census staleness that stopped
+the FVP lane at ebbb3a570d is fixed in this pin (issue 2980, PR 4902).
+
+- asi_common's hand-derived log floor (issue 2952, PR 4907). Off Zephyr it
+  read an exported `NROS_LOG_MAX_LEVEL` (a name through its own trace..off
+  ladder, or a number) and took INFO otherwise, because the CMake road
+  handed the image's `log.max_level` to cargo only. nano-ros now exports
+  the resolved level to C/C++ on every CMake platform, so asi_common's
+  interface states `RCLC_LOG_MIN_SEVERITY=CONFIG_NROS_LOG_MAX_LEVEL` on
+  Zephyr and `RCLC_LOG_MIN_SEVERITY=NROS_LOG_MAX_LEVEL` elsewhere: the
+  level lives only in system.toml (`knobs.log.max_level = "info"`), the
+  ladder and the INFO default are gone, and `logger.hpp` refuses a TU that
+  sees neither symbol (`#error`, as for `RCLC_LOG_MIN_SEVERITY`).
+- The floor in the generated builds, controller images: FreeRTOS POSIX
+  and AN536 configures print `nano-ros: log.max_level = 2
+  (NROS_LOG_MAX_LEVEL)` and every asi_common TU in `compile_commands.json`
+  carries `-DNROS_LOG_MAX_LEVEL=2` with
+  `-DRCLC_LOG_MIN_SEVERITY=NROS_LOG_MAX_LEVEL` (POSIX 39 TUs, AN536 43);
+  the FVP and zephyr-s32z `.config` have `CONFIG_NROS_LOG_MAX_LEVEL=2` and
+  32 TUs carry `-DRCLC_LOG_MIN_SEVERITY=CONFIG_NROS_LOG_MAX_LEVEL`.
+- Changed: an image that states no level gets nano-ros's builtin, 0
+  (trace), as its C/C++ floor too. The FreeRTOS unit and loopback test
+  images now compile `log_debug` in (not shown: the run-time threshold
+  stays INFO), as the Zephyr test images already did.
+- Checked locally: FreeRTOS POSIX, AN536 and Zephyr FVP lanes exit 0 (the
+  FVP lane's `fvp-tap` build smoke included: PR 4902 fixes the
+  ebbb3a570d census stop below); zephyr-s32z on a fresh directory links,
+  RAM 72.96 % of 7 MiB, the stack-floor walk as at ebbb3a570d (8 walk
+  orders, REFUSED on the same five frameless functions, at least 194260 B
+  from `main` over the 32768 B stack).
+
 ### Dropped on nano-ros-next (pin ebbb3a570d)
 
 No island change. CI run 45825154165 (e53a738): FreeRTOS POSIX and FreeRTOS
@@ -856,7 +905,8 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
   linux images) nano-ros hands the image's `log.max_level` to its cargo
   builds as a cargo config and not to the CMake configure, so asi_common
   cannot read it there and takes INFO. A debug FreeRTOS build exports
-  `NROS_LOG_MAX_LEVEL=debug` to the configure.
+  `NROS_LOG_MAX_LEVEL=debug` to the configure. Closed at pin 1afe48ca78
+  (issue 2952, PR 4907).
 
 ## Steps
 
@@ -1077,6 +1127,9 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
       `RCLC_LOG_MIN_SEVERITY` (issue 2881), set from the image's
       `knobs.log.max_level` on Zephyr; `CONFIG_LOG_LEVEL` is gone. See
       "Dropped on nano-ros-next (pin 55d9a6d761)".
+    - done at pin 1afe48ca78: on every CMake platform too (issue 2952,
+      PR 4907); asi_common derives no level. See "Dropped on nano-ros-next
+      (pin 1afe48ca78)".
 
 ### P5. Clock - M
 
