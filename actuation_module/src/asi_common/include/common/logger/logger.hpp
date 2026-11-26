@@ -14,8 +14,9 @@
 //
 // The level gate is nano-ros's compile-time floor, RCLC_LOG_MIN_SEVERITY
 // (<rclc/log.h>, 0 trace .. 6 none, numbered as the image's log.max_level),
-// which asi_common's CMakeLists.txt sets for every user of asi_common (INFO
-// unless the image asks for another level). `log_*` and `PROFILE_LOG` are
+// which asi_common's CMakeLists.txt names as the image's level for every
+// user of asi_common: CONFIG_NROS_LOG_MAX_LEVEL on Zephyr, nano-ros's
+// NROS_LOG_MAX_LEVEL compile definition elsewhere. `log_*` and `PROFILE_LOG` are
 // macros, so a call below the floor expands to `((void)0)` and evaluates
 // none of its arguments. `log_success` is INFO: rclc has no success level.
 // Call them unqualified (`log_info(...)`, not `common::logger::log_info`).
@@ -25,10 +26,14 @@
 #include <cstdio>
 #include <cstring>
 
-// asi_common's interface defines the floor; a TU that reaches this header
-// without linking asi_common would get <rclc/log.h>'s default, TRACE.
+// asi_common's interface defines the floor as the image's level, which
+// nano-ros defines; a TU that reaches this header without either would get
+// <rclc/log.h>'s default, TRACE, or an undefined name read as 0 by #if.
 #ifndef RCLC_LOG_MIN_SEVERITY
 #error "RCLC_LOG_MIN_SEVERITY is unset: link asi_common, which sets the island's log floor"
+#endif
+#if !defined(CONFIG_NROS_LOG_MAX_LEVEL) && !defined(NROS_LOG_MAX_LEVEL)
+#error "the image's log level is unset: link NanoRos::NanoRos (NROS_LOG_MAX_LEVEL) or build with nano-ros's Kconfig (CONFIG_NROS_LOG_MAX_LEVEL)"
 #endif
 #include <rclc/log.h>
 

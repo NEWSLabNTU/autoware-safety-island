@@ -49,29 +49,18 @@ target_include_directories(asi_common INTERFACE
 # The logger's compile-time floor (common/logger/logger.hpp): nano-ros's
 # RCLC_LOG_MIN_SEVERITY, 0 trace .. 6 none, numbered as the image's
 # log.max_level. A log_* call below it, and PROFILE_*, compile to nothing.
-#
-# On Zephyr it is the image's ceiling, CONFIG_NROS_LOG_MAX_LEVEL
-# ([image.<id>] knobs.log.max_level; the controller images state "info", 2).
-# The CMake road carries that knob to its cargo builds only, as a cargo
-# config, not to this configure, so elsewhere it is NROS_LOG_MAX_LEVEL when
-# the configure's environment exports it (a name or a number) and INFO
-# otherwise: info, warn and error lines, no debug.
-set(_asi_log_floor 2)
-if(_asi_zephyr AND DEFINED CONFIG_NROS_LOG_MAX_LEVEL)
-  set(_asi_log_floor "${CONFIG_NROS_LOG_MAX_LEVEL}")
-elseif(NOT "$ENV{NROS_LOG_MAX_LEVEL}" STREQUAL "")
-  set(_asi_log_levels trace debug info warn error fatal off)
-  string(TOLOWER "$ENV{NROS_LOG_MAX_LEVEL}" _asi_log_env)
-  list(FIND _asi_log_levels "${_asi_log_env}" _asi_log_index)
-  if(_asi_log_index GREATER_EQUAL 0)
-    set(_asi_log_floor ${_asi_log_index})
-  elseif(_asi_log_env MATCHES "^[0-6]$")
-    set(_asi_log_floor ${_asi_log_env})
-  else()
-    message(FATAL_ERROR "asi_common: NROS_LOG_MAX_LEVEL='$ENV{NROS_LOG_MAX_LEVEL}' is not a level (trace..off or 0..6)")
-  endif()
+# It is the image's log.max_level ([image.<id>] knobs.log.max_level), which
+# nano-ros resolves and hands to C/C++: on Zephyr as Kconfig's
+# CONFIG_NROS_LOG_MAX_LEVEL (autoconf.h), elsewhere as the compile definition
+# NROS_LOG_MAX_LEVEL on NanoRos::NanoRos (nano-ros issue 2952). The floor
+# names that symbol, so the island holds no level of its own.
+if(_asi_zephyr)
+  target_compile_definitions(asi_common INTERFACE
+    RCLC_LOG_MIN_SEVERITY=CONFIG_NROS_LOG_MAX_LEVEL)
+else()
+  target_compile_definitions(asi_common INTERFACE
+    RCLC_LOG_MIN_SEVERITY=NROS_LOG_MAX_LEVEL)
 endif()
-target_compile_definitions(asi_common INTERFACE RCLC_LOG_MIN_SEVERITY=${_asi_log_floor})
 
 # The CAN control-command output (common/can/can_platform.hpp over nano-ros's
 # <nros/platform_can.h>). On Zephyr it is the Kconfig symbol
