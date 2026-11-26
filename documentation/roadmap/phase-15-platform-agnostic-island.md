@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 1afe48ca78 (2026-11-26,
-10 commits past the nros12 candidate ebbb3a570d)
+On branch `nano-ros-next` nano-ros is pinned at main 52fcb58126 (2026-11-27,
+the nros12 release candidate with the B43 and B44 fixes)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -33,7 +33,8 @@ nano-ros-next (pin 1a638e9958)"). Pin ebbb3a570d drops no island code; it
 fixes the fresh S32Z build's stack-floor `RecursionError` (see "Dropped on
 nano-ros-next (pin ebbb3a570d)"). Pin 1afe48ca78 dropped asi_common's
 hand-derived log floor off Zephyr (see "Dropped on nano-ros-next (pin
-1afe48ca78)").
+1afe48ca78)"). Pin 52fcb58126 drops no island code (see "Dropped on
+nano-ros-next (pin 52fcb58126)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -93,7 +94,17 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 1afe48ca78 (2026-11-26), 10 commits over ebbb3a570d. It adds
+nano-ros main 52fcb58126 (2026-11-27), 15 commits over 1afe48ca78. It adds
+PR 4917 (issue 2983: an owned census records absolute inputs, so an
+image's configure reads it fresh; nros12 B44), PR 4913 (issue 2981), PR
+4908 (issue 2977: QEMU refuses a Zephyr image on a non-Zephyr board
+descriptor), PR 4898 (phase-578 W4: `nros fix`), PR 4877 (issue 2961),
+docs PRs 4912 and 4916 (issue 2982: the S32Z stack-floor walk's 194 KB
+lower bound is an over-approximation), 4918 and 4920 (the nros12 release
+page), 4924, 4914, 4915 and 4860. The s32z270 west fragment and
+`nros-sdk.lock` are unchanged.
+
+Before that, nano-ros main 1afe48ca78 (2026-11-26), 10 commits over ebbb3a570d. It adds
 PR 4907 (issue 2952: the image's `log.max_level` is exported to C/C++ on
 every CMake platform as `NROS_LOG_MAX_LEVEL`, 0 trace .. 6 off, a compile
 definition on `NanoRos::NanoRos` and a cache variable, resolved over the
@@ -748,6 +759,34 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool);
   the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
   build since has done the same (see pin 1a638e9958).
+
+### Dropped on nano-ros-next (pin 52fcb58126)
+
+No island change. CI run 45868911896 (a7e77d4) green on all three lanes:
+FreeRTOS POSIX 21 min, FreeRTOS AN536 26 min, Zephyr FVP 44 min.
+
+- nros12 B44 (issue 2983, PR 4917): the FVP job's "composed after this
+  configure's readers ran ... no `nros configure` seeded them" warning
+  (`NanoRosPromise.cmake:408`, `_nros_promise_check_unseeded`) went from
+  4 at 1afe48ca78 (run 45836615727) to 1. The three `nros run` test images
+  (`unit_test_bringup`, `dds_loopback_test_bringup` on
+  `fvp-aemv8r-smp` and `fvp-aemv8r-smp-stats`) no longer print it. The one
+  left is the tap step's CAN output test, `build.sh --platform zephyr-fvp
+  --network tap --can-output-test` into `build/zephyr-fvp-tap-can`: the
+  hand-written west application `actuation_module/test/zephyr_app`, which
+  no bringup names and no `nros configure` seeds.
+- nros12 B43: a fresh zephyr-s32z build (`build.sh --platform zephyr-s32z`
+  on a new build directory) links, RAM 72.96 % of 7 MiB. With nano-ros's
+  make 4.4.1 and ninja 1.13.2 first on PATH, ninja joins the FIFO
+  jobserver (`ninja: Jobserver mode detected`) and the stack-floor walk
+  runs 8 walk orders on 8 job tokens; with the host's make 4.3 the
+  jobserver is a pipe and the walk runs serial on 1 token, and with the
+  host's ninja 1.10 ninja does not read the jobserver. The walk refuses as
+  before (issue 2982), at least 194248 B from `main` over the 32768 B
+  stack.
+- Checked locally: the Zephyr FVP lane (`run-zephyr-fvp-ci.sh`) exits 0
+  with no unseeded warning; the tap CAN output test build alone exits 0
+  and prints the one warning, as in CI.
 
 ### Dropped on nano-ros-next (pin 1afe48ca78)
 
