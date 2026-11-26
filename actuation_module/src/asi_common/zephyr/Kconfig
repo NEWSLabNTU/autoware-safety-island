@@ -54,25 +54,6 @@ config CONTROL_CMD_CAN_TUNNEL_PORT
 	range 1 65535
 	depends on CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL
 
-config NET_IFACE2_ADDR
-	string "Address for interface 2"
-	default ""
-
-config NET_IFACE2_GW
-	string "Gateway for interface 2"
-	default ""
-
-config NET_IFACE2_NETMASK
-	string "Netmask for interface 2"
-	default ""
-
-config NET_IFACE2_VLAN
-	int "VLAN identifier for interface 2"
-	default 0
-	help
-	  When different from 0, it sets the VLAN id for the interface 2.
-	  Use 0 here if uncertain.
-
 
 # --- Real-time evaluation: Layer 1 reporting -------------------------------
 # See documentation/design/rt_evaluation_zephyr.rst. Enabled by ./build.sh --trace-stats

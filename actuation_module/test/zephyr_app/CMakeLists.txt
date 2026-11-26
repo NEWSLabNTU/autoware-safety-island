@@ -57,8 +57,6 @@ project(asi_zephyr_tests)
 # The two supervision message packages are workspace packages.
 set(NROS_INTERFACE_SEARCH_PATH "${_asi_ws}/src")
 
-# The platform layer, without the network hook a generated entry calls.
-set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
 add_subdirectory("${_asi_ws}/src/asi_common" asi_common)
 target_link_libraries(app PRIVATE asi_common)
 

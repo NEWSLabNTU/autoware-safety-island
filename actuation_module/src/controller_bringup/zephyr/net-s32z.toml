@@ -1,0 +1,24 @@
+# Copyright (c) 2026, Arm Limited / NEWSLab NTU.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Board network file of the S32Z270 RTU0 image ([image.s32z]): the board's one
+# NETC port (enetc_psi0) on the lab LAN, which leases its address, as
+# prj-s32z.conf stated by hand before (DHCPv4 through Zephyr's net_config). nros
+# build renders it into NET_CONFIG_* and NET_DHCPV4=y (nano-ros issue 2879);
+# Zephyr's net_config holds the application until the lease (up to
+# CONFIG_NET_CONFIG_INIT_TIMEOUT), so the island has no wait of its own. The
+# subnet is the host LAN the S32Z Cyclone DDS configuration names
+# (192.168.0.1); the lease decides the address.
+#
+# Untagged, as the island's own bring-up left this interface. If the switch
+# port is tagged, state the tag on the interface (`vlan = <1-4094>`): nros
+# build then renders NET_VLAN and NROS_NET_VLAN_TAG, and nano-ros's net_vlan.c
+# addresses the VLAN interface.
+
+[eth0]
+network = "s32z"
+address = "dhcp"
+
+[network.s32z]
+subnet = "192.168.0.0/24"
+dhcp   = true

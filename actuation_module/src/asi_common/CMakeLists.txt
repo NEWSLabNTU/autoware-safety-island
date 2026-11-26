@@ -39,25 +39,12 @@ elseif(NROS_PLATFORM STREQUAL "freertos")
 endif()
 # Anything else is a host configure (NROS_PLATFORM=posix): nano-ros's metadata
 # probe, which compiles the controller's sources to count their entities, and
-# the census's `linux` images, which build and run them once. The clock and
-# network headers take the FreeRTOS road there, as they did before this
-# package existed.
+# the census's `linux` images, which build and run them once.
 
-# --- asi_common: headers + platform defines ---------------------------------
+# --- asi_common: headers ------------------------------------------------------
 add_library(asi_common INTERFACE)
 target_include_directories(asi_common INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
-
-# PLATFORM_ZEPHYR / PLATFORM_FREERTOS: what is left of the platform dispatch.
-# Its one reader is the S32Z's interface set-up (platform/platform_network.h,
-# src/common/net/network_config.cpp; P6). Nothing else tests it: the clock is
-# nano-ros's on every target (phase-15 P5), and the logger's level is the
-# floor below.
-if(_asi_zephyr)
-  target_compile_definitions(asi_common INTERFACE PLATFORM_ZEPHYR=1)
-else()
-  target_compile_definitions(asi_common INTERFACE PLATFORM_FREERTOS=1)
-endif()
 
 # The logger's compile-time floor (common/logger/logger.hpp): nano-ros's
 # RCLC_LOG_MIN_SEVERITY, 0 trace .. 6 none, numbered as the image's
@@ -118,14 +105,6 @@ endif()
 
 # --- Support sources ---------------------------------------------------------
 if(_asi_zephyr)
-  # Compiled into `app`: the one Zephyr target an application's code can link
-  # into the image (a zephyr_library() declared after find_package(Zephyr) is
-  # not), and where the strong nros_board_network_wait() below overrides the
-  # generated entry's weak one.
-  option(ASI_COMMON_ENTRY_HOOK
-    "the network hook a generated controller entry calls before nros::init" ON)
-  target_sources(app PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/common/net/network_config.cpp")
   # The FVP has no CAN controller: its CAN output is the island's UDP tunnel
   # (one 48-byte datagram per three-frame command), the strong
   # nros_platform_can_* symbols of this source. An object of `app`, as the
@@ -134,10 +113,6 @@ if(_asi_zephyr)
   if(CONFIG_CONTROL_CMD_CAN_TRANSPORT_UDP_TUNNEL)
     target_sources(app PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/can_udp_tunnel_driver.cpp")
-  endif()
-  if(ASI_COMMON_ENTRY_HOOK)
-    target_sources(app PRIVATE
-      "${CMAKE_CURRENT_SOURCE_DIR}/src/zephyr/board_network_hook.cpp")
   endif()
   # Real-time evaluation Layer 1: the periodic statistics reporter,
   # self-registering through K_THREAD_DEFINE.

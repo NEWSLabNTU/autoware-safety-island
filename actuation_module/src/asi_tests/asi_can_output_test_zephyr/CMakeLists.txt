@@ -28,9 +28,6 @@ project(asi_can_output_test_zephyr LANGUAGES C CXX)
 
 find_package(nano_ros REQUIRED)
 
-# The platform layer, without the network hook a generated controller entry
-# calls.
-set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
 if(NOT TARGET asi_common)
   add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
 endif()

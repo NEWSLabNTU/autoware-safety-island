@@ -380,10 +380,11 @@ run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 # board string; nano-ros PR 4086), which also states the image's heap (2 MiB).
 # What the board leaves to the image is stated here: CONFIG_MAIN_STACK_SIZE
 # and the C++ runtime (zephyr/prj-actuation.conf; the S32ZE SoC default of
-# 1024 would win otherwise), and hal_nxp in actuation_module/west.yml.
+# 1024 would win otherwise). Its address is zephyr/net-s32z.toml, the board
+# network file (nano-ros issue 2879), named first.
 [image.s32z]
 board     = "s32z270-rtu0-zephyr"
-os_config = ["zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
+os_config = ["zephyr/net-s32z.toml", "zephyr/prj-actuation.conf", "zephyr/prj-s32z.conf"]
 knobs.clock.source = "sntp"
 knobs.clock.epoch_failure = "halt"
 knobs.clock.sntp_attempts = 10

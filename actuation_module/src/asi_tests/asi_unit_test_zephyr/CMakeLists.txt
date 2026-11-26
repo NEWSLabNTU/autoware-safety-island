@@ -16,20 +16,15 @@ cmake_minimum_required(VERSION 3.22.1)
 
 get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 
-# asi_common's Kconfig symbols (CONFIG_NET_IFACE2_* and the
-# rest it reads) come from nros build: asi_common is a Zephyr module
-# (zephyr/module.yml) and a workspace dependency of this package, so it joins
-# ZEPHYR_EXTRA_MODULES on the west line, as for a generated application.
+# asi_common's Kconfig symbols come from nros build: asi_common is a Zephyr
+# module (zephyr/module.yml) and a workspace dependency of this package, so it
+# joins ZEPHYR_EXTRA_MODULES on the west line, as for a generated application.
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(asi_unit_test_zephyr LANGUAGES C CXX)
 
 find_package(nano_ros REQUIRED)
 
-# The platform layer, without the network hook a generated controller entry
-# calls: a test program's network is the board network file's, which Zephyr's
-# net_config brings up before main().
-set(ASI_COMMON_ENTRY_HOOK OFF CACHE BOOL "" FORCE)
 if(NOT TARGET asi_common)
   add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
 endif()
