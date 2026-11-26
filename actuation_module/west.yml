@@ -29,7 +29,19 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-26: 1afe48ca78, past ebbb3a570d (10 commits): PRs
+    # ON main, 2026-11-27: 52fcb58126, past 1afe48ca78 (15 commits): PRs
+    # 4917 (issue 2983: an owned census records absolute inputs, so an
+    # image's configure reads it fresh; the nros12 B44 fix), 4913 (issue
+    # 2981: a peer cancel is no longer erased by spin entry), 4908 (issue
+    # 2977: QEMU refuses a Zephyr image on a non-Zephyr board descriptor),
+    # 4898 (phase-578 W4: nros fix moves, replaces and sets), 4877 (issue
+    # 2961), docs PRs 4912 and 4916 (issue 2982: an S32Z image's stack-floor
+    # walk refuses; the 194 KB lower bound is an over-approximation), 4918
+    # and 4920 (the nros12 release page: B43 accepted), 4924, 4914, 4915 and
+    # 4860. The s32z270 west fragment and nros-sdk.lock are unchanged.
+    # Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-26: 1afe48ca78, past ebbb3a570d (10 commits): PRs
     # 4907 (issue 2952: the image's log.max_level is exported to C/C++ on
     # every CMake platform as NROS_LOG_MAX_LEVEL, 0..6, a compile definition
     # on NanoRos::NanoRos, so asi_common's floor names it and derives no
@@ -304,7 +316,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 1afe48ca780aa007f108b9a533e960af697a93cf
+      revision: 52fcb5812626af456c8800609044b72ae67a18ed
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
