@@ -21,22 +21,6 @@ manifest:
   #
   # Please add items below based on alphabetical order
   projects:
-    # cmsis and hal_nxp at the revisions Zephyr v3.7.0's own west.yml pins.
-    # The nano-ros branch moved zephyr to v3.7.0 (below) and these two stayed at
-    # the pins upstream uses with its older zephyr (339cd5a): the FVP build does
-    # not use either, but the S32Z270 build then stopped at hal_nxp's
-    # "SoC s32z270 not supported" (Zephyr 3.7 names the SoC s32z270, the old
-    # hal_nxp knows s32z27).
-    - name: cmsis
-      revision: 4b96cbb174678dcd3ca86e11e1f24bc5f8726da0
-      path: actuation_module/zephyr_modules/hal/cmsis
-      groups:
-        - hal
-    - name: hal_nxp
-      revision: 862e001504bd6e0a4feade6a718e9f973116849c
-      path: actuation_module/zephyr_modules/hal/hal_nxp
-      groups:
-        - hal
     # nano-ros: external dep providing the RMW + nros-cpp API + Zephyr module.
     # import: false is REQUIRED — nano-ros's own west.yml redefines zephyr at
     # v3.7.0 with a different module allowlist; importing recursively would
@@ -45,7 +29,21 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-24: 55d9a6d761, past PRs 4735 (issue 2878: nano-ros's
+    # ON main, 2026-11-26: d92c369a14 (the nros12 release candidate), past
+    # PR 4817 (issue 2880: s32z270-rtu0-zephyr ships west-downstream.yml,
+    # imported under `self:` below; it pins zephyr-lang-rust, hal_nxp and
+    # cmsis, which this file pinned by hand until now), 4851 (issue 2965: a
+    # spawned executor level parks at the port's finest park, not in whole
+    # milliseconds; the mrm tier's spin period is 33,333 us), 4569 (issue
+    # 2780: the Zephyr per-node heap floor counts the nodes serving the
+    # parameter and lifecycle services), 4795 (issue 2904: an owned entry
+    # declares the managed nodes its main makes), 4763 (issue 2884: SNTP
+    # re-sync paced on the server's clock) and 4737 (issue 2916: nros build
+    # refuses a west build dir configured against another Zephyr tree), and
+    # 4788, 4844 and 4775 (issues 2939, 2960, 2932). Cyclone is unchanged. Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-24: 55d9a6d761, past PRs 4735 (issue 2878: nano-ros's
     # Zephyr 3.7 and 4.4 patch sets add CONFIG_TRACING_BACKEND_CUSTOM and
     # CONFIG_TRACING_BACKEND_CUSTOM_NAME, the out-of-tree backend selection
     # the trace-ring images use; the island's patches/zephyr/0003 and
@@ -274,29 +272,38 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 55d9a6d761b64d4633d3ec6820ad37f68f2acfe7
+      revision: d92c369a1488acef360cf41474448fc5531cafee
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
     # (NROS_BOARD_ZEPHYR_LINE = 3.7) and its own west.yml zephyr pin. The
     # nano-ros platform-zephyr net code targets the 3.7+ net API
     # (net_if_addr.ipv4 wrapper, ip_mreq); an older line (3.5.x) drifts at
-    # compile. Bump in lockstep with the zephyr-lang-rust rev below.
+    # compile. zephyr-lang-rust, hal_nxp and cmsis come from nano-ros's
+    # board fragment (`self: import:` below) at the revisions this line pins;
+    # a zephyr move is a nano-ros pin move.
     - name: zephyr
       revision: v3.7.0
       west-commands: scripts/west-commands.yml
-    # Zephyr Rust language support — REQUIRED: nano-ros's runtime is a Rust
-    # staticlib linked into the Zephyr app via this module; without it
-    # CONFIG_RUST is undefined and the nano-ros board conf's CONFIG_RUST(_ALLOC)
-    # abort kconfig. Pin matches nano-ros's own west.yml (the supported
-    # zephyr 3.7 x zephyr-lang-rust pair); bump in lockstep with the zephyr rev.
-    - name: zephyr-lang-rust
-      remote: upstream
-      revision: 404fcefdbab0f2711cd342a1fab9d2eda52a1ba9
-      path: modules/lang/rust
-
   group-filter:
     - -ci
 
   self:
     path: actuation_module
+    # nano-ros's board fragment for s32z270-rtu0-zephyr (nano-ros issue 2880,
+    # PR 4817): zephyr-lang-rust (REQUIRED: nano-ros's runtime is a Rust
+    # staticlib linked through it; without it CONFIG_RUST is undefined and
+    # the board conf aborts kconfig), hal_nxp (the S32Z270 SoC; "SoC s32z270
+    # not supported" without it) and cmsis (Cortex-R headers), at the
+    # revisions nano-ros builds the board with; nano-ros's
+    # `just check zephyr-west-downstream` holds them to its own Zephyr pins.
+    # The fragment names neither zephyr nor nano-ros, so the two entries above
+    # stay this file's. It lands the modules at modules/lang/rust,
+    # modules/hal/nxp and modules/hal/cmsis (Zephyr's own layout; hal_nxp and
+    # cmsis were under actuation_module/zephyr_modules/hal/ before); the build
+    # finds them through `west list`, not by path.
+    # The file is read from the modules/nros checkout, so that submodule must
+    # be checked out (`git submodule update --init modules/nros`) before
+    # `west update`, at the LOCKSTEP revision above.
+    import:
+      - file: ../modules/nros/packages/boards/nros-board-zephyr/boards/s32z270-rtu0-zephyr/west-downstream.yml

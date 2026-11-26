@@ -26,6 +26,7 @@ ensure_zephyr_workspace()
   (
     cd "${ROOT_DIR}"
     if [ ! -d .west ]; then
+      .github/scripts/ensure-nros-checkout.sh
       west init -l actuation_module
       west update
     fi

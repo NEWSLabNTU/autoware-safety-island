@@ -104,6 +104,9 @@ jobs:
           set -euo pipefail
           pip3 install -q -r zephyr/scripts/requirements-base.txt
           pip3 install -q -r zephyr/scripts/requirements-build-test.txt
+          # west.yml's `self: import:` reads nano-ros's board fragment from
+          # modules/nros, so it is at the gitlink before west loads the manifest.
+          .github/scripts/ensure-nros-checkout.sh
           west init -l actuation_module
           west update
           west zephyr-export

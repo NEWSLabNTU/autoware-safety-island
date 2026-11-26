@@ -79,7 +79,6 @@ jobs:
             .west
             zephyr
             modules
-            actuation_module/zephyr_modules
           key: zephyr-workspace-${{ hashFiles('actuation_module/west.yml') }}
           restore-keys: zephyr-workspace-
 
@@ -89,6 +88,10 @@ jobs:
           set -euo pipefail
           pip3 install -q -r zephyr/scripts/requirements-base.txt
           pip3 install -q -r zephyr/scripts/requirements-build-test.txt
+          # west.yml's `self: import:` reads nano-ros's board fragment from
+          # modules/nros, so it is at the gitlink before west loads the
+          # manifest (after the cache restore, which may hold an older pin).
+          .github/scripts/ensure-nros-checkout.sh
           if [ "${{ steps.zephyr-cache.outputs.cache-hit }}" != "true" ]; then
             [ -d .west ] || west init -l actuation_module
             west update
@@ -98,8 +101,9 @@ jobs:
       # west clones nano-ros as a manifest project and stops there; its OWN
       # submodules stay empty. The Zephyr build then configures the CycloneDDS
       # RMW and fails with "Cyclone DDS submodule not initialised". Runs after
-      # `west update` because that is what creates modules/nros, and stays
-      # unconditional because the cache-hit path skips the update entirely.
+      # `west update` (modules/nros is ensure-nros-checkout.sh's clone, which
+      # west adopts), and stays unconditional because the cache-hit path skips
+      # the update entirely.
       - name: Initialize nano-ros submodules (CycloneDDS backend)
         shell: bash
         run: |
