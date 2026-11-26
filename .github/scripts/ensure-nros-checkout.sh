@@ -32,8 +32,10 @@ if [ "${top}" != "${DIR}" ]; then
 fi
 git -C "${DIR}" remote get-url newslab >/dev/null 2>&1 \
   || git -C "${DIR}" remote add newslab "${URL}"
+# --tags as west fetches: scripts/nros-cli.sh compares the checkout with the
+# release tag nros-toolchain.toml names to pick the release or source CLI.
 if ! git -C "${DIR}" cat-file -e "${rev}^{commit}" 2>/dev/null; then
-  git -C "${DIR}" fetch -q newslab "${rev}"
+  git -C "${DIR}" fetch -q --tags newslab "${rev}"
 fi
 git -C "${DIR}" checkout -q -f --detach "${rev}"
 echo "ensure-nros-checkout: modules/nros at ${rev}"
