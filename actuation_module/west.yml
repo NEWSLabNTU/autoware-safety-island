@@ -29,7 +29,19 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-26: 1a638e9958, 18 commits past d92c369a14: PRs 4829
+    # ON main, 2026-11-26: ebbb3a570d, past 1a638e9958 (44 commits): PRs
+    # 4901 (issue 2979: nros-stack-floor.py walks the call graph
+    # iteratively, so a fresh s32z270 build no longer stops on Python's
+    # recursion limit), 4825 (issues 2899, 2900: the owned-entry census
+    # adds the entry's workspace dependencies and goes stale when its build
+    # files change), 4741 (issues 2913, 2925: a Zephyr SDK without the
+    # board's toolchain is refused before configure; NROS_ZEPHYR_BUILD_ROOT),
+    # 4862 (issue 2969: a declaration adopts the launch seed of its name),
+    # 4870 (issue 2972), 4854 (issue 2967), 4849 (issue 2964), 4850 (issue
+    # 2846), 4782 (issue 2937) and 4859 (issue 2963). The s32z270 west
+    # fragment and nros-sdk.lock are unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-26: 1a638e9958, 18 commits past d92c369a14: PRs 4829
     # (issue 2879: s32z270-rtu0-zephyr declares its NETC port in [board.net],
     # and a board network file may tag an interface with `vlan = <tag>`, so
     # [image.s32z] names net-s32z.toml and the island's own interface
@@ -281,7 +293,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 1a638e9958cc69fdffc9d70556d49b601a812dfb
+      revision: ebbb3a570df0f9eeeb4bbf40601de6743e0ed060
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
