@@ -5,7 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 55d9a6d761 (2026-11-24)
+On branch `nano-ros-next` nano-ros is pinned at main d92c369a14 (2026-11-26,
+the nros12 release candidate)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -24,7 +25,9 @@ entries' `NROS_INTERFACE_SEARCH_PATH` and the `--zephyr-workspace` flags
 (see "Dropped on nano-ros-next (pin 9c6b9aebdb)"). Pin 55d9a6d761 dropped
 the last carried Zephyr patch (0003, with `scripts/apply-zephyr-patches.sh`)
 and the logger's `CONFIG_LOG_LEVEL` gate (see "Dropped on nano-ros-next
-(pin 55d9a6d761)").
+(pin 55d9a6d761)"). Pin d92c369a14 dropped the hand pins of
+`zephyr-lang-rust`, `hal_nxp` and `cmsis` from `west.yml` (see "Dropped on
+nano-ros-next (pin d92c369a14)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -84,7 +87,20 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 55d9a6d761 (2026-11-24, post-submit green). Over 9c6b9aebdb it
+nano-ros main d92c369a14 (2026-11-26), the nros12 release candidate; 111
+commits over 55d9a6d761. It adds PR 4817 (issue 2880: `s32z270-rtu0-zephyr`
+ships `west-downstream.yml`, the west projects a consumer imports instead of
+pinning them), PR 4851 (issue 2965: a spawned executor level parks at the
+port's finest park, not in whole milliseconds), PR 4569 (issue 2780: the
+Zephyr per-node heap floor counts the nodes serving the parameter and
+lifecycle services), PR 4795 (issue 2904: managed nodes an owned entry's main
+makes), PR 4763 (issue 2884: SNTP re-sync paced on the server's clock), PR
+4737 (issue 2916 and the Zephyr 4.4 line's environment), and PRs 4788, 4844
+and 4775 (issues 2939, 2960, 2932). No rename touched the island. Cyclone is
+unchanged, `nros-sdk.lock` as it was; nano-ros's own `west.yml` is unchanged
+(it pins Zephyr v3.7.2, the island v3.7.0, as before).
+
+Before that, nano-ros main 55d9a6d761 (2026-11-24, post-submit green). Over 9c6b9aebdb it
 adds PR 4735 (issue 2878: nano-ros's Zephyr 3.7 and 4.4 patch sets add
 `CONFIG_TRACING_BACKEND_CUSTOM` and `CONFIG_TRACING_BACKEND_CUSTOM_NAME`,
 `scripts/zephyr/tracing-custom-backend-patch.sh`, the names the island's
@@ -557,8 +573,8 @@ What remains of P9 and P11 after this:
 - P11: the NETC netif glue (`s32z2_board_glue`; nano-ros's RTD variant has
   none, issue 4015 stays open for it); the NXP `port.c` Thumb-resume patch
   (`vendor_patched/port.c.patch`), NXP-licensed source the island cannot
-  hand upstream as is; the RTD switch above; one pin and the west import
-  (4006). The Zephyr patch 0003 is nano-ros's since pin 55d9a6d761 (issue
+  hand upstream as is; the RTD switch above; one pin (4006). The west
+  import is done since pin d92c369a14 (issue 2880, below). The Zephyr patch 0003 is nano-ros's since pin 55d9a6d761 (issue
   2878, below). The trace
   marker is nano-ros's (4009, T4 below). FVP model
   parameters come from the board and image rows (4007, see below), except
@@ -656,6 +672,45 @@ every `nros build` printed "Zephyr tree .../zephyr (the west workspace
   --zephyr-workspace "${ROOT}"`. The flag is required there (it names the
   tree the patch set is applied to); the issue 2877 ladder is `nros build`
   and `nros run`'s.
+
+### Dropped on nano-ros-next (pin d92c369a14)
+
+Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
+(f9d1e59) green on all three lanes: FreeRTOS POSIX 23 min, FreeRTOS AN536
+39 min, Zephyr FVP 53 min.
+
+- `actuation_module/west.yml`'s own `cmsis`, `hal_nxp` and `zephyr-lang-rust`
+  entries (P11). `self: import:` names nano-ros's
+  `packages/boards/nros-board-zephyr/boards/s32z270-rtu0-zephyr/west-downstream.yml`
+  (issue 2880, PR 4817), the way nano-ros's board schema page says a consumer
+  imports it; nano-ros's `just check zephyr-west-downstream` holds its
+  revisions to nano-ros's own Zephyr pins. The revisions are the ones the
+  island pinned (Zephyr v3.7.0's for `hal_nxp` and `cmsis`). nano-ros stays
+  `import: false` and the fragment names neither `zephyr` nor `nano-ros`, so
+  `west list` still shows zephyr at v3.7.0.
+- Moved: `hal_nxp` and `cmsis` from `actuation_module/zephyr_modules/hal/` to
+  the fragment's `modules/hal/nxp` and `modules/hal/cmsis` (Zephyr's own
+  layout). A west `path-prefix` cannot keep the old paths: it prefixes every
+  imported path (`.../modules/hal/nxp`) and would move `modules/lang/rust`
+  too. The build finds the modules through `west list`
+  (`zephyr_modules.txt` names `modules/hal/nxp`); nothing read the old paths
+  but the CI cache list, which drops them.
+- New: `.github/scripts/ensure-nros-checkout.sh`. A self-import is read from
+  disk, so `west update` cannot load the manifest before `modules/nros`
+  exists, and a stale checkout would hand it an older fragment. The Zephyr
+  CI job (after its cache restore), `release.yml` and the FVP tap lane's
+  workspace set-up put `modules/nros` at the gitlink first, as a clone of
+  its own with a `newslab` remote and the tags (the shape `west update`
+  leaves: the lockstep check fetches that remote, `nros-cli.sh` reads the
+  release tag). `bootstrap-asi.sh` already ran `git submodule update --init
+  modules/nros` before `west update`.
+- Checked locally: the FVP lane and FreeRTOS POSIX and AN536 lanes (the CI
+  scripts), and zephyr-s32z on a fresh directory: `Board: s32z2xxdc2,
+  Revision: D`, links, text / data / bss 1991436 / 49612 / 3315565, RAM
+  72.95 % of 7 MiB (was 89.72 %; the heap floor of issue 2780). Its first
+  build stopped in nano-ros's post-link stack-floor check
+  (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool,
+  under load); the same build dir rebuilt clean, check included.
 
 ### Dropped on nano-ros-next (pin 55d9a6d761)
 
