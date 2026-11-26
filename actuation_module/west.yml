@@ -29,7 +29,16 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-26: d92c369a14 (the nros12 release candidate), past
+    # ON main, 2026-11-26: 1a638e9958, 18 commits past d92c369a14: PRs 4829
+    # (issue 2879: s32z270-rtu0-zephyr declares its NETC port in [board.net],
+    # and a board network file may tag an interface with `vlan = <tag>`, so
+    # [image.s32z] names net-s32z.toml and the island's own interface
+    # bring-up, NET_IFACE2_* and the network hook, are gone) and 4826 (issue
+    # 2951: a log.max_level name is carried as its index on every road, so
+    # the controller states "info"). Cyclone is unchanged. Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-26: d92c369a14 (the nros12 release candidate), past
     # PR 4817 (issue 2880: s32z270-rtu0-zephyr ships west-downstream.yml,
     # imported under `self:` below; it pins zephyr-lang-rust, hal_nxp and
     # cmsis, which this file pinned by hand until now), 4851 (issue 2965: a
@@ -272,7 +281,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: d92c369a1488acef360cf41474448fc5531cafee
+      revision: 1a638e9958cc69fdffc9d70556d49b601a812dfb
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
