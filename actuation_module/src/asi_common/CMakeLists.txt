@@ -6,13 +6,13 @@
 # toolchain, so that no node package has to name one:
 #
 #   asi_common   headers (common/, platform/, and the message umbrella
-#                autoware/autoware_msgs/messages.hpp), the PLATFORM_* define
-#                (read only by the clock and network headers and sources), the
-#                newlib pthread shim on arm-none-eabi, and the support sources
-#                of each platform
-#                (Zephyr: network bring-up, the entry's network
-#                hook, the Kconfig-gated diagnostics; bare-metal FreeRTOS:
-#                the board wall-clock hook). The wall clock is nano-ros's on
+#                autoware/autoware_msgs/messages.hpp), the newlib pthread
+#                shim on arm-none-eabi, and the support sources of each
+#                platform (Zephyr: the FVP's CAN UDP tunnel driver and the
+#                Kconfig-gated diagnostics; bare-metal FreeRTOS: the board
+#                wall-clock hook). It defines no platform macro: the
+#                headers and sources key off nano-ros's and the board's own
+#                facts (phase-15 P8). The wall clock is nano-ros's on
 #                every platform (phase-15 P5); on bare-metal FreeRTOS its
 #                source is the island's SNTP task behind nano-ros's `board`
 #                hook.
