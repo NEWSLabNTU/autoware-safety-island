@@ -1422,10 +1422,9 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
     second. The monitor works in 1 s bins: the last fresh odometry sample
     and the latch 0.4 s after it landed in the same bin. From the next
     second on, the speed stays frozen (the world is paused).
-  - The SNTP step (nano-ros 0758's acceptance) is not covered. It needs a
-    synced Zephyr image, which means `fvp-tap`. Even there, W3
-    (`sntp_resync_interval_ms`) is 0 on every image, so the island never
-    re-queries, and a step of the server after boot would not reach it.
+  - The SNTP step (nano-ros 0758's acceptance) is not covered by this run.
+    It needs a synced Zephyr image, which means `fvp-tap`: see the W3
+    status below.
   - Stack: on `freertos-posix` the FreeRTOS stack size is not the thread's
     stack. The port creates each task's pthread with default attributes
     (8 MiB), and `app_stack_bytes` (65536) sizes only the FreeRTOS buffer.
@@ -1439,6 +1438,59 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
     is the S32Z's 32768 B Zephyr `main` stack. That walk still refuses
     (UNMEASURED, at least 193996 B), and no S32Z high-water mark is
     measured yet: the headroom there stays open.
+- Status on nano-ros-next (pin 0e4afce2fa, 2026-11-27): W3 is on for the
+  tap images, and the SNTP step is checked at the island's output (nano-ros
+  0758, part 2 of its revised acceptance).
+  - The four tap images state `clock.sntp_resync_interval_ms = 2000` and
+    `clock.sntp_resync_stack_bytes = 8192` (the default, stated; 7024 B were
+    measured around `sntp_simple` on the FVP). The user-mode FVP images and
+    `s32z` stay at 0.
+  - Why 2000 ms: nano-ros paces the re-query on the server's clock (issue
+    2884), so the interval is host time even though the FVP runs its guest
+    clock about 2x real while the island runs. Between two answers the wall
+    clock still advances on the guest's clock, so the stamps run ahead of
+    the server and fall back at each answer: a sawtooth of about the
+    interval times the guest's excess. Measured: 11.5 s at 10000 ms, 2.3 s
+    at 2000 ms. A step of the server reaches the stamps within one
+    interval.
+  - The check: `actuation_module/test/run-fvp-tap-resync.sh`, run by the
+    Zephyr FVP CI job after the tap tunnel
+    (`.github/scripts/run-zephyr-fvp-tap-ci.sh`, tap0 in the job container's
+    own network namespace). It builds `build/zephyr-fvp-tap` (the
+    controller), starts `scripts/sntp-server.py --step-seconds 1000
+    --step-after-seconds 60` (the server's time steps +1000 s 60 s after
+    its first answer, the boot exchange) and `scripts/stamp-age-probe.py` (an
+    rclpy reader of the island's `/control/trajectory_follower/control_cmd`
+    on domain 2, which the island publishes every cycle, HOLD included).
+    Stamp age is the server's clock at receipt (host clock, plus the step
+    once it applied) minus the stamp. It fails when a sample carries the old
+    offset outside the step window (from the step to the first post-step
+    answer plus 2 s), when any other sample is older than 1 s, or when a
+    stamp is ahead of the server, or goes back, by more than twice the
+    interval plus 1 s. The console, server log, probe CSV and summary go to
+    the `zephyr-fvp-logs` artifact.
+  - Local run (docker `--network none`, NET_ADMIN, /dev/net/tun; image
+    `asi-demo-bridge:2.0.0` for rclpy), interval 2000 ms: the console logs
+    "nros: SNTP re-sync every 2000 ms", "nros: SNTP re-sync paced on the
+    server's clock (0.697420 server s per image s)", then after the step
+    "the server's rate between its last two answers is out of range (a
+    step?); pacing this gap on the image's own time" and "paced on the
+    server's clock (0.489583 ...)". The server answered 61 times, about
+    every 2.0 s of host time (31 before the step, 30 after). The probe got
+    8134 samples. Age before the step: -2321 ms to 380 ms (p50 -972 ms; the
+    380 ms is the first sample after boot). The step: 106 samples carried
+    the old offset, up to 1.49 s after it; the first stamp on the stepped
+    clock arrived 1.52 s after the step, 0.01 s after the first post-step
+    answer. Age after the window: -2286 ms to 20 ms (p50 -1063 ms). No stamp
+    was older than 1 s outside the window; stamps went back 59 times, at
+    most 2.30 s (each answer taking the guest's excess back).
+  - The same run at 10000 ms: the first stepped stamp 5.66 s after the step,
+    0.01 s after the first post-step answer; ages -11.5 s to 0.36 s on both
+    sides of the step.
+  - `wall_clock_state().steps` stays 0 through the step: it counts changes
+    of the answering source, and a re-install by the latched `sntp` is not
+    one (nano-ros `wall_clock_state.h`). The step shows in the server log,
+    the pacing lines and the stamps.
 
 ### P6. Network - S-M
 

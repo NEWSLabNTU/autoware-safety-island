@@ -188,18 +188,25 @@ knobs.log.max_level = "info"
 #     host name fails every attempt at once (rc -22, measured). NOTE: on Zephyr `platform` always answers,
 #     so a fallback list that ends in it never halts; a `halt` image names
 #     sntp alone.
-# No image re-queries the server (clock.sntp_resync_interval_ms stays at its
-# default 0, one exchange at boot), so the stamp clock advances on the
-# monotonic clock after it latches:
-#   - FVP images: nano-ros paces the re-query with k_msleep, guest time, and
-#     the model races an idle guest (measured ~10x to ~100x real). The
-#     island's own re-sync thread, paced the same way, ran 6184 re-syncs in
-#     nine real minutes and starved the boot; the tap images ran it off.
-#   - s32z: silicon drift is ppm-level, so the boot epoch is good for the
-#     length of a drive, and the image is link-only: a re-sync thread there
-#     (nano-ros's runs on a fixed 2048-byte stack; the island's own one,
-#     around the same sntp_simple call, measured 7024 bytes on the FVP)
-#     cannot be checked on it.
+# SNTP re-sync (clock.sntp_resync_interval_ms, nano-ros phase-582 W3, issue
+# 0758):
+#   - tap images: every 2000 ms. nano-ros paces the re-query on the server's
+#     clock (issue 2884; the FVP races its guest clock, ~2x real while the
+#     island runs), so that is 2 s of host time. Between two answers the wall
+#     clock advances on the guest's clock, so stamps run ahead of the server
+#     by up to the interval times the guest's excess (measured 2.3 s at
+#     2000 ms, 11.5 s at 10000 ms); the short interval bounds that sawtooth,
+#     and a server step reaches the stamps within one interval (measured
+#     1.5 s). actuation_module/test/run-fvp-tap-resync.sh checks it (the
+#     Zephyr FVP CI job). The thread's stack stays at the 8192-byte default,
+#     stated (clock.sntp_resync_stack_bytes): 7024 bytes were measured around
+#     the same sntp_simple call on the FVP.
+#   - user-mode FVP images: 0 (one exchange at boot). They latch `platform`
+#     when the internet server does not answer, and the lane does not check a
+#     step there.
+#   - s32z: 0. Silicon drift is ppm-level, so the boot epoch is good for the
+#     length of a drive, and the image is link-only: a re-sync there cannot be
+#     checked on it.
 # clock.upgrade stays `never` (the default): it decides whether a source
 # EARLIER in clock.source may replace the latched one after boot. The tap and
 # s32z images name one source; on the user-mode FVP images nothing re-queries
@@ -308,6 +315,8 @@ knobs.clock.epoch_failure = "halt"
 knobs.clock.sntp_attempts = 10
 knobs.sntp.server = "192.168.10.1:12123"
 knobs.sntp.timeout_ms = 60000
+knobs.clock.sntp_resync_interval_ms = 2000
+knobs.clock.sntp_resync_stack_bytes = 8192
 run.nic = { tap = "tap0" }
 
 # [image.fvp-stats] on the TAP network.
@@ -327,6 +336,8 @@ knobs.clock.epoch_failure = "halt"
 knobs.clock.sntp_attempts = 10
 knobs.sntp.server = "192.168.10.1:12123"
 knobs.sntp.timeout_ms = 60000
+knobs.clock.sntp_resync_interval_ms = 2000
+knobs.clock.sntp_resync_stack_bytes = 8192
 run.nic = { tap = "tap0" }
 
 # [image.fvp-trace] on the TAP network.
@@ -348,6 +359,8 @@ knobs.clock.epoch_failure = "halt"
 knobs.clock.sntp_attempts = 10
 knobs.sntp.server = "192.168.10.1:12123"
 knobs.sntp.timeout_ms = 60000
+knobs.clock.sntp_resync_interval_ms = 2000
+knobs.clock.sntp_resync_stack_bytes = 8192
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 
@@ -371,6 +384,8 @@ knobs.clock.epoch_failure = "halt"
 knobs.clock.sntp_attempts = 10
 knobs.sntp.server = "192.168.10.1:12123"
 knobs.sntp.timeout_ms = 60000
+knobs.clock.sntp_resync_interval_ms = 2000
+knobs.clock.sntp_resync_stack_bytes = 8192
 run.nic = { tap = "tap0" }
 run.fvp.params = ["bp.pl011_uart1.out_file=trace.ctf"]
 

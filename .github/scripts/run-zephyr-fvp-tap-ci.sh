@@ -52,3 +52,16 @@ export FVP_TAP_LOG_DIR="${FVP_TAP_LOG_DIR:-${ROOT_DIR}/build/zephyr-fvp/logs}"
 "${ROOT_DIR}/scripts/run-in-netns.sh" --vcan --tap -- \
   "${ROOT_DIR}/actuation_module/test/run-fvp-tap-tunnel.sh" "${BUILD_ROOT}"
 echo "FVP TAP tunnel OK"
+
+# nano-ros 0758 part 2 (phase-15 P5): the fvp-tap controller image re-syncs
+# its SNTP epoch (clock.sntp_resync_interval_ms > 0) while
+# scripts/sntp-server.py steps its time, and the stamps of the island's own
+# control_cmd follow the step (actuation_module/test/run-fvp-tap-resync.sh).
+echo "Zephyr FVP TAP controller build (SNTP re-sync)"
+"${ROOT_DIR}/build.sh" --platform zephyr-fvp --network tap \
+  -d "${ROOT_DIR}/build/zephyr-fvp-tap"
+echo "Zephyr FVP TAP SNTP re-sync run (tap0 in a network namespace of its own)"
+RESYNC_LOG_DIR="${FVP_TAP_LOG_DIR}" "${ROOT_DIR}/scripts/run-in-netns.sh" --tap \
+  --env RESYNC_LOG_DIR -- \
+  "${ROOT_DIR}/actuation_module/test/run-fvp-tap-resync.sh" "${ROOT_DIR}/build/zephyr-fvp-tap"
+echo "FVP TAP SNTP re-sync OK"
