@@ -5,8 +5,8 @@ workarounds waiting on nano-ros; P12 done: the default build runs the
 released nano-ros 0.6.0-nros11. The work that needs nano-ros past nros11 (a
 main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
-On branch `nano-ros-next` nano-ros is pinned at main 52fcb58126 (2026-11-27,
-the nros12 release candidate with the B43 and B44 fixes)
+On branch `nano-ros-next` nano-ros is pinned at main 0e4afce2fa (2026-11-27,
+the nros12 release-lane commit)
 and the CLI is built from source; there P4 and P7 are done too, P5 except
 the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
@@ -33,8 +33,8 @@ nano-ros-next (pin 1a638e9958)"). Pin ebbb3a570d drops no island code; it
 fixes the fresh S32Z build's stack-floor `RecursionError` (see "Dropped on
 nano-ros-next (pin ebbb3a570d)"). Pin 1afe48ca78 dropped asi_common's
 hand-derived log floor off Zephyr (see "Dropped on nano-ros-next (pin
-1afe48ca78)"). Pin 52fcb58126 drops no island code (see "Dropped on
-nano-ros-next (pin 52fcb58126)").
+1afe48ca78)"). Pins 52fcb58126 and 0e4afce2fa drop no island code (see
+"Dropped on nano-ros-next (pin 52fcb58126)" and "(pin 0e4afce2fa)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -94,7 +94,21 @@ Related, not ours: 3761 (CAN FD E2E profile and a FlexCAN helper).
 
 ## Pin on nano-ros-next
 
-nano-ros main 52fcb58126 (2026-11-27), 15 commits over 1afe48ca78. It adds
+nano-ros main 0e4afce2fa (2026-11-27), 46 commits over 52fcb58126. It adds
+PR 4941 (issue 2950: a one-attempt or forever zenoh open bounds its TCP
+connect), PR 4943 (issue 2994: a TCP connect a signal interrupted is
+finished; nros12 B46), PR 4947 (issue 2992: a launch seed is parsed into
+its store slot, not the seeding frame; nros12 B45), PR 4945 (the CLI
+sidecar schema accepts a device's callback row; nros12 B47), PRs 4892 and
+4922 (`nros build` reports flash and RAM use; a pre-build check reports
+every reason an image cannot build for its board), PRs 4919 and 4936
+(phase-579: the device-port ABI header; a device is an executor event
+source), PRs 4923, 4928, 4926 and 4931, and docs PRs 4933 (issue 2989),
+4890, 4929, 4932, 4934, 4940, 4946, 4950, 4951, 4958, 4960, 4961, 4964,
+4965, 4974, 4978 and 4980. The zenoh-pico submodule moves; the s32z270
+west fragment and `nros-sdk.lock` are unchanged.
+
+Before that, nano-ros main 52fcb58126 (2026-11-27), 15 commits over 1afe48ca78. It adds
 PR 4917 (issue 2983: an owned census records absolute inputs, so an
 image's configure reads it fresh; nros12 B44), PR 4913 (issue 2981), PR
 4908 (issue 2977: QEMU refuses a Zephyr image on a non-Zephyr board
@@ -759,6 +773,25 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool);
   the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
   build since has done the same (see pin 1a638e9958).
+
+### Dropped on nano-ros-next (pin 0e4afce2fa)
+
+No island change. CI run 45946528825 (b243249) green on all three lanes:
+FreeRTOS POSIX 21 min, FreeRTOS AN536 26 min, Zephyr FVP 45 min.
+
+- nros12 B44: the FVP job prints the unseeded message-bound warning
+  (`NanoRosPromise.cmake:408`, "composed after this configure's readers
+  ran") once, as at 52fcb58126: the tap step's CAN output test into
+  `build/zephyr-fvp-tap-can`, which no `nros configure` seeds (by design).
+- nros12 B43: a fresh zephyr-s32z build (both build directories removed
+  first, nano-ros's make 4.4.1 and ninja 1.13.2 first on PATH) exits 0 on
+  its first try, RAM 72.97 % of 7 MiB. ninja joins the FIFO jobserver
+  (`ninja: Jobserver mode detected: -j20 --jobserver-auth=fifo:...`) and
+  the stack-floor walk runs 8 walk orders on 8 job tokens. The walk
+  refuses as before (issue 2982), at least 193996 B from `main` over the
+  32768 B stack. That build ran on Zephyr SDK 0.16.8:
+  `ZEPHYR_SDK_INSTALL_DIR` named the 0.16.9 install's parent directory,
+  not its nested `zephyr-sdk-0.16.9` root, so CMake fell back to 0.16.8.
 
 ### Dropped on nano-ros-next (pin 52fcb58126)
 
