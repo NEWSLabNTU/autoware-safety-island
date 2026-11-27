@@ -19,9 +19,15 @@ get_filename_component(_ACT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE
 if(NOT COMMAND nano_ros_add_executable)
   find_package(nano_ros REQUIRED)
 endif()
-# asi_common, a workspace <depend> of this package (package.xml), is added
-# ahead of this file by the workspace build and by the census, which adds the
-# entry's workspace <depend> closure (nano-ros issue 2899).
+# asi_common, a workspace <depend> of this package (package.xml): the
+# workspace build adds it ahead of this file. The census (a host build of this
+# package alone) should too (nano-ros issue 2899), but at pin 0e4afce2fa its
+# closure scans this package's parent directory (src/asi_tests) for workspace
+# packages, not src/, so it finds no asi_common and adds nothing. Until that
+# is fixed the census build adds it here.
+if(NOT TARGET asi_common)
+  add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
+endif()
 
 # ROS2_MAIN: the program keeps its own main(); on a board nano-ros renames it
 # and calls it from the board's entry, with hosted C++. The interface packages
