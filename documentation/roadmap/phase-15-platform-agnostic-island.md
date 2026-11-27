@@ -7,8 +7,8 @@ main pin, the parameter workarounds' removal, P4) waits on branch
 `nano-ros-next` for nros12. nano-ros gaps filed as issues 4005-4018.
 On branch `nano-ros-next` nano-ros is pinned at main 0e4afce2fa (2026-11-27,
 the nros12 release-lane commit)
-and the CLI is built from source; there P4 and P7 are done too, P5 except
-the CARLA run, P6 for the FVP images, P8 in part (the census is on; the threading and
+and the CLI is built from source; there P4, P5 and P7 are done too, P6 for
+the FVP images, P8 in part (the census is on; the threading and
 config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
 alone), P10 in part (every lane runs the controller and the unit and
 loopback tests on `nros run`; the vcan roundtrip and the FVP tap tunnel run
@@ -1330,6 +1330,54 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
     "SNTP re-sync every" line (the `zephyr-fvp-logs` artifact holds only
     `stats.log` and `can.log`; the controller's console is in the job
     log).
+- Status on nano-ros-next (pin 0e4afce2fa, 2026-11-27): done. The CARLA
+  run shows no stale-stamp rejection at `vehicle_cmd_gate`; the lanes are
+  green in CI run 45946528825.
+  - Target: `freertos-posix-carla` through `integration/carla/run-carla.sh`
+    (the L4 runner, Autoware 2.0.0, swb `drive_to_goal`, CARLA 0.9.16).
+    This is the lightest image with a real wall clock: `platform` answers
+    the host's clock. The Zephyr images do not fit this run. The user-mode
+    FVP images run `unstamped`. `fvp-tap` needs a host `tap0`, and the
+    island would also have to be on the runner's network.
+  - Clock line (the first control cycle): "Stamp clock: absolute
+    (1795786381 s); nano-ros wall clock synced, source 0, steps 0".
+  - Stamps: the island's `/control/trajectory_follower/control_cmd` on the
+    ego's domain (rosbag2, receive time minus stamp): 14969 samples, all
+    of them 0.1 ms to 182 ms old (median 2.3 ms, p99 26 ms). None is
+    negative and none is over 0.5 s.
+  - `vehicle_cmd_gate` (the run's own log): no stamp or age message at all.
+    Autoware 2.0.0's gate has no stamp check. What it does log is
+    `VehicleCmdFilter` limit lines, the startup heartbeat warning, and
+    "Emergency!" twice before the drive and once during it (wall time
+    1795786813.7). The command did not change then: 4.17 m/s before and
+    after. The
+    gate output was non-zero while driving (max |v| 4.17 m/s, max |steer|
+    0.064 rad). swb passed: the ego reached the goal in 23 s of
+    AUTONOMOUS driving. The island's control_cmd ran at 32.7 Hz (p50 33,
+    lowest second 32).
+  - `island-check.sh` failed one check, and the failure has nothing to do
+    with the clock. The odometry latch at the scenario's end ("SI_STOP
+    latched: odometry (fault_id 2)") falls in the drive window's last
+    second. The monitor works in 1 s bins: the last fresh odometry sample
+    and the latch 0.4 s after it landed in the same bin. From the next
+    second on, the speed stays frozen (the world is paused).
+  - The SNTP step (nano-ros 0758's acceptance) is not covered. It needs a
+    synced Zephyr image, which means `fvp-tap`. Even there, W3
+    (`sntp_resync_interval_ms`) is 0 on every image, so the island never
+    re-queries, and a step of the server after boot would not reach it.
+  - Stack: on `freertos-posix` the FreeRTOS stack size is not the thread's
+    stack. The port creates each task's pthread with default attributes
+    (8 MiB), and `app_stack_bytes` (65536) sizes only the FreeRTOS buffer.
+    Over the run, the controller task's pthread stack (the first 8 MiB
+    task stack, picked by creation order) reached a peak resident size of
+    220 KiB (page-granular `/proc/<pid>/smaps` Rss, sampled every 2 s,
+    the TLS block included). These are x86-64 host frames. The build's
+    stack-floor walk (OPEN, not enforced) gives an upper bound of 418616 B
+    from `app_task_entry`, through an indirect call bound by type
+    (`Logger::dispatch` -> `MpcLateralController::run`). Neither number
+    is the S32Z's 32768 B Zephyr `main` stack. That walk still refuses
+    (UNMEASURED, at least 193996 B), and no S32Z high-water mark is
+    measured yet: the headroom there stays open.
 
 ### P6. Network - S-M
 
