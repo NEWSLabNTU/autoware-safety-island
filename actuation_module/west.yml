@@ -29,7 +29,23 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-27: 52fcb58126, past 1afe48ca78 (15 commits): PRs
+    # ON main, 2026-11-27: 0e4afce2fa, past 52fcb58126 (46 commits): PRs
+    # 4941 (issue 2950: a one-attempt or forever zenoh open bounds its TCP
+    # connect; nros12), 4943 (issue 2994: a TCP connect a signal interrupted
+    # is finished; nros12 B46), 4947 (issue 2992: a launch seed is parsed
+    # into its store slot, not the seeding frame; nros12 B45), 4945 (the CLI
+    # sidecar schema accepts a device's callback row; nros12 B47), 4892 and
+    # 4922 (nros build reports flash and RAM use; a pre-build check reports
+    # every reason an image cannot build for its board), 4919 and 4936
+    # (phase-579: the device-port ABI header; a device is an executor event
+    # source), 4923 (issue 2922), 4928 (cross builds write deterministic
+    # archives), 4926, 4931, docs PRs 4933 (issue 2989: the unseeded WARNING
+    # overstates the risk when nothing was derived), 4890, 4929, 4932, 4934,
+    # 4940, 4946, 4950, 4951, 4958, 4960, 4961, 4964, 4965, 4974, 4978 and
+    # 4980. The zenoh-pico submodule moves; the s32z270 west fragment and
+    # nros-sdk.lock are unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-27: 52fcb58126, past 1afe48ca78 (15 commits): PRs
     # 4917 (issue 2983: an owned census records absolute inputs, so an
     # image's configure reads it fresh; the nros12 B44 fix), 4913 (issue
     # 2981: a peer cancel is no longer erased by spin entry), 4908 (issue
@@ -316,7 +332,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 52fcb5812626af456c8800609044b72ae67a18ed
+      revision: 0e4afce2fa82777b519ff2bb8475f359df90584b
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
