@@ -104,18 +104,12 @@ for sel in 'address="127.0.0.1"' 'name="lo"'; do
 done
 # A name that is no interface (presence_required) makes the session refuse to
 # open: proof the URI is applied, not only accepted. The run passes on the
-# refusal; its console must not reach "is Live".
-nosuch_log="${ROOT_DIR}/build/freertos-posix/controller-uri-nosuch0.log"
-mkdir -p "$(dirname "${nosuch_log}")"
+# refusal, and fails if its console reaches "is Live" first (--forbid).
 ( cd "${ROOT_DIR}/actuation_module" && \
     CYCLONEDDS_URI='<General><Interfaces><NetworkInterface name="nosuch0" presence_required="true"/></Interfaces></General>' \
     "${NROS_CLI}" run controller_bringup:freertos-posix --timeout 30 \
-      --expect "RMW session open failed" ) >"${nosuch_log}" 2>&1 || {
-  dump_log "${nosuch_log}"
-  echo "CYCLONEDDS_URI nosuch0: no \"RMW session open failed\"" >&2
-  exit 1
-}
-forbid_marker "${nosuch_log}" "Actuation Safety Island is Live"
+      --expect "RMW session open failed" \
+      --forbid "Actuation Safety Island is Live" )
 echo "CYCLONEDDS_URI interface selection OK"
 
 # The test programs (actuation_module/test), each an image of its own
