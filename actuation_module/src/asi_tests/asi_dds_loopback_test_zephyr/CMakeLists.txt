@@ -25,6 +25,11 @@ project(asi_dds_loopback_test_zephyr LANGUAGES C CXX)
 
 find_package(nano_ros REQUIRED)
 
+# The west build adds asi_common's CMake here: an owned west entry is the
+# application itself, and nros build adds a workspace <depend> to it as a
+# Zephyr module only, which for asi_common is its Kconfig (zephyr/module.yml
+# has no `cmake:`). The census's host build of this package adds
+# asi_common at project() (nano-ros issue 2899), hence the guard.
 if(NOT TARGET asi_common)
   add_subdirectory("${_ACT_ROOT}/src/asi_common" asi_common)
 endif()
