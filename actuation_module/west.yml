@@ -29,7 +29,19 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-27: 0e4afce2fa, past 52fcb58126 (46 commits): PRs
+    # ON main, 2026-11-28: 419949e6a5, past 0e4afce2fa (60 commits): the
+    # nros12 re-cut. Issue 2989 (a configure that agrees with itself does
+    # not warn), 2996 and 3002 (CLI workspace root search), 2991, 2960,
+    # 2995, 2962, 2985, 2968, 2918 (bare-metal heap and stack sizes are
+    # registry knobs), 2855 and 2848 (C/C++ calls inside a callback), 2762
+    # (nros-log re-entrant sink bound per task), 2973, 2941, 3000, the
+    # stack-floor issues 2897, 2986, 2998 and 2653 (report.json states the
+    # typed share and lists untyped indirect sites), phase-578 W1 (size
+    # report percentages), phase-591 W2/W4, plus docs. No submodule moves;
+    # the s32z270 west fragment and nros-sdk.lock are unchanged. Branch
+    # nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-27: 0e4afce2fa, past 52fcb58126 (46 commits): PRs
     # 4941 (issue 2950: a one-attempt or forever zenoh open bounds its TCP
     # connect; nros12), 4943 (issue 2994: a TCP connect a signal interrupted
     # is finished; nros12 B46), 4947 (issue 2992: a launch seed is parsed
@@ -332,7 +344,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 0e4afce2fa82777b519ff2bb8475f359df90584b
+      revision: 419949e6a5300668b1a8572d0c0ba5db402cca52
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
