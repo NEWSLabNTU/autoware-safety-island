@@ -10,6 +10,10 @@
 # subnet is the host LAN the S32Z Cyclone DDS configuration names
 # (192.168.0.1); the lease decides the address.
 #
+# UNVERIFIED: no S32Z board has run this image yet. The subnet is taken from
+# that configuration, not from a lab network; confirm it, and whether the
+# switch port is tagged, on the first hardware run.
+#
 # Untagged, as the island's own bring-up left this interface. If the switch
 # port is tagged, state the tag on the interface (`vlan = <1-4094>`): nros
 # build then renders NET_VLAN and NROS_NET_VLAN_TAG, and nano-ros's net_vlan.c
