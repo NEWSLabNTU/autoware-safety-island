@@ -8,11 +8,11 @@ main pin, the parameter workarounds' removal, P4) waits on branch
 On branch `nano-ros-next` nano-ros is pinned at main 0e4afce2fa (2026-11-27,
 the nros12 release-lane commit)
 and the CLI is built from source; there P4, P5 and P7 are done too, P6 for
-the FVP images, P8 in part (the census is on; the threading and
-config dispatch is gone; `PLATFORM_*` is read by P6's S32Z network set-up
-alone), P10 in part (every lane runs the controller and the unit and
-loopback tests on `nros run`; the vcan roundtrip and the FVP tap tunnel run
-in CI in a network namespace of their own, no password),
+the FVP images, P8, P10 but one console check (every lane runs the
+controller and the unit and loopback tests on `nros run --expect`; the vcan
+roundtrip and the FVP tap tunnel run in CI in a network namespace of their
+own, no password; the tap tunnel still starts its model and greps its
+console itself, see P10),
 and the P9 `fabsl` and
 Eigen items and the P11 S32Z Zephyr board item (see "Dropped on
 nano-ros-next", below). nano-ros phase-478 T4 (2026-11-23) dropped every
@@ -33,8 +33,12 @@ nano-ros-next (pin 1a638e9958)"). Pin ebbb3a570d drops no island code; it
 fixes the fresh S32Z build's stack-floor `RecursionError` (see "Dropped on
 nano-ros-next (pin ebbb3a570d)"). Pin 1afe48ca78 dropped asi_common's
 hand-derived log floor off Zephyr (see "Dropped on nano-ros-next (pin
-1afe48ca78)"). Pins 52fcb58126 and 0e4afce2fa drop no island code (see
-"Dropped on nano-ros-next (pin 52fcb58126)" and "(pin 0e4afce2fa)").
+1afe48ca78)"). Pin 52fcb58126 drops no island code (see "Dropped on
+nano-ros-next (pin 52fcb58126)"). Pin 0e4afce2fa drops the last hand grep
+of a lane's own run and asi_common's stale `PLATFORM_*` note; the FreeRTOS
+test entries' `asi_common` fallback stays, because the census closure that
+nano-ros issue 2899 added misses it (see "Dropped on nano-ros-next (pin
+0e4afce2fa, I50 and P10)" and "(pin 0e4afce2fa)").
 
 Goal: leave the island with application code only. What still ties it to
 a platform after phase 14 moves to nano-ros (rclcpp API, platform, board
@@ -773,6 +777,63 @@ Each fix is in the pin (`git merge-base --is-ancestor`). CI run 45769783165
   (`nros-stack-floor.py`, Python `RecursionError` in the walk's worker pool);
   the same build dir rebuilt clean, check included. Every fresh zephyr-s32z
   build since has done the same (see pin 1a638e9958).
+
+### Dropped on nano-ros-next (pin 0e4afce2fa, I50 and P10)
+
+nano-ros phase-478 I50 and I51 (issues 2899 and 2900) are fixed in the pin.
+CI run 46009994514 (7fa7ca0, the tree of 762ebf0 before its rebase onto
+the docs-only 9745663) green on all three lanes: FreeRTOS POSIX
+29 min (unit test 0.3 s, loopback 2.1 s, the `nosuch0` refusal matched at
+0.1 s with `--forbid`), FreeRTOS AN536 37 min (unit test 3.9 s, loopback
+6.1 s), Zephyr FVP 42 min (unit test 4.3 s, loopback 4.5 s, CAN output
+19.2 s, the tap tunnel 1 command). Checked locally on a fresh worktree:
+the FreeRTOS POSIX lane (`run-freertos-posix-ci.sh`, exit 0) and `nros
+build` of `controller_bringup:an536` and `unit_test_bringup:mps3-an536-freertos`.
+
+- Kept, I50: the `asi_common` fallback in `asi_unit_test` and
+  `asi_dds_loopback_test`. a3c3421 removed it; CI run 46002985809
+  (f3cb3d6, now bfcfba9) stopped both FreeRTOS lanes at the
+  `unit_test_bringup` census as run 45143801025 did (`unit_test.cpp:23:
+  fatal error: common/clock/clock.hpp: No such file or directory`,
+  `NanoRosLeafEntityFacts.cmake:324`, "the census could not be taken"), and
+  the local POSIX lane on a fresh worktree did the same; 762ebf0 puts it
+  back. The census now adds the entry's workspace `<depend>` closure (issue
+  2899), but the closure (`probe_deps::workspace_deps`) scans the entry
+  package's parent directory for workspace packages. For
+  `src/asi_tests/asi_unit_test` that is `src/asi_tests`, which holds no
+  `asi_common`, so the generated `census-project-include.cmake` adds
+  nothing. The metadata probe works because `controller_pkg` and the
+  Autoware packages sit directly under `src/`. Reported to nano-ros.
+- Kept, I50: the same `add_subdirectory` in the Zephyr entries
+  (`asi_unit_test_zephyr`, `asi_dds_loopback_test_zephyr`,
+  `asi_can_output_test_zephyr`). There it is not a census workaround: an
+  owned west entry is the application itself, and `nros build` adds a
+  workspace `<depend>` to it as a Zephyr module only
+  (`owned_entry_zephyr_modules`, issue 2861), which for `asi_common` is its
+  Kconfig (`zephyr/module.yml` has no `cmake:`). A generated west
+  application `add_subdirectory`s its closure; an owned one adds its own.
+  Each entry now says so.
+- P8, `asi_common/CMakeLists.txt`: the header comment no longer lists a
+  `PLATFORM_*` define or the Zephyr network bring-up. Neither exists since
+  pin 1a638e9958; `git grep PLATFORM_ actuation_module` finds only the CAN
+  header's include guard.
+- P10, `.github/scripts/run-freertos-posix-ci.sh`: the `CYCLONEDDS_URI`
+  `nosuch0` refusal is graded by `nros run --expect "RMW session open
+  failed" --forbid "Actuation Safety Island is Live"`, not by a teed log
+  and `forbid_marker`. `ci-helpers.sh` loses the helpers no lane calls any
+  more: `run_with_timeout`, `run_command_with_timeout`, `kill_with_timeout`,
+  `require_marker` and `forbid_marker`.
+- Kept, P10: `actuation_module/test/run-fvp-tap-tunnel.sh` starts the model
+  from the build dir's recorded `run_armfvp` command (`build.sh --run`) and
+  greps its console for "CAN output tests passed". It runs inside
+  `scripts/run-in-netns.sh`, whose local container (`scripts/netns/Dockerfile`:
+  iproute2, python3, can-utils) has no nros, west or ninja, and `nros run`'s
+  FVP runner boots the model through `west build -t run_armfvp`. Moving it
+  to `nros run` needs that tooling in the namespace, or a runner that
+  replays the recorded command. Also kept: `require_stack_headroom`, which
+  reads the thread analyzer's numbers out of a console `nros run` already
+  graded and teed (a threshold, not a line), and release.yml's smoke of the
+  released POSIX binary on bare Ubuntu images, which has no nros by design.
 
 ### Dropped on nano-ros-next (pin 0e4afce2fa)
 
@@ -1574,7 +1635,15 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
 - Depends on: P4-P7; 4018 for a derived or loud parameter capacity.
 - Done when: `nros build` with the census checks the contract against the
   code on every image, all lanes green.
-- Status on nano-ros-next (pin 9e9deb715f): the census is on; `asi_common`
+- Status on nano-ros-next (pin 0e4afce2fa): done. The census is on for
+  every image (each lane's `nros build` checks it against the code), and
+  asi_common has no `PLATFORM_*` left: pin 1a638e9958 removed the last
+  readers and the defines, and the header comment's mention went at this
+  pin (see "Dropped on nano-ros-next (pin 0e4afce2fa, I50 and P10)"). What
+  is left of the platform detection (`zephyr_interface`, `NROS_PLATFORM`,
+  `CMAKE_SYSTEM_PROCESSOR`) picks support sources and the newlib pthread
+  shim, which are build facts, not dispatch. CI run 46009994514 (7fa7ca0) green on all three lanes.
+- Earlier status (pin 9e9deb715f): the census is on; `asi_common`
   still defines `PLATFORM_ZEPHYR` / `PLATFORM_FREERTOS`, and the S32Z
   network set-up (`platform/platform_network.h`,
   `src/common/net/network_config.cpp`, P6) is their only reader. P5's
@@ -1752,7 +1821,16 @@ workspace configure printed `[tracing-custom-backend-patch] patched .../zephyr/s
   lanes.
 - Done when: FreeRTOS lanes run the unit tests too, CI greps no QEMU or FVP
   output by hand, all lanes green.
-- Status on nano-ros-next (pin 8d4e70a382): every FVP lane phase is on
+- Status on nano-ros-next (pin 0e4afce2fa): done but one console check.
+  The FreeRTOS lanes run the unit and loopback tests; every lane phase that
+  boots an image is `nros run --expect`, the POSIX `nosuch0` refusal
+  included (`--forbid`, this pin), and `ci-helpers.sh` has no helper that
+  starts an image or greps its console. Left: the FVP tap tunnel
+  (`test/run-fvp-tap-tunnel.sh`) starts the model and greps "CAN output
+  tests passed" itself, because its network-namespace container has no
+  nros, west or ninja (see "Dropped on nano-ros-next (pin 0e4afce2fa, I50
+  and P10)"). CI run 46009994514 (7fa7ca0) green on all three lanes.
+- Earlier status (pin 8d4e70a382): every FVP lane phase is on
   `nros run` (below). The FVP tap tunnel runs in CI too, in the Zephyr FVP
   job, with tap0 made in the job container's own network namespace and no
   password (`scripts/run-in-netns.sh`; see P7).
