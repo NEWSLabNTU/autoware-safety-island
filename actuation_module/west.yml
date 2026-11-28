@@ -29,7 +29,14 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-28: a73e626748, past 419949e6a5 (28 commits): nros12
+    # ON main, 2026-11-28: ef0adcd9d2, past a73e626748 (7 commits): nros12
+    # re-cut 5. Reverts the issue 2845 fix (issue reopened: an owned
+    # session is carved outside its owner again), issue 3017 (the
+    # threadx-linux tick counts from CLOCK_MONOTONIC; moves only the
+    # threadx kernel submodule), plus docs. The s32z270 west fragment is
+    # unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-28: a73e626748, past 419949e6a5 (28 commits): nros12
     # re-cut 4. PR 5052 reverts 5039 (issue 2901 reopened: launch values
     # are seeded all-or-nothing again), 95f90e9a7f reverts the B49
     # portable-atomic backend change (issue 2962 reopened), issue 2845
@@ -355,7 +362,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: a73e62674856398c1e8a1417d54b929e10074495
+      revision: ef0adcd9d217a494cf18d376fdac7744b3eea0ce
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
