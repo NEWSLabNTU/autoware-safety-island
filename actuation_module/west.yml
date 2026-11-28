@@ -29,7 +29,18 @@ manifest:
     # discovered by the Zephyr module crawler.
     # LOCKSTEP: this revision must equal the modules/nros git submodule pointer.
     #
-    # ON main, 2026-11-28: 419949e6a5, past 0e4afce2fa (60 commits): the
+    # ON main, 2026-11-28: 95f90e9a7f, past 419949e6a5 (16 commits): the
+    # nros12 re-cut 3. PR 5047 reverts PR 4847 (issue 2962 reopened: the
+    # library picks the portable-atomic backend again), issue 2901 (the
+    # probe seeds every key a component's launch instances agree on), 2949,
+    # phase-581 W7 renames batch 3 (entity.max_* demand rows; the retired
+    # CONFIG_NROS_MAX_<X> spellings are refused, none used here),
+    # phase-577 W1/W6 (`nros board list`, unknown board key hints), the
+    # rclcpp::Executor move fix, check cpp under clang, plus docs. No
+    # submodule moves; the s32z270 west fragment and nros-sdk.lock are
+    # unchanged. Branch nano-ros-next only.
+    #
+    # Before that, ON main, 2026-11-28: 419949e6a5, past 0e4afce2fa (60 commits): the
     # nros12 re-cut. Issue 2989 (a configure that agrees with itself does
     # not warn), 2996 and 3002 (CLI workspace root search), 2991, 2960,
     # 2995, 2962, 2985, 2968, 2918 (bare-metal heap and stack sizes are
@@ -344,7 +355,7 @@ manifest:
     #
     - name: nano-ros
       remote: newslab
-      revision: 419949e6a5300668b1a8572d0c0ba5db402cca52
+      revision: 95f90e9a7fdcddc3434de2521e854e0d690ac119
       path: modules/nros
       import: false
     # Pinned to v3.7.0 (LTS) to match nano-ros's board contract
